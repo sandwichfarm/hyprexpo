@@ -68,19 +68,19 @@ class COverview {
     bool       damageDirty = false;
 
     struct SWorkspaceImage {
-        CFramebuffer fb;
-        int64_t      workspaceID = -1;
-        PHLWORKSPACE pWorkspace;
-        CBox         box;
+        SP<Render::IFramebuffer> fb;
+        int64_t                  workspaceID = -1;
+        PHLWORKSPACE             pWorkspace;
+        CBox                     box;
         // Label textures per state for customization
-        SP<CTexture> labelTexDefault;
-        SP<CTexture> labelTexHover;
-        SP<CTexture> labelTexFocus;
-        SP<CTexture> labelTexCurrent;
-        Vector2D     labelSizeDefault = {0, 0};
-        Vector2D     labelSizeHover   = {0, 0};
-        Vector2D     labelSizeFocus   = {0, 0};
-        Vector2D     labelSizeCurrent = {0, 0};
+        SP<Render::ITexture>     labelTexDefault;
+        SP<Render::ITexture>     labelTexHover;
+        SP<Render::ITexture>     labelTexFocus;
+        SP<Render::ITexture>     labelTexCurrent;
+        Vector2D                 labelSizeDefault = {0, 0};
+        Vector2D                 labelSizeHover   = {0, 0};
+        Vector2D                 labelSizeFocus   = {0, 0};
+        Vector2D                 labelSizeCurrent = {0, 0};
     };
 
     Vector2D                     lastMousePosLocal = Vector2D{};

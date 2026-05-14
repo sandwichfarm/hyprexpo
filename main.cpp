@@ -385,7 +385,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
 
     g_unloading = true;
 
-    g_pConfigManager->reload(); // we need to reload now to clear all the gestures
+    Config::mgr()->reload(); // we need to reload now to clear all the gestures
 }
 
 //
