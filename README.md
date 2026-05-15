@@ -221,6 +221,20 @@ bind = SUPER, g, hyprexpo:expo, <option>
 | `hyprexpo:kb_selectn` | `<id>` | select by workspace ID (legacy, 0→10) |
 | `hyprexpo:kb_select` | `<token>` | select by single token (1-9, 0, a-z) |
 
+### Lua API
+
+When Hyprland is configured from Lua, the dispatchers are also available under
+`hl.plugin.hyprexpo`:
+
+```lua
+hl.plugin.hyprexpo.expo("toggle")
+hl.plugin.hyprexpo.kb_focus("left")
+hl.plugin.hyprexpo.kb_confirm()
+hl.plugin.hyprexpo.kb_selecti(1)
+hl.plugin.hyprexpo.kb_selectn(1)
+hl.plugin.hyprexpo.kb_select("1")
+```
+
 ### Example Bindings
 
 ```bash

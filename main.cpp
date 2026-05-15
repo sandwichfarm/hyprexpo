@@ -5,12 +5,16 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/config/ConfigManager.hpp>
+#include <hyprland/src/config/values/types/FloatValue.hpp>
+#include <hyprland/src/config/values/types/IntValue.hpp>
+#include <hyprland/src/config/values/types/StringValue.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/managers/input/trackpad/GestureTypes.hpp>
 #include <hyprland/src/managers/input/trackpad/TrackpadGestures.hpp>
 
 #include <hyprutils/string/ConstVarList.hpp>
+#include <lua.hpp>
 using namespace Hyprutils::String;
 
 #include <cctype>
@@ -39,11 +43,57 @@ APICALL EXPORT std::string PLUGIN_API_VERSION() {
 static bool renderingOverview = false;
 
 // forward declarations for new dispatchers
+static SDispatchResult onExpoDispatcher(std::string arg);
 static SDispatchResult onKbFocusDispatcher(std::string arg);
 static SDispatchResult onKbConfirmDispatcher(std::string arg);
 static SDispatchResult onKbSelectNumberDispatcher(std::string arg);
 static SDispatchResult onKbSelectTokenDispatcher(std::string arg);
 static SDispatchResult onKbSelectIndexDispatcher(std::string arg);
+
+static int luaDispatchResult(lua_State* L, const char* name, const SDispatchResult& result) {
+    if (result.success)
+        return 0;
+
+    return luaL_error(L, "%s: %s", name, result.error.empty() ? "dispatcher failed" : result.error.c_str());
+}
+
+static std::string luaStringArg(lua_State* L, int index, const char* name, const char* defaultValue = "") {
+    if (lua_gettop(L) < index || lua_isnil(L, index))
+        return defaultValue;
+
+    if (lua_isnumber(L, index))
+        return std::to_string(lua_tointeger(L, index));
+
+    if (lua_isstring(L, index))
+        return lua_tostring(L, index);
+
+    luaL_error(L, "%s: argument %d must be a string or integer", name, index);
+    return defaultValue;
+}
+
+static int luaExpo(lua_State* L) {
+    return luaDispatchResult(L, "hyprexpo.expo", onExpoDispatcher(luaStringArg(L, 1, "hyprexpo.expo", "toggle")));
+}
+
+static int luaKbFocus(lua_State* L) {
+    return luaDispatchResult(L, "hyprexpo.kb_focus", onKbFocusDispatcher(luaStringArg(L, 1, "hyprexpo.kb_focus")));
+}
+
+static int luaKbConfirm(lua_State* L) {
+    return luaDispatchResult(L, "hyprexpo.kb_confirm", onKbConfirmDispatcher(""));
+}
+
+static int luaKbSelectNumber(lua_State* L) {
+    return luaDispatchResult(L, "hyprexpo.kb_selectn", onKbSelectNumberDispatcher(luaStringArg(L, 1, "hyprexpo.kb_selectn")));
+}
+
+static int luaKbSelectToken(lua_State* L) {
+    return luaDispatchResult(L, "hyprexpo.kb_select", onKbSelectTokenDispatcher(luaStringArg(L, 1, "hyprexpo.kb_select")));
+}
+
+static int luaKbSelectIndex(lua_State* L) {
+    return luaDispatchResult(L, "hyprexpo.kb_selecti", onKbSelectIndexDispatcher(luaStringArg(L, 1, "hyprexpo.kb_selecti")));
+}
 
 //
 static void hkRenderWorkspace(void* thisptr, PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, timespec* now, const CBox& geometry) {
@@ -236,6 +286,10 @@ static Hyprlang::CParseResult expoGestureKeyword(const char* LHS, const char* RH
     return result;
 }
 
+static void addConfigValue(SP<Config::Values::IValue> value) {
+    HyprlandAPI::addConfigValueV2(PHANDLE, value);
+}
+
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     PHANDLE = handle;
 
@@ -294,86 +348,93 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:kb_select", ::onKbSelectTokenDispatcher);
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:kb_selecti", ::onKbSelectIndexDispatcher);
 
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "expo", ::luaExpo);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_focus", ::luaKbFocus);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_confirm", ::luaKbConfirm);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_selectn", ::luaKbSelectNumber);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_select", ::luaKbSelectToken);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_selecti", ::luaKbSelectIndex);
+
     HyprlandAPI::addConfigKeyword(PHANDLE, "hyprexpo_gesture", ::expoGestureKeyword, {});
     HyprlandAPI::addConfigKeyword(PHANDLE, "hyprexpo_workspace_method", ::workspaceMethodKeyword, {});
 
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:columns", Hyprlang::INT{3});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:gaps_in", Hyprlang::INT{5});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:bg_col", Hyprlang::INT{0xFF111111});
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:columns", "columns", 3));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gaps_in", "inner gaps", 5));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:bg_col", "background color", 0xFF111111));
     // Supports both global and per-monitor formats:
     // Global: "center current" or "first 1"
     // Per-monitor with comma delimiter: "DP-1 first 1, HDMI-1 center current"
     // Mixed: "DP-1 first 1, center current" (DP-1 uses first 1, others use center current)
     // Note: hyprexpo_workspace_method keyword takes priority (backwards compatibility)
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:workspace_method", Hyprlang::STRING{"center current"});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:skip_empty", Hyprlang::INT{0});
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:workspace_method", "workspace method", "center current"));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:skip_empty", "skip empty workspaces", 0));
 
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:gesture_distance", Hyprlang::INT{200});
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gesture_distance", "gesture distance", 200));
 
     // keyboard navigation + styling
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:keynav_enable", Hyprlang::INT{1});
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:keynav_enable", "key navigation enable", 1));
     // Border configuration - supports both solid colors and gradients
     // Solid: rgb(rrggbb) or 0xAARRGGBB
     // Gradient: rgba(rrggbbaa) rgba(rrggbbaa) 45deg
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:border_width", Hyprlang::INT{2});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:border_color", Hyprlang::STRING{""});           // default border (unused tiles)
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:border_color_current", Hyprlang::STRING{"rgb(66ccff)"});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:border_color_focus", Hyprlang::STRING{"rgb(ffcc66)"});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:border_color_hover", Hyprlang::STRING{"rgb(aabbcc)"});
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:border_width", "border width", 2));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_color", "border color", ""));           // default border (unused tiles)
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_color_current", "current border color", "rgb(66ccff)"));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_color_focus", "focus border color", "rgb(ffcc66)"));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_color_hover", "hover border color", "rgb(aabbcc)"));
     // Deprecated but supported for backwards compatibility
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:border_style", Hyprlang::STRING{"simple"});     // ignored, auto-detected from format
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_enable", Hyprlang::INT{1});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_color", Hyprlang::INT{0xFFFFFFFF});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_font_size", Hyprlang::INT{16});
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_style", "border style", "simple"));     // ignored, auto-detected from format
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_enable", "label enable", 1));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_color", "label color", 0xFFFFFFFF));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_font_size", "label font size", 16));
     // label_text_mode: token (default) | id | index
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_text_mode", Hyprlang::STRING{"token"});
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:label_text_mode", "label text mode", "token"));
     // Optional override map for up to 50 tokens, comma-separated. Empty entries allowed.
     // Example: "1,2,3,4,5,6,7,8,9,0,!,@,#,$,%,^,&,*,(,),a,..."
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_token_map", Hyprlang::STRING{""});
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:label_token_map", "label token map", ""));
 
     // tile rounding (rounded corners for workspace previews)
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_power", Hyprlang::FLOAT{2.0f});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_focus", Hyprlang::INT{-1});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_current", Hyprlang::INT{-1});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_hover", Hyprlang::INT{-1});
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:tile_rounding", "tile rounding", 0));
+    addConfigValue(makeShared<Config::Values::CFloatValue>("plugin:hyprexpo:tile_rounding_power", "tile rounding power", 2.0F));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:tile_rounding_focus", "focus tile rounding", -1));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:tile_rounding_current", "current tile rounding", -1));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:tile_rounding_hover", "hover tile rounding", -1));
 
     // (shadows moved to feature/shadows branch)
     // defaults: center/middle within the label container
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_position", Hyprlang::STRING{"center"});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_offset_x", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_offset_y", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_show", Hyprlang::STRING{"always"});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_color_default", Hyprlang::INT{0xFFFFFFFF});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_color_hover", Hyprlang::INT{0xFFEEEEEE});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_color_focus", Hyprlang::INT{0xFFFFCC66});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_color_current", Hyprlang::INT{0xFF66CCFF});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_scale_hover", Hyprlang::FLOAT{1.0f});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_scale_focus", Hyprlang::FLOAT{1.0f});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_enable", Hyprlang::INT{1});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_color", Hyprlang::INT{0x88000000});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_rounding", Hyprlang::INT{8});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_shape", Hyprlang::STRING{"circle"});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_padding", Hyprlang::INT{8});
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:label_position", "label position", "center"));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_offset_x", "label offset x", 0));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_offset_y", "label offset y", 0));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:label_show", "label show", "always"));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_color_default", "default label color", 0xFFFFFFFF));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_color_hover", "hover label color", 0xFFEEEEEE));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_color_focus", "focus label color", 0xFFFFCC66));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_color_current", "current label color", 0xFF66CCFF));
+    addConfigValue(makeShared<Config::Values::CFloatValue>("plugin:hyprexpo:label_scale_hover", "hover label scale", 1.0F));
+    addConfigValue(makeShared<Config::Values::CFloatValue>("plugin:hyprexpo:label_scale_focus", "focus label scale", 1.0F));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_bg_enable", "label background enable", 1));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_bg_color", "label background color", 0x88000000));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_bg_rounding", "label background rounding", 8));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:label_bg_shape", "label background shape", "circle"));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_padding", "label padding", 8));
     // label font styling and pixel snapping
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_font_family", Hyprlang::STRING{"sans"});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_font_bold", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_font_italic", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_text_underline", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_text_strikethrough", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_pixel_snap", Hyprlang::INT{1});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_center_adjust_x", Hyprlang::INT{0});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:label_center_adjust_y", Hyprlang::INT{0});
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:label_font_family", "label font family", "sans"));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_font_bold", "label font bold", 0));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_font_italic", "label font italic", 0));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_text_underline", "label text underline", 0));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_text_strikethrough", "label text strikethrough", 0));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_pixel_snap", "label pixel snap", 1));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_center_adjust_x", "label center adjust x", 0));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_center_adjust_y", "label center adjust y", 0));
     // gaps
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:gaps_out", Hyprlang::INT{0});
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gaps_out", "outer gaps", 0));
     // Deprecated: use border_color_* instead (supports both solid and gradient)
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:border_grad_current", Hyprlang::STRING{""});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:border_grad_focus", Hyprlang::STRING{""});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:border_grad_hover", Hyprlang::STRING{""});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:keynav_wrap_h", Hyprlang::INT{1});
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:keynav_wrap_v", Hyprlang::INT{1});
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_grad_current", "current border gradient", ""));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_grad_focus", "focus border gradient", ""));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_grad_hover", "hover border gradient", ""));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:keynav_wrap_h", "key navigation horizontal wrap", 1));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:keynav_wrap_v", "key navigation vertical wrap", 1));
     // default off: spatial moves by default
-    HyprlandAPI::addConfigValue(PHANDLE, "plugin:hyprexpo:keynav_reading_order", Hyprlang::INT{0});
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:keynav_reading_order", "key navigation reading order", 0));
 
     HyprlandAPI::reloadConfig();
 

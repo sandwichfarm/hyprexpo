@@ -1,5 +1,6 @@
 #include "overview.hpp"
 #include <any>
+#include <map>
 #include <hyprland/src/event/EventBus.hpp>
 #define private   public
 #define protected public
@@ -24,6 +25,135 @@
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <pango/pangocairo.h>
 #include <cmath>
+
+namespace CompatHyprlandAPI {
+struct SConfigValueCompat {
+    Config::INTEGER integer = 0;
+    Config::INTEGER* integerPtr = &integer;
+    Config::FLOAT floating = 0;
+    Config::FLOAT* floatingPtr = &floating;
+    Config::STRING string;
+    void* ptr = nullptr;
+
+    void* getDataStaticPtr() {
+        return ptr;
+    }
+};
+
+static bool isStringConfig(const std::string& name) {
+    static const std::map<std::string, bool> STRING_CONFIGS = {
+        {"plugin:hyprexpo:workspace_method", true},
+        {"plugin:hyprexpo:border_color", true},
+        {"plugin:hyprexpo:border_color_current", true},
+        {"plugin:hyprexpo:border_color_focus", true},
+        {"plugin:hyprexpo:border_color_hover", true},
+        {"plugin:hyprexpo:border_style", true},
+        {"plugin:hyprexpo:label_text_mode", true},
+        {"plugin:hyprexpo:label_token_map", true},
+        {"plugin:hyprexpo:label_position", true},
+        {"plugin:hyprexpo:label_show", true},
+        {"plugin:hyprexpo:label_bg_shape", true},
+        {"plugin:hyprexpo:label_font_family", true},
+        {"plugin:hyprexpo:border_grad_current", true},
+        {"plugin:hyprexpo:border_grad_focus", true},
+        {"plugin:hyprexpo:border_grad_hover", true},
+    };
+
+    return STRING_CONFIGS.contains(name);
+}
+
+static bool isFloatConfig(const std::string& name) {
+    return name == "plugin:hyprexpo:tile_rounding_power" ||
+           name == "plugin:hyprexpo:label_scale_hover" ||
+           name == "plugin:hyprexpo:label_scale_focus";
+}
+
+static Config::STRING stringDefault(const std::string& name) {
+    static const std::map<std::string, Config::STRING> DEFAULTS = {
+        {"plugin:hyprexpo:workspace_method", "center current"},
+        {"plugin:hyprexpo:border_color", ""},
+        {"plugin:hyprexpo:border_color_current", "rgb(66ccff)"},
+        {"plugin:hyprexpo:border_color_focus", "rgb(ffcc66)"},
+        {"plugin:hyprexpo:border_color_hover", "rgb(aabbcc)"},
+        {"plugin:hyprexpo:border_style", "simple"},
+        {"plugin:hyprexpo:label_text_mode", "token"},
+        {"plugin:hyprexpo:label_token_map", ""},
+        {"plugin:hyprexpo:label_position", "center"},
+        {"plugin:hyprexpo:label_show", "always"},
+        {"plugin:hyprexpo:label_bg_shape", "circle"},
+        {"plugin:hyprexpo:label_font_family", "sans"},
+        {"plugin:hyprexpo:border_grad_current", ""},
+        {"plugin:hyprexpo:border_grad_focus", ""},
+        {"plugin:hyprexpo:border_grad_hover", ""},
+    };
+
+    if (const auto it = DEFAULTS.find(name); it != DEFAULTS.end())
+        return it->second;
+    return "";
+}
+
+static Config::FLOAT floatDefault(const std::string& name) {
+    if (name == "plugin:hyprexpo:tile_rounding_power")
+        return 2.0F;
+    if (name == "plugin:hyprexpo:label_scale_hover" ||
+        name == "plugin:hyprexpo:label_scale_focus")
+        return 1.0F;
+    return 0.0F;
+}
+
+static Config::INTEGER intDefault(const std::string& name) {
+    static const std::map<std::string, Config::INTEGER> DEFAULTS = {
+        {"plugin:hyprexpo:columns", 3}, {"plugin:hyprexpo:gaps_in", 5},
+        {"plugin:hyprexpo:bg_col", 0xFF111111}, {"plugin:hyprexpo:gesture_distance", 200},
+        {"plugin:hyprexpo:keynav_enable", 1}, {"plugin:hyprexpo:border_width", 2},
+        {"plugin:hyprexpo:label_enable", 1}, {"plugin:hyprexpo:label_color", 0xFFFFFFFF},
+        {"plugin:hyprexpo:label_font_size", 16}, {"plugin:hyprexpo:label_color_default", 0xFFFFFFFF},
+        {"plugin:hyprexpo:label_color_hover", 0xFFEEEEEE}, {"plugin:hyprexpo:label_color_focus", 0xFFFFCC66},
+        {"plugin:hyprexpo:label_color_current", 0xFF66CCFF}, {"plugin:hyprexpo:label_bg_enable", 1},
+        {"plugin:hyprexpo:label_bg_color", 0x88000000}, {"plugin:hyprexpo:label_bg_rounding", 8},
+        {"plugin:hyprexpo:label_padding", 8}, {"plugin:hyprexpo:label_pixel_snap", 1},
+        {"plugin:hyprexpo:keynav_wrap_h", 1}, {"plugin:hyprexpo:keynav_wrap_v", 1},
+    };
+
+    if (const auto it = DEFAULTS.find(name); it != DEFAULTS.end())
+        return it->second;
+    return 0;
+}
+
+static SConfigValueCompat* getConfigValue(HANDLE, const std::string& name) {
+    static std::map<std::string, SConfigValueCompat> VALUES;
+    auto& compat = VALUES[name];
+
+    if (isStringConfig(name)) {
+        compat.string = stringDefault(name);
+        compat.ptr = &compat.string;
+    } else if (isFloatConfig(name)) {
+        compat.floating = floatDefault(name);
+        compat.floatingPtr = &compat.floating;
+        compat.ptr = &compat.floatingPtr;
+    } else {
+        compat.integer = intDefault(name);
+        compat.integerPtr = &compat.integer;
+        compat.ptr = &compat.integerPtr;
+    }
+
+    const auto VALUE = Config::mgr()->getConfigValue(name);
+    if (VALUE.dataptr && VALUE.type && *VALUE.type == typeid(Config::STRING)) {
+        auto* ptr = reinterpret_cast<Config::STRING* const*>(VALUE.dataptr);
+        compat.ptr = ptr && *ptr ? *ptr : &compat.string;
+        return &compat;
+    }
+
+    if (VALUE.dataptr) {
+        compat.ptr = const_cast<void*>(static_cast<const void*>(VALUE.dataptr));
+        return &compat;
+    }
+
+    return &compat;
+}
+}
+
+#define HyprlandAPI CompatHyprlandAPI
 
 static void clearWithColor(const CHyprColor& color) {
     glClearColor(color.r, color.g, color.b, color.a);
