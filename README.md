@@ -1,5 +1,6 @@
 # HyprExpo+
 HyprExpo+ is a fork of HyprExpo that adds additional functionality. The original `hyprland-plugins` copy has since been removed, but the last upstream version is still available in [`hyprwm/hyprland-plugins` pull request #507](https://github.com/hyprwm/hyprland-plugins/pull/507/files#diff-dcf3e4cb819e592701c932f50137cc8d2a99a9348153788dca0e22f659ccaf2d). 
+
 https://github.com/user-attachments/assets/861baa26-46b6-4fa8-8d37-65cbb9ecbed4
 
 ## Install
