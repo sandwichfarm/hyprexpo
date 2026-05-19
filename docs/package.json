@@ -1,0 +1,13 @@
+{
+  "name": "hyprexpo-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "docs:build": "cd .. && docs/node_modules/.bin/vitepress build docs && node scripts/prepare-vitepress-directory-urls.mjs",
+    "docs:dev": "cd .. && docs/node_modules/.bin/vitepress dev docs",
+    "docs:preview": "cd .. && docs/node_modules/.bin/vitepress preview docs"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.4"
+  }
+}

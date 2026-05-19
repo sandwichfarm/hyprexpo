@@ -1,0 +1,93 @@
+name: Deploy Site to Bunny
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "docs/**"
+      - "site/**"
+      - "scripts/build-docs.sh"
+      - "scripts/build-site.sh"
+      - "scripts/prepare-vitepress-directory-urls.mjs"
+      - "scripts/verify-site-dist.sh"
+      - ".github/workflows/deploy-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      BUNNY_PUBLIC_BASE_URL: ${{ vars.BUNNY_PUBLIC_BASE_URL }}
+      BUNNY_PULL_ZONE_ID: ${{ secrets.BUNNY_PULL_ZONE_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            docs/package-lock.json
+            site/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci --prefix docs
+          npm ci --prefix site
+
+      - name: Build site and docs
+        run: ./scripts/build-site.sh
+
+      - name: Upload to Bunny Storage
+        uses: R-J-dev/bunny-deploy@v2.0.3
+        with:
+          access-key: ${{ secrets.BUNNY_API_KEY }}
+          directory-to-upload: "./dist"
+          storage-endpoint: "https://storage.bunnycdn.com"
+          storage-zone-name: ${{ secrets.BUNNY_STORAGE_ZONE }}
+          storage-zone-password: ${{ secrets.BUNNY_STORAGE_PASSWORD }}
+          concurrency: "50"
+          enable-delete-action: true
+          enable-purge-pull-zone: false
+          replication-timeout: "15000"
+
+      - name: Purge Bunny CDN cache
+        if: success()
+        env:
+          BUNNY_API_KEY: ${{ secrets.BUNNY_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${BUNNY_PUBLIC_BASE_URL:-}" ]; then
+            mapfile -d '' FILES < <(find dist -type f -print0)
+            for file in "${FILES[@]}"; do
+              rel="${file#dist/}"
+              url="${BUNNY_PUBLIC_BASE_URL%/}/${rel}"
+              echo "PURGE $url"
+              curl -sS -X POST -H "AccessKey: ${BUNNY_API_KEY}" -G \
+                --data-urlencode "url=$url" \
+                "https://api.bunny.net/purge" || true
+            done
+
+            curl -sS -X POST -H "AccessKey: ${BUNNY_API_KEY}" -G \
+              --data-urlencode "url=${BUNNY_PUBLIC_BASE_URL%/}/" \
+              "https://api.bunny.net/purge" || true
+            exit 0
+          fi
+
+          if [ -n "${BUNNY_PULL_ZONE_ID:-}" ]; then
+            curl -sS -X POST -H "AccessKey: ${BUNNY_API_KEY}" \
+              "https://api.bunny.net/pullzone/${BUNNY_PULL_ZONE_ID}/purgeCache" || true
+            exit 0
+          fi
+
+          echo "::warning::Set vars.BUNNY_PUBLIC_BASE_URL or secrets.BUNNY_PULL_ZONE_ID to purge Bunny CDN cache."

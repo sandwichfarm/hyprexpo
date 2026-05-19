@@ -1,5 +1,5 @@
-# HyprExpo+
-HyprExpo+ is a maintained fork of
+# HyprExpo
+HyprExpo is a maintained fork of
 [HyprExpo](https://github.com/hyprwm/hyprland-plugins/tree/main/hyprexpo)
 for current Hyprland plugin APIs. It provides an overview grid for workspaces,
 keyboard navigation, visible workspace/selection labels, per-monitor workspace
@@ -11,6 +11,21 @@ upstream version is still available in
 This fork is intended to remain independently maintained.
 
 https://github.com/user-attachments/assets/861baa26-46b6-4fa8-8d37-65cbb9ecbed4
+
+## Documentation and Site
+
+The VitePress documentation source lives in `docs/`; the public SPA source lives
+in `site/`. Build both static outputs into `dist/` with:
+
+```bash
+./scripts/build-site.sh
+```
+
+Preview the built output with:
+
+```bash
+./scripts/serve-site.sh
+```
 
 ## Install
 
@@ -89,7 +104,7 @@ hyprpm reload
 
 ### Nix
 
-Nix users should build HyprExpo+ through the Nix Hyprland plugin path instead of
+Nix users should build HyprExpo through the Nix Hyprland plugin path instead of
 mixing a `hyprpm` artifact into a Nix-managed Hyprland session. The repository
 contains `default.nix`, which uses `hyprlandPlugins.mkHyprlandPlugin` so the
 plugin follows the Hyprland input supplied by the caller.
@@ -195,7 +210,7 @@ Normal settings live under `plugin:hyprexpo:*`, either in the plugin block above
 or with fully qualified Hyprland config keys.
 
 Hyprland 0.55 deprecated the custom keyword API that older HyprExpo configs used.
-HyprExpo+ no longer registers `hyprexpo_gesture` or
+HyprExpo no longer registers `hyprexpo_gesture` or
 `hyprexpo_workspace_method`. Use `plugin:hyprexpo:workspace_method` for
 workspace placement and the Lua API for gestures.
 
@@ -339,7 +354,7 @@ dispatchers work once the plugin is loaded.
 
 ## Lua Config Support
 
-When Hyprland is using Lua config support, HyprExpo+ exposes functions under
+When Hyprland is using Lua config support, HyprExpo exposes functions under
 `hl.plugin.hyprexpo`:
 
 ```lua
@@ -494,12 +509,12 @@ plugin {
 
 ## Troubleshooting
 
-- Plugin load fails with an API or hash mismatch: rebuild HyprExpo+ against the
+- Plugin load fails with an API or hash mismatch: rebuild HyprExpo against the
   same Hyprland revision that is running, then reload the plugin.
 - Plugin load fails because dependencies are missing: install the build
   dependencies listed above and rebuild. `lua5.4`, `pangocairo`, and `xkbcommon`
   are linked by the current plugin.
-- Invalid `workspace_method` or border color values: HyprExpo+ logs the invalid
+- Invalid `workspace_method` or border color values: HyprExpo logs the invalid
   value and falls back safely. Use the formats shown in the sections above.
 - `columns` is outside the supported range: the runtime clamps it to `1..7` so
   pointer and keyboard selection stay in bounds.

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HyprExpo - Workspace Overview for Hyprland</title>
+    <meta
+      name="description"
+      content="A maintained Hyprland plugin for expose-style workspace overview, keyboard selection, labels, multi-monitor layouts, and Lua gestures."
+    />
+    <meta name="theme-color" content="#07090f" />
+    <meta property="og:title" content="HyprExpo" />
+    <meta
+      property="og:description"
+      content="Expose-style workspace overview for current Hyprland releases."
+    />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/svg+xml" href="./hyprexpo-mark.svg" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="site-header" aria-label="Primary">
+        <a class="brand" href="#top" aria-label="HyprExpo home">
+          <span class="brand-mark" aria-hidden="true">+</span>
+          <span>HyprExpo</span>
+        </a>
+        <nav class="site-nav">
+          <a href="./docs/">Docs</a>
+          <a href="https://github.com/sandwichfarm/hyprexpo-plus">GitHub</a>
+          <a href="#install">Install</a>
+        </nav>
+      </header>
+
+      <main id="top">
+        <section class="hero" aria-label="HyprExpo overview">
+          <video
+            class="hero-video"
+            src="https://github.com/user-attachments/assets/861baa26-46b6-4fa8-8d37-65cbb9ecbed4"
+            autoplay
+            muted
+            loop
+            playsinline
+            preload="metadata"
+          ></video>
+          <div class="hero-shade" aria-hidden="true"></div>
+          <div class="hero-grid" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <div class="hero-copy">
+            <p class="eyebrow">Hyprland workspace overview</p>
+            <h1>HyprExpo</h1>
+            <p class="lede">
+              Expose-style workspace selection with labels, keyboard movement,
+              multi-monitor placement, and Lua gestures for current Hyprland.
+            </p>
+            <div class="hero-actions" id="install">
+              <a class="button primary" href="./docs/getting-started/installation/">Install</a>
+              <a class="button secondary" href="./docs/">Read docs</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="install-strip" aria-label="Install command">
+          <div>
+            <p class="section-kicker">hyprpm</p>
+            <code>hyprpm add https://github.com/sandwichfarm/hyprexpo-plus</code>
+          </div>
+          <button class="copy-command" type="button" data-copy="hyprpm add https://github.com/sandwichfarm/hyprexpo-plus">
+            Copy
+          </button>
+        </section>
+
+        <section class="feature-band" aria-labelledby="features-title">
+          <div class="section-heading">
+            <p class="section-kicker">What it adds</p>
+            <h2 id="features-title">Overview control without compositor drama.</h2>
+          </div>
+          <div class="feature-grid">
+            <article>
+              <span class="tile-index">01</span>
+              <h3>Keyboard-first selection</h3>
+              <p>Move focus, confirm a workspace, or quick-select by visible index or token.</p>
+            </article>
+            <article>
+              <span class="tile-index">02</span>
+              <h3>Readable workspace labels</h3>
+              <p>Show current, hover, focus, and selection states with configurable labels and borders.</p>
+            </article>
+            <article>
+              <span class="tile-index">03</span>
+              <h3>Monitor-aware layout</h3>
+              <p>Place workspace ranges per monitor with global fallbacks for mixed setups.</p>
+            </article>
+            <article>
+              <span class="tile-index">04</span>
+              <h3>Lua gesture setup</h3>
+              <p>Register touchpad gestures through `hl.plugin.hyprexpo` instead of legacy keywords.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="workflow-band" aria-labelledby="workflow-title">
+          <div class="workspace-map" aria-hidden="true">
+            <div class="workspace current">current</div>
+            <div class="workspace focus">focus</div>
+            <div class="workspace">3</div>
+            <div class="workspace hover">hover</div>
+            <div class="workspace">5</div>
+            <div class="workspace">6</div>
+          </div>
+          <div class="workflow-copy">
+            <p class="section-kicker">Maintained fork</p>
+            <h2 id="workflow-title">Built for the moving Hyprland plugin API.</h2>
+            <p>
+              HyprExpo keeps the discontinued upstream idea usable while documenting
+              the exact install, config, compatibility, and smoke-test paths needed
+              for a compositor-loaded plugin.
+            </p>
+            <a class="inline-link" href="./docs/reference/compatibility/">Compatibility notes</a>
+          </div>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <span>MIT Licensed</span>
+        <a href="./docs/guides/runtime-smoke/">Runtime smoke checklist</a>
+        <a href="https://github.com/sandwichfarm/hyprexpo-plus">Source</a>
+      </footer>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

@@ -34,6 +34,13 @@
 # Editors
 .vscode/
 
+# Node/Vite docs and site output
+node_modules/
+docs/node_modules/
+docs/.vitepress/cache/
+site/node_modules/
+dist/
+
 # Nix
 result
 result-man
