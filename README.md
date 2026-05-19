@@ -1,14 +1,6 @@
 # HyprExpo
-HyprExpo is a maintained fork of
-[HyprExpo](https://github.com/hyprwm/hyprland-plugins/tree/main/hyprexpo)
-for current Hyprland plugin APIs. It provides an overview grid for workspaces,
-keyboard navigation, visible workspace/selection labels, per-monitor workspace
-placement, configurable borders, and Lua-configured swipe gestures.
 
-The original `hyprland-plugins` copy has since been removed, but the last
-upstream version is still available in
-[`hyprwm/hyprland-plugins` pull request #507](https://github.com/hyprwm/hyprland-plugins/pull/507/files#diff-dcf3e4cb819e592701c932f50137cc8d2a99a9348153788dca0e22f659ccaf2d).
-This fork is intended to remain independently maintained.
+Expose for HyprLand, the original HyprExpo fork [since long before it was retired](https://github.com/hyprwm/hyprland-plugins/pull/507#issuecomment-4433386463), born from a yearning for [substantially better functionality.](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
 
 https://github.com/user-attachments/assets/861baa26-46b6-4fa8-8d37-65cbb9ecbed4
 
