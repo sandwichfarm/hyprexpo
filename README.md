@@ -1,10 +1,26 @@
 # HyprExpo
 
-HyprExpo is a maintained Hyprland plugin for expose-style workspace overview with keyboard selection, labels, configurable gaps and borders, multi-monitor placement, and Lua gestures.
+HyprExpo is a maintained Hyprland plugin for expose-style workspace overview with keyboard selection, drag-drop window movement, labels, configurable gaps and borders, multi-monitor placement, and Lua gestures.
 
-Docs: [docs/index.md](docs/index.md)
+https://github.com/user-attachments/assets/861baa26-46b6-4fa8-8d37-65cbb9ecbed4
+
+Docs: [hyprexpo.lol/docs](https://hyprexpo.lol/docs)
 
 Announcement: [r/hyprland launch post](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
+
+## History
+
+HyprExpo continues the original expose-style workspace overview plugin from the
+Hyprland plugins ecosystem. After the upstream plugin was retired from the
+official plugin set, this fork kept the idea maintained for current Hyprland
+releases instead of leaving users on stale plugin APIs.
+
+The HyprExpo+ work also became the home for practical additions that made the
+overview more usable day to day: keyboard navigation, visible workspace labels,
+configurable gaps and borders, multi-monitor placement, and Lua gesture setup.
+See the [upstream retirement context](https://github.com/hyprwm/hyprland-plugins/pull/507#issuecomment-4433386463)
+and the [launch announcement](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
+for the project background.
 
 ## Install
 
@@ -120,15 +136,15 @@ submap = reset
 
 ## Next Steps
 
-- [Installation details](docs/getting-started/installation.md)
-- [Quick start](docs/getting-started/quick-start.md)
-- [All configuration options](docs/configuration/options.md)
-- [Labels and borders](docs/configuration/labels-borders.md)
-- [Keyboard navigation](docs/configuration/keyboard.md)
-- [Lua gestures](docs/guides/lua-gestures.md)
-- [Multi-monitor placement](docs/guides/multi-monitor.md)
-- [Migration from old keyword config](docs/guides/migration.md)
-- [Runtime smoke checklist](docs/guides/runtime-smoke.md)
-- [Compatibility and release provenance](docs/reference/compatibility.md)
-- [Dispatcher reference](docs/reference/dispatchers.md)
-- [Troubleshooting](docs/troubleshooting.md)
+- [Installation details](https://hyprexpo.lol/docs/getting-started/installation/)
+- [Quick start](https://hyprexpo.lol/docs/getting-started/quick-start/)
+- [All configuration options](https://hyprexpo.lol/docs/configuration/options/)
+- [Labels and borders](https://hyprexpo.lol/docs/configuration/labels-borders/)
+- [Keyboard navigation](https://hyprexpo.lol/docs/configuration/keyboard/)
+- [Lua gestures](https://hyprexpo.lol/docs/guides/lua-gestures/)
+- [Multi-monitor placement](https://hyprexpo.lol/docs/guides/multi-monitor/)
+- [Migration from old keyword config](https://hyprexpo.lol/docs/guides/migration/)
+- [Runtime smoke checklist](https://hyprexpo.lol/docs/guides/runtime-smoke/)
+- [Compatibility and release provenance](https://hyprexpo.lol/docs/reference/compatibility/)
+- [Dispatcher reference](https://hyprexpo.lol/docs/reference/dispatchers/)
+- [Troubleshooting](https://hyprexpo.lol/docs/troubleshooting/)

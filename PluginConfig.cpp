@@ -43,6 +43,16 @@ void registerHyprexpoConfigValues() {
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_color_hover", "hover border color", HyprexpoConfig::BORDER_COLOR_HOVER_DEFAULT));
     // Deprecated but supported for backwards compatibility
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_style", "border style", HyprexpoConfig::BORDER_STYLE_DEFAULT));     // ignored, auto-detected from format
+
+    // Drag/drop window movement styling. Empty border specs inherit the focused tile border.
+    addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:drag_drop_proxy_color", "drag/drop proxy color", HyprexpoConfig::DRAG_DROP_PROXY_COLOR_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:drag_drop_proxy_active_color", "drag/drop active proxy color", HyprexpoConfig::DRAG_DROP_PROXY_ACTIVE_COLOR_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:drag_drop_proxy_border_color", "drag/drop proxy border color", HyprexpoConfig::DRAG_DROP_PROXY_BORDER_COLOR_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:drag_drop_proxy_border_width", "drag/drop proxy border width", HyprexpoConfig::DRAG_DROP_PROXY_BORDER_WIDTH_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:drag_drop_proxy_rounding", "drag/drop proxy rounding", HyprexpoConfig::DRAG_DROP_PROXY_ROUNDING_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:drag_drop_source_border_color", "drag/drop source border color", HyprexpoConfig::DRAG_DROP_SOURCE_BORDER_COLOR_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:drag_drop_source_border_width", "drag/drop source border width", HyprexpoConfig::DRAG_DROP_SOURCE_BORDER_WIDTH_DEFAULT));
+
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_enable", "label enable", HyprexpoConfig::LABEL_ENABLE_DEFAULT));
     addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:label_color", "label color", HyprexpoConfig::LABEL_COLOR_DEFAULT_LEGACY));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_font_size", "label font size", HyprexpoConfig::LABEL_FONT_SIZE_DEFAULT));

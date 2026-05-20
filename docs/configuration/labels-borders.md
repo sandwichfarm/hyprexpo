@@ -19,6 +19,39 @@ HyprExpo can render workspace labels, separate selection labels, and distinct bo
 
 Deprecated fallback keys are still recognized for compatibility: `border_grad_current`, `border_grad_focus`, `border_grad_hover`, and `border_style`. New configs should use `border_color_*`.
 
+## Drag-Drop Window Styling
+
+Drag-drop window movement uses a translucent proxy under the pointer plus a
+source-workspace border while the move is active. By default those visuals keep
+the existing proxy colors and inherit the focused tile border; set the
+`drag_drop_*` keys when you want the window-moving feedback to match your
+theme.
+
+| key | type | description | default |
+| --- | --- | --- | --- |
+| `plugin:hyprexpo:drag_drop_proxy_color` | color | proxy fill before the drag crosses the move threshold | `0x24EDB342` |
+| `plugin:hyprexpo:drag_drop_proxy_active_color` | color | proxy fill while a drag/drop move is active | `0x3DEDB342` |
+| `plugin:hyprexpo:drag_drop_proxy_border_color` | string | proxy border, solid or gradient; empty inherits focus border | empty |
+| `plugin:hyprexpo:drag_drop_proxy_border_width` | int | proxy border width; `-1` inherits, `0` disables | `-1` |
+| `plugin:hyprexpo:drag_drop_proxy_rounding` | int | proxy corner radius; `-1` inherits automatic focused rounding | `-1` |
+| `plugin:hyprexpo:drag_drop_source_border_color` | string | source workspace border during active drag/drop movement | empty |
+| `plugin:hyprexpo:drag_drop_source_border_width` | int | source workspace border width; `-1` inherits, `0` disables | `-1` |
+
+Example:
+
+```ini
+plugin {
+    hyprexpo {
+        drag_drop_proxy_color = rgba(66ccff22)
+        drag_drop_proxy_active_color = rgba(66ccff44)
+        drag_drop_proxy_border_color = rgba(66ccffee) rgba(ffcc66ee) 45deg
+        drag_drop_source_border_color = rgb(ffcc66)
+        drag_drop_proxy_border_width = 3
+        drag_drop_proxy_rounding = 10
+    }
+}
+```
+
 ## Workspace Labels
 
 | key | type | description | default |
