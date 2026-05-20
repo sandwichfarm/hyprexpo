@@ -25,7 +25,10 @@ require_file dist/docs/configuration/options/index.html
 require_file dist/docs/guides/runtime-smoke/index.html
 require_file dist/docs/reference/compatibility/index.html
 
-require_grep "github.com/user-attachments/assets/861baa26-46b6-4fa8-8d37-65cbb9ecbed4" dist
+require_grep "hyprpm add https://github.com/sandwichfarm/hyprexpo" dist/index.html
+require_grep "reddit.com/r/hyprland/comments/1o30dsg" dist/index.html
+require_grep "github.com/sandwichfarm/hyprexpo" dist/index.html
+require_grep "github.com/user-attachments/assets/861baa26-46b6-4fa8-8d37-65cbb9ecbed4" dist/index.html
 require_grep "plugin:hyprexpo:show_cursor" dist/docs
 require_grep "hl.plugin.hyprexpo" dist/docs
 require_grep "gesture" dist/docs/guides/lua-gestures.html
