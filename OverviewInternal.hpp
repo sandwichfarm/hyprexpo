@@ -48,6 +48,7 @@ SWorkspacePreviewState applyWorkspacePreviewState(const PHLWORKSPACE& workspace)
 void restoreWorkspacePreviewState(const PHLWORKSPACE& workspace, const SWorkspacePreviewState& state);
 std::vector<std::pair<PHLWORKSPACE, SWorkspacePreviewState>> applyExclusiveWorkspacePreviewState(const PHLWORKSPACE& workspace);
 void restoreWorkspacePreviewStates(const std::vector<std::pair<PHLWORKSPACE, SWorkspacePreviewState>>& states);
+void normalizeMonitorWorkspaceRenderState(PHLMONITOR monitor);
 
 bool windowVisibleOnWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace);
 void settleWorkspaceMoveAnimation(const PHLWINDOW& window);

@@ -416,6 +416,27 @@ void restoreWorkspacePreviewStates(const std::vector<std::pair<PHLWORKSPACE, SWo
         restoreWorkspacePreviewState(workspace, state);
 }
 
+void normalizeMonitorWorkspaceRenderState(PHLMONITOR monitor) {
+    if (!monitor || !monitor->m_activeWorkspace)
+        return;
+
+    for (const auto& workspaceRef : g_pCompositor->getWorkspaces()) {
+        const auto workspace = workspaceRef.lock();
+        if (!workspace || workspace->m_monitor != monitor || workspace->m_isSpecialWorkspace)
+            continue;
+
+        const bool active = workspace == monitor->m_activeWorkspace;
+        workspace->m_visible        = active;
+        workspace->m_forceRendering = false;
+        workspace->m_alpha->resetAllCallbacks();
+        workspace->m_renderOffset->resetAllCallbacks();
+        workspace->m_alpha->setValueAndWarp(active ? 1.F : 0.F);
+        *workspace->m_alpha = active ? 1.F : 0.F;
+        workspace->m_renderOffset->setValueAndWarp(Vector2D{});
+        *workspace->m_renderOffset = Vector2D{};
+    }
+}
+
 bool windowVisibleOnWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace) {
     return window && workspace && window->m_workspace == workspace && window->m_isMapped && !window->isHidden() && !window->m_pinned;
 }
@@ -573,8 +594,10 @@ COverview::~COverview() {
     images.clear(); // otherwise we get a vram leak
     Cursor::overrideController->unsetOverride(Cursor::CURSOR_OVERRIDE_UNKNOWN);
     ensureOverviewCursorVisible(false, true);
-    if (pMonitor)
+    if (pMonitor) {
+        normalizeMonitorWorkspaceRenderState(pMonitor.lock());
         pMonitor->m_blurFBDirty = true;
+    }
     resetSubmapIfNeeded();
 }
 
