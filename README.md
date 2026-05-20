@@ -2,9 +2,7 @@
 
 HyprExpo is a maintained Hyprland plugin for expose-style workspace overview with keyboard selection, drag-drop window movement, labels, configurable gaps and borders, multi-monitor placement, and Lua gestures.
 
-https://github.com/user-attachments/assets/861baa26-46b6-4fa8-8d37-65cbb9ecbed4
-
-Docs: [hyprexpo.lol/docs](https://hyprexpo.lol/docs)
+Docs: [docs/index.md](docs/index.md)
 
 Announcement: [r/hyprland launch post](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
 
