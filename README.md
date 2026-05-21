@@ -2,21 +2,18 @@
 
 HyprExpo is a maintained Hyprland plugin for expose-style workspace overview with keyboard selection, drag-drop window movement, labels, configurable gaps and borders, multi-monitor placement, and Lua gestures.
 
-Docs: [docs/index.md](docs/index.md)
+If you experience any bugs, you are encouraged to [open an issue](https://github.com/sandwichfarm/hyprexpo/issues/new). Information I can use to reproduce a bug is appreciated. 
 
-Announcement: [r/hyprland launch post](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
+[Docs (markdown)](docs/index.md) - [Docs (website)](http://hyprexpo.lol/docs/index.md) - [Announcement Post](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
 
 ## History
 
-HyprExpo continues the original expose-style workspace overview plugin from the
-Hyprland plugins ecosystem. After the upstream plugin was retired from the
-official plugin set, this fork kept the idea maintained for current Hyprland
-releases instead of leaving users on stale plugin APIs.
+HyprExpo continues the original expose-style workspace overview plugin from the Hyprland plugins ecosystem. After [the upstream plugin was retired](https://github.com/hyprwm/hyprland-plugins/pull/507#issuecomment-4433386463) from official plugins, this fork signaled contiuation and intends to chase Hyprland releases.
 
-Born from a PR to the old official HyprExpo and formerly known as HyperExpo+ (`hyprexpo-plus`), has become the home for practical additions that made the
+Born from [a PR to the old official HyprExpo](https://github.com/hyprwm/hyprland-plugins/pull/507) and formerly known as HyperExpo+ (`hyprexpo-plus`), has become the home for practical additions that made the
 overview more usable day to day: keyboard navigation, visible workspace labels, configurable gaps and borders, multi-monitor placement, and Lua gesture setup.
-See the [upstream retirement context](https://github.com/hyprwm/hyprland-plugins/pull/507#issuecomment-4433386463)
-and the [launch announcement](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
+See the [upstream retirement context](https://github.com/hyprwm/hyprland-plugins/pull/663)
+and the [original launch announcement of this plugin](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
 for the project's well established background.
 
 ## Related
