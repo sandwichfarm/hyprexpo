@@ -12,6 +12,28 @@ hl.plugin.hyprexpo.kb_selectn(1)
 hl.plugin.hyprexpo.kb_select("1")
 ```
 
+## Keyboard Submap
+
+Lua configs define submaps with Hyprland's Lua API. If you want modifierless
+navigation while the overview is open, define the `hyprexpo` submap in
+`hyprland.lua`:
+
+```lua
+hl.define_submap("hyprexpo", function()
+    hl.bind("h",      function() hl.plugin.hyprexpo.kb_focus("left") end)
+    hl.bind("l",      function() hl.plugin.hyprexpo.kb_focus("right") end)
+    hl.bind("k",      function() hl.plugin.hyprexpo.kb_focus("up") end)
+    hl.bind("j",      function() hl.plugin.hyprexpo.kb_focus("down") end)
+    hl.bind("return", function() hl.plugin.hyprexpo.kb_confirm() end)
+    hl.bind("escape", function() hl.plugin.hyprexpo.expo("cancel") end)
+end)
+```
+
+HyprExpo still enters the submap named `hyprexpo` automatically when
+`plugin:hyprexpo:keynav_enable` is enabled. The important part for Lua users is
+that the submap's binds are registered with `hl.define_submap`, not with a
+hyprlang `submap = hyprexpo` block.
+
 ## Gesture Setup
 
 Gestures are configured from Lua:

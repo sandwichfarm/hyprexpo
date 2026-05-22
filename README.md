@@ -134,6 +134,20 @@ submap = hyprexpo
 submap = reset
 ```
 
+For `hyprland.lua`, define the same active submap in Lua instead of adding a
+`submap = hyprexpo` block to `hyprland.conf`:
+
+```lua
+hl.define_submap("hyprexpo", function()
+    hl.bind("h",      function() hl.plugin.hyprexpo.kb_focus("left") end)
+    hl.bind("l",      function() hl.plugin.hyprexpo.kb_focus("right") end)
+    hl.bind("k",      function() hl.plugin.hyprexpo.kb_focus("up") end)
+    hl.bind("j",      function() hl.plugin.hyprexpo.kb_focus("down") end)
+    hl.bind("return", function() hl.plugin.hyprexpo.kb_confirm() end)
+    hl.bind("escape", function() hl.plugin.hyprexpo.expo("cancel") end)
+end)
+```
+
 ## Next Steps
 
 - [Installation details](https://hyprexpo.lol/docs/getting-started/installation/)

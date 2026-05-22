@@ -55,6 +55,19 @@ submap = hyprexpo
 submap = reset
 ```
 
+If your active config is `hyprland.lua`, define the submap with Lua:
+
+```lua
+hl.define_submap("hyprexpo", function()
+    hl.bind("left",   function() hl.plugin.hyprexpo.kb_focus("left") end)
+    hl.bind("right",  function() hl.plugin.hyprexpo.kb_focus("right") end)
+    hl.bind("up",     function() hl.plugin.hyprexpo.kb_focus("up") end)
+    hl.bind("down",   function() hl.plugin.hyprexpo.kb_focus("down") end)
+    hl.bind("return", function() hl.plugin.hyprexpo.kb_confirm() end)
+    hl.bind("escape", function() hl.plugin.hyprexpo.expo("cancel") end)
+end)
+```
+
 Next:
 
 - [Tune labels and borders](../configuration/labels-borders)
