@@ -65,10 +65,11 @@ bool COverview::selectVisibleIndex(size_t index) {
 }
 
 void COverview::updateHoveredFromMouse() {
-    if (!pMonitor)
+    const auto MON = pMonitor.lock();
+    if (!MON)
         return;
 
-    const int newHoveredID = Hyprexpo::tileIndexFromPoint(lastMousePosLocal.x, lastMousePosLocal.y, pMonitor->m_size.x, pMonitor->m_size.y, SIDE_LENGTH);
+    const int newHoveredID = Hyprexpo::tileIndexFromPoint(lastMousePosLocal.x, lastMousePosLocal.y, MON->m_size.x, MON->m_size.y, SIDE_LENGTH);
     if (newHoveredID == hoveredID)
         return;
 
@@ -124,13 +125,17 @@ int COverview::tileForVisibleIndex(int vIdx) const {
 }
 
 Vector2D COverview::tilePointToWorkspacePoint(int id, const Vector2D& localPoint) const {
-    const Vector2D tileSize = pMonitor->m_size / SIDE_LENGTH;
+    const auto MON = pMonitor.lock();
+    if (!MON)
+        return {};
+
+    const Vector2D tileSize = MON->m_size / SIDE_LENGTH;
     const Vector2D tilePos  = tileSize * Vector2D{id % SIDE_LENGTH, id / SIDE_LENGTH};
     const Vector2D inTile   = localPoint - tilePos;
 
-    return pMonitor->m_position + Vector2D{
-        std::clamp(inTile.x / tileSize.x, 0.0, 1.0) * pMonitor->m_size.x,
-        std::clamp(inTile.y / tileSize.y, 0.0, 1.0) * pMonitor->m_size.y,
+    return MON->m_position + Vector2D{
+        std::clamp(inTile.x / tileSize.x, 0.0, 1.0) * MON->m_size.x,
+        std::clamp(inTile.y / tileSize.y, 0.0, 1.0) * MON->m_size.y,
     };
 }
 
@@ -193,13 +198,17 @@ PHLWORKSPACE COverview::ensureWorkspaceForTile(int id) {
     if (!isTileValid(id))
         return nullptr;
 
+    const auto MON = pMonitor.lock();
+    if (!MON)
+        return nullptr;
+
     auto& image = images[id];
     if (image.pWorkspace)
         return image.pWorkspace;
 
     auto workspace = g_pCompositor->getWorkspaceByID(image.workspaceID);
     if (!workspace)
-        workspace = g_pCompositor->createNewWorkspace(image.workspaceID, pMonitor->m_id, std::to_string(image.workspaceID), false);
+        workspace = g_pCompositor->createNewWorkspace(image.workspaceID, MON->m_id, std::to_string(image.workspaceID), false);
 
     image.pWorkspace = workspace;
     return workspace;
@@ -523,6 +532,12 @@ void COverview::resetSwipe() {
 void COverview::onSwipeUpdate(double delta) {
     m_isSwiping = true;
 
+    const auto MON = pMonitor.lock();
+    if (!MON) {
+        m_isSwiping = false;
+        return;
+    }
+
     if (swipeWasCommenced)
         return;
 
@@ -532,13 +547,13 @@ void COverview::onSwipeUpdate(double delta) {
     const float         PERC               = closing ? std::clamp(delta / distance, 0.0, 1.0) : 1.0 - std::clamp(delta / distance, 0.0, 1.0);
     const auto          WORKSPACE_FOCUS_ID = closing && closeOnID != -1 ? closeOnID : openedID;
 
-    Vector2D            tileSize = (pMonitor->m_size / SIDE_LENGTH);
+    Vector2D            tileSize = (MON->m_size / SIDE_LENGTH);
 
-    const auto          SIZEMAX = pMonitor->m_size * pMonitor->m_size / tileSize;
-    const auto          POSMAX  = (-((pMonitor->m_size / (double)SIDE_LENGTH) * Vector2D{WORKSPACE_FOCUS_ID % SIDE_LENGTH, WORKSPACE_FOCUS_ID / SIDE_LENGTH}) * pMonitor->m_scale) *
-        (pMonitor->m_size / tileSize);
+    const auto          SIZEMAX = MON->m_size * MON->m_size / tileSize;
+    const auto          POSMAX  = (-((MON->m_size / (double)SIDE_LENGTH) * Vector2D{WORKSPACE_FOCUS_ID % SIDE_LENGTH, WORKSPACE_FOCUS_ID / SIDE_LENGTH}) * MON->m_scale) *
+        (MON->m_size / tileSize);
 
-    const auto SIZEMIN = pMonitor->m_size;
+    const auto SIZEMIN = MON->m_size;
     const auto POSMIN  = Vector2D{0, 0};
 
     size->setValueAndWarp(lerp(SIZEMIN, SIZEMAX, PERC));
@@ -546,14 +561,18 @@ void COverview::onSwipeUpdate(double delta) {
 }
 
 void COverview::onSwipeEnd() {
-    const auto SIZEMIN = pMonitor->m_size;
-    const auto SIZEMAX = pMonitor->m_size * pMonitor->m_size / (pMonitor->m_size / SIDE_LENGTH);
+    const auto MON = pMonitor.lock();
+    if (!MON)
+        return;
+
+    const auto SIZEMIN = MON->m_size;
+    const auto SIZEMAX = MON->m_size * MON->m_size / (MON->m_size / SIDE_LENGTH);
     const auto PERC    = (size->value() - SIZEMIN).x / (SIZEMAX - SIZEMIN).x;
     if (PERC > 0.5) {
         close();
         return;
     }
-    *size = pMonitor->m_size;
+    *size = MON->m_size;
     *pos  = {0, 0};
 
     size->setCallbackOnEnd([this](WP<Hyprutils::Animation::CBaseAnimatedVariable> thisptr) { redrawAll(true); });

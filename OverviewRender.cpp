@@ -21,10 +21,11 @@
 #include <vector>
 
 void COverview::redrawID(int id, bool forcelowres) {
-    if (!pMonitor)
+    const auto MON = pMonitor.lock();
+    if (!MON)
         return;
 
-    if (pMonitor->m_activeWorkspace != startedOn && !closing) {
+    if (MON->m_activeWorkspace != startedOn && !closing) {
         // likely user changed.
         onWorkspaceChange();
     }
@@ -36,85 +37,85 @@ void COverview::redrawID(int id, bool forcelowres) {
 
     id = std::clamp(id, 0, SIDE_LENGTH * SIDE_LENGTH - 1);
 
-    Vector2D tileSize       = pMonitor->m_size / SIDE_LENGTH;
-    Vector2D tileRenderSize = (pMonitor->m_size - Vector2D{GAP_WIDTH, GAP_WIDTH} * (SIDE_LENGTH - 1)) / SIDE_LENGTH;
+    Vector2D tileSize       = MON->m_size / SIDE_LENGTH;
+    Vector2D tileRenderSize = (MON->m_size - Vector2D{GAP_WIDTH, GAP_WIDTH} * (SIDE_LENGTH - 1)) / SIDE_LENGTH;
     CBox     monbox{0, 0, tileSize.x * 2, tileSize.y * 2};
 
-    if (!forcelowres && (size->value() != pMonitor->m_size || closing))
-        monbox = {{0, 0}, pMonitor->m_pixelSize};
+    if (!forcelowres && (size->value() != MON->m_size || closing))
+        monbox = {{0, 0}, MON->m_pixelSize};
 
     if (!ENABLE_LOWRES)
-        monbox = {{0, 0}, pMonitor->m_pixelSize};
+        monbox = {{0, 0}, MON->m_pixelSize};
 
-    const auto savedTransform       = pMonitor->m_transform;
-    const auto savedTransformedSize = pMonitor->m_transformedSize;
-    const auto savedPixelSize       = pMonitor->m_pixelSize;
+    const auto savedTransform       = MON->m_transform;
+    const auto savedTransformedSize = MON->m_transformedSize;
+    const auto savedPixelSize       = MON->m_pixelSize;
 
     // Fix for rotated monitors: swap dimensions to match logical orientation
     if (isTransformRotated(savedTransform)) {
         monbox = {{0, 0}, {monbox.h, monbox.w}};
 
         // Override monitor state to disable rotation
-        pMonitor->m_transform       = WL_OUTPUT_TRANSFORM_NORMAL;
-        pMonitor->m_pixelSize       = {monbox.w, monbox.h};
-        pMonitor->m_transformedSize = {monbox.w, monbox.h};
+        MON->m_transform       = WL_OUTPUT_TRANSFORM_NORMAL;
+        MON->m_pixelSize       = {monbox.w, monbox.h};
+        MON->m_transformedSize = {monbox.w, monbox.h};
     }
 
     auto& image = images[id];
 
-    ensureFramebuffer(image, monbox, framebufferFormatWithAlpha(pMonitor->m_output->state->state().drmFormat));
+    ensureFramebuffer(image, monbox, framebufferFormatWithAlpha(MON->m_output->state->state().drmFormat));
 
     CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
-    g_pHyprRenderer->beginRender(pMonitor.lock(), fakeDamage, Render::RENDER_MODE_FULL_FAKE, nullptr, image.fb);
+    g_pHyprRenderer->beginRender(MON, fakeDamage, Render::RENDER_MODE_FULL_FAKE, nullptr, image.fb);
 
     clearWithColor(CHyprColor{0, 0, 0, 1.0});
 
     const auto PWORKSPACE = image.pWorkspace ? image.pWorkspace : g_pCompositor->getWorkspaceByID(image.workspaceID);
     image.pWorkspace      = PWORKSPACE;
 
-    const auto   restoreWorkspace = pMonitor->m_activeWorkspace;
-    PHLWORKSPACE openSpecial      = pMonitor->m_activeSpecialWorkspace;
+    const auto   restoreWorkspace = MON->m_activeWorkspace;
+    PHLWORKSPACE openSpecial      = MON->m_activeSpecialWorkspace;
     if (openSpecial)
-        pMonitor->m_activeSpecialWorkspace.reset();
+        MON->m_activeSpecialWorkspace.reset();
 
     startedOn->m_visible = false;
 
     if (PWORKSPACE) {
-        const auto previousWS    = activateWorkspaceForPreview(pMonitor.lock(), PWORKSPACE);
+        const auto previousWS    = activateWorkspaceForPreview(MON, PWORKSPACE);
         const auto previewStates = applyExclusiveWorkspacePreviewState(PWORKSPACE);
         const auto windowState   = PWORKSPACE == startedOn ? std::vector<SWindowPreviewState>{} : applyWorkspaceWindowGoalState(PWORKSPACE);
 
         if (PWORKSPACE == startedOn)
-            pMonitor->m_activeSpecialWorkspace = openSpecial;
+            MON->m_activeSpecialWorkspace = openSpecial;
 
         {
             CPinnedWindowPreviewGuard pinnedWindowPreviewGuard{showPinnedWindowsInPreview()};
-            g_pHyprRenderer->renderWorkspace(pMonitor.lock(), PWORKSPACE, Time::steadyNow(), monbox);
+            g_pHyprRenderer->renderWorkspace(MON, PWORKSPACE, Time::steadyNow(), monbox);
         }
 
         restoreWorkspaceWindowGoalState(windowState);
         restoreWorkspacePreviewStates(previewStates);
-        restoreActiveWorkspaceAfterPreview(pMonitor.lock(), previousWS);
+        restoreActiveWorkspaceAfterPreview(MON, previousWS);
 
         if (PWORKSPACE == startedOn)
-            pMonitor->m_activeSpecialWorkspace.reset();
+            MON->m_activeSpecialWorkspace.reset();
     } else {
         CPinnedWindowPreviewGuard pinnedWindowPreviewGuard{showPinnedWindowsInPreview()};
-        g_pHyprRenderer->renderWorkspace(pMonitor.lock(), PWORKSPACE, Time::steadyNow(), monbox);
+        g_pHyprRenderer->renderWorkspace(MON, PWORKSPACE, Time::steadyNow(), monbox);
     }
 
     g_pHyprRenderer->m_renderData.blockScreenShader = true;
     g_pHyprRenderer->endRender();
 
     // Restore the original monitor state after capture
-    pMonitor->m_transform       = savedTransform;
-    pMonitor->m_pixelSize       = savedPixelSize;
-    pMonitor->m_transformedSize = savedTransformedSize;
+    MON->m_transform       = savedTransform;
+    MON->m_pixelSize       = savedPixelSize;
+    MON->m_transformedSize = savedTransformedSize;
 
-    pMonitor->m_activeSpecialWorkspace = openSpecial;
+    MON->m_activeSpecialWorkspace = openSpecial;
 
     const auto activeWorkspace = restoreWorkspace ? restoreWorkspace : startedOn;
-    pMonitor->m_activeWorkspace = activeWorkspace;
+    MON->m_activeWorkspace = activeWorkspace;
     if (activeWorkspace) {
         activeWorkspace->m_visible = true;
         if (activeWorkspace == startedOn)
@@ -125,7 +126,8 @@ void COverview::redrawID(int id, bool forcelowres) {
 }
 
 void COverview::redrawAll(bool forcelowres) {
-    if (!pMonitor)
+    const auto MON = pMonitor.lock();
+    if (!MON)
         return;
 
     for (size_t i = 0; i < (size_t)(SIDE_LENGTH * SIDE_LENGTH); ++i) {
@@ -140,6 +142,10 @@ void COverview::damage() {
 }
 
 void COverview::onDamageReported() {
+    const auto MON = pMonitor.lock();
+    if (!MON)
+        return;
+
     damageDirty = true;
 
     Vector2D SIZE = size->value();
@@ -152,19 +158,26 @@ void COverview::onDamageReported() {
     // const auto& TILE           = images[std::clamp(openedID, 0, SIDE_LENGTH * SIDE_LENGTH)];
     CBox texbox = CBox{OUTER + (openedID % SIDE_LENGTH) * tileRenderSize.x + (openedID % SIDE_LENGTH) * GAPSIZE,
                        OUTER + (openedID / SIDE_LENGTH) * tileRenderSize.y + (openedID / SIDE_LENGTH) * GAPSIZE, tileRenderSize.x, tileRenderSize.y}
-                      .translate(pMonitor->m_position);
+                      .translate(MON->m_position);
 
     damage();
 
     blockDamageReporting = true;
     g_pHyprRenderer->damageBox(texbox);
     blockDamageReporting = false;
-    g_pCompositor->scheduleFrameForMonitor(pMonitor.lock());
+    g_pCompositor->scheduleFrameForMonitor(MON);
 }
 
 void COverview::close(bool switchToSelection) {
     if (closing)
         return;
+
+    const auto MON = pMonitor.lock();
+    if (!MON) {
+        closing = true;
+        g_pOverview.reset();
+        return;
+    }
 
     resetSubmapIfNeeded();
 
@@ -173,10 +186,10 @@ void COverview::close(bool switchToSelection) {
     const int   SAFEID = std::clamp(ID, 0, SIDE_LENGTH * SIDE_LENGTH - 1);
     const auto& TILE   = images[SAFEID];
 
-    Vector2D    tileSize = (pMonitor->m_size / SIDE_LENGTH);
+    Vector2D    tileSize = (MON->m_size / SIDE_LENGTH);
 
-    *size = pMonitor->m_size * pMonitor->m_size / tileSize;
-    *pos  = (-((pMonitor->m_size / (double)SIDE_LENGTH) * Vector2D{SAFEID % SIDE_LENGTH, SAFEID / SIDE_LENGTH}) * pMonitor->m_scale) * (pMonitor->m_size / tileSize);
+    *size = MON->m_size * MON->m_size / tileSize;
+    *pos  = (-((MON->m_size / (double)SIDE_LENGTH) * Vector2D{SAFEID % SIDE_LENGTH, SAFEID / SIDE_LENGTH}) * MON->m_scale) * (MON->m_size / tileSize);
 
     size->setCallbackOnEnd(removeOverview);
 
@@ -184,8 +197,8 @@ void COverview::close(bool switchToSelection) {
 
     redrawAll();
 
-    if (switchToSelection && TILE.workspaceID != pMonitor->activeWorkspaceID()) {
-        pMonitor->setSpecialWorkspace(0);
+    if (switchToSelection && TILE.workspaceID != MON->activeWorkspaceID()) {
+        MON->setSpecialWorkspace(0);
 
         // If this tile's workspace was WORKSPACE_INVALID, move to the next
         // empty workspace. This should only happen if skip_empty is on, in
@@ -194,16 +207,16 @@ void COverview::close(bool switchToSelection) {
 
         const auto NEWIDWS = g_pCompositor->getWorkspaceByID(NEWID);
 
-        const auto OLDWS = pMonitor->m_activeWorkspace;
+        const auto OLDWS = MON->m_activeWorkspace;
 
         const auto CHANGE = !NEWIDWS ? Config::Actions::changeWorkspace(std::to_string(NEWID)) : Config::Actions::changeWorkspace(NEWIDWS->getConfigName());
         if (!CHANGE)
             Log::logger->log(Log::ERR, "[hyprexpo] failed to change workspace: {}", CHANGE.error().message);
 
-        g_pDesktopAnimationManager->startAnimation(pMonitor->m_activeWorkspace, CDesktopAnimationManager::ANIMATION_TYPE_IN, true, true);
+        g_pDesktopAnimationManager->startAnimation(MON->m_activeWorkspace, CDesktopAnimationManager::ANIMATION_TYPE_IN, true, true);
         g_pDesktopAnimationManager->startAnimation(OLDWS, CDesktopAnimationManager::ANIMATION_TYPE_OUT, false, true);
 
-        startedOn = pMonitor->m_activeWorkspace;
+        startedOn = MON->m_activeWorkspace;
     }
 }
 
@@ -215,13 +228,17 @@ void COverview::onPreRender() {
 }
 
 void COverview::onWorkspaceChange() {
+    const auto MON = pMonitor.lock();
+    if (!MON)
+        return;
+
     if (valid(startedOn))
         g_pDesktopAnimationManager->startAnimation(startedOn, CDesktopAnimationManager::ANIMATION_TYPE_OUT, false, true);
     else
-        startedOn = pMonitor->m_activeWorkspace;
+        startedOn = MON->m_activeWorkspace;
 
     for (size_t i = 0; i < (size_t)(SIDE_LENGTH * SIDE_LENGTH); ++i) {
-        if (images[i].workspaceID != pMonitor->activeWorkspaceID())
+        if (images[i].workspaceID != MON->activeWorkspaceID())
             continue;
 
         openedID = i;
@@ -240,16 +257,24 @@ bool COverview::shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const 
     if (pMonitor != monitor)
         return false;
 
-    if (closing && (externalWorkspaceMoveDuringClose || (pMonitor && pMonitor->m_activeWorkspace != startedOn)))
+    const auto MON = pMonitor.lock();
+    if (!MON)
+        return false;
+
+    if (closing && (externalWorkspaceMoveDuringClose || MON->m_activeWorkspace != startedOn))
         return false;
 
     return true;
 }
 
 void COverview::fullRender() {
+    const auto MON = pMonitor.lock();
+    if (!MON)
+        return;
+
     const auto GAPSIZE = (closing ? (1.0 - size->getPercent()) : size->getPercent()) * GAP_WIDTH;
 
-    if (pMonitor->m_activeWorkspace != startedOn && !closing) {
+    if (MON->m_activeWorkspace != startedOn && !closing) {
         // likely user changed.
         onWorkspaceChange();
     }
@@ -270,10 +295,10 @@ void COverview::fullRender() {
     static auto* const* PTILEROUNDC = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_current")->getDataStaticPtr();
     static auto* const* PTILEROUNDH = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_hover")->getDataStaticPtr();
 
-    const int BASE_ROUND_SCALED   = std::max(0, (int)std::lround((double)**PTILEROUND * pMonitor->m_scale));
-    const int FOCUS_ROUND_SCALED  = **PTILEROUNDF >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDF * pMonitor->m_scale)) : BASE_ROUND_SCALED;
-    const int CURRENT_ROUND_SCALED= **PTILEROUNDC >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDC * pMonitor->m_scale)) : BASE_ROUND_SCALED;
-    const int HOVER_ROUND_SCALED  = **PTILEROUNDH >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDH * pMonitor->m_scale)) : BASE_ROUND_SCALED;
+    const int BASE_ROUND_SCALED   = std::max(0, (int)std::lround((double)**PTILEROUND * MON->m_scale));
+    const int FOCUS_ROUND_SCALED  = **PTILEROUNDF >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDF * MON->m_scale)) : BASE_ROUND_SCALED;
+    const int CURRENT_ROUND_SCALED= **PTILEROUNDC >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDC * MON->m_scale)) : BASE_ROUND_SCALED;
+    const int HOVER_ROUND_SCALED  = **PTILEROUNDH >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDH * MON->m_scale)) : BASE_ROUND_SCALED;
     const float ROUND_PWR         = **PTOUNDPWR;
 
     // (shadows moved to feature/shadows branch)
@@ -284,7 +309,7 @@ void COverview::fullRender() {
         for (size_t x = 0; x < (size_t)SIDE_LENGTH; ++x) {
             const int id = x + y * SIDE_LENGTH;
             CBox      texbox{OUTER + x * tileRenderSize.x + x * GAPSIZE, OUTER + y * tileRenderSize.y + y * GAPSIZE, tileRenderSize.x, tileRenderSize.y};
-            texbox.scale(pMonitor->m_scale).translate(pos->value());
+            texbox.scale(MON->m_scale).translate(pos->value());
             texbox.round();
             tileBoxes[id] = texbox;
             // per-tile rounding override for focus/current/hover (priority: focus > current > hover)
@@ -417,7 +442,7 @@ void COverview::fullRender() {
                 const int fsz = std::max(8, (int)std::round(baseF * scaleMul));
                 Vector2D  buf{std::max(32, fsz * 2), std::max(24, fsz + 8)};
                 sz  = buf;
-                tex = renderNumberTexture(label, col, buf, pMonitor->m_scale, fsz);
+                tex = renderNumberTexture(label, col, buf, MON->m_scale, fsz);
             }
 
             if (!tex || tex->m_texID == 0)
@@ -475,7 +500,7 @@ void COverview::fullRender() {
 
                 // compute tile box again for label placement
                 CBox tile{OUTER + x * tileRenderSize.x + x * GAPSIZE, OUTER + y * tileRenderSize.y + y * GAPSIZE, tileRenderSize.x, tileRenderSize.y};
-                tile.scale(pMonitor->m_scale).translate(pos->value());
+                tile.scale(MON->m_scale).translate(pos->value());
                 tile.round();
 
                 if ((**PLABELEN || showWorkspaceNumbers) && shouldShow(id)) {
@@ -532,7 +557,7 @@ void COverview::fullRender() {
         const int ix = id % SIDE_LENGTH;
         const int iy = id / SIDE_LENGTH;
         CBox       box{OUTER + ix * tileRenderSize.x + ix * GAPSIZE, OUTER + iy * tileRenderSize.y + iy * GAPSIZE, tileRenderSize.x, tileRenderSize.y};
-        box.scale(pMonitor->m_scale).translate(pos->value());
+        box.scale(MON->m_scale).translate(pos->value());
         box.round();
         const int BWIDTH = std::max(1, borderWidthOverride > 0 ? borderWidthOverride : (int)**PBWIDTH);
 
@@ -614,14 +639,14 @@ void COverview::fullRender() {
         const auto windowBox = dragWindow->getWindowMainSurfaceBox();
         if (windowBox.w > 0 && windowBox.h > 0) {
             const CBox&  sourceBox = tileBoxes[dragSourceID];
-            const double scaleX    = sourceBox.w / pMonitor->m_size.x;
-            const double scaleY    = sourceBox.h / pMonitor->m_size.y;
-            const double minW      = std::min(sourceBox.w, 24.0 * pMonitor->m_scale);
-            const double minH      = std::min(sourceBox.h, 24.0 * pMonitor->m_scale);
+            const double scaleX    = sourceBox.w / MON->m_size.x;
+            const double scaleY    = sourceBox.h / MON->m_size.y;
+            const double minW      = std::min(sourceBox.w, 24.0 * MON->m_scale);
+            const double minH      = std::min(sourceBox.h, 24.0 * MON->m_scale);
 
             CBox proxy{
-                lastMousePosLocal.x * pMonitor->m_scale - dragGrabOffset.x * scaleX,
-                lastMousePosLocal.y * pMonitor->m_scale - dragGrabOffset.y * scaleY,
+                lastMousePosLocal.x * MON->m_scale - dragGrabOffset.x * scaleX,
+                lastMousePosLocal.y * MON->m_scale - dragGrabOffset.y * scaleY,
                 std::clamp(windowBox.w * scaleX, minW, sourceBox.w),
                 std::clamp(windowBox.h * scaleY, minH, sourceBox.h),
             };
@@ -629,7 +654,7 @@ void COverview::fullRender() {
 
             const int maxProxyRound = std::max(0, (int)std::floor(std::min(proxy.w, proxy.h) / 2.0));
             const int autoRound     = std::min(RND_FOC, maxProxyRound);
-            const int round         = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * pMonitor->m_scale)), maxProxyRound) : autoRound;
+            const int round         = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * MON->m_scale)), maxProxyRound) : autoRound;
 
             if (dragMoved && hoveredID != -1 && hoveredID != dragSourceID && isTileValid(hoveredID)) {
                 const int tx = hoveredID % SIDE_LENGTH;
@@ -644,7 +669,7 @@ void COverview::fullRender() {
                     .targetValid     = true,
                     .pointerLocal    = {lastMousePosLocal.x, lastMousePosLocal.y},
                     .targetTileLocal = targetTileLocal,
-                    .workspaceSize   = {pMonitor->m_size.x, pMonitor->m_size.y},
+                    .workspaceSize   = {MON->m_size.x, MON->m_size.y},
                     .windowSize      = {windowBox.w, windowBox.h},
                     .grabOffset      = {dragGrabOffset.x, dragGrabOffset.y},
                 });
@@ -658,11 +683,11 @@ void COverview::fullRender() {
                     dropIntent.targetProxyLocal.w,
                     dropIntent.targetProxyLocal.h,
                 };
-                targetProxy.scale(pMonitor->m_scale).translate(pos->value());
+                targetProxy.scale(MON->m_scale).translate(pos->value());
                 targetProxy.round();
 
                 const int targetMaxRound = std::max(0, (int)std::floor(std::min(targetProxy.w, targetProxy.h) / 2.0));
-                const int targetRound    = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * pMonitor->m_scale)), targetMaxRound) :
+                const int targetRound    = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * MON->m_scale)), targetMaxRound) :
                                                                    std::min(RND_FOC, targetMaxRound);
                 Render::GL::g_pHyprOpenGL->renderRect(targetProxy, CHyprColor{(uint64_t)**PDRAGPROXYACTCOL}, {.round = targetRound, .roundingPower = ROUND_PWR});
 

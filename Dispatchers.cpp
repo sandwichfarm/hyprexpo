@@ -426,8 +426,11 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
         if (g_pOverview)
             g_pOverview->close();
         else {
+            const auto PMONITOR = g_pCompositor->getMonitorFromCursor();
+            if (!PMONITOR)
+                return {};
             renderingOverview = true;
-            g_pOverview       = std::make_unique<COverview>(g_pCompositor->getMonitorFromCursor()->m_activeWorkspace);
+            g_pOverview       = std::make_unique<COverview>(PMONITOR->m_activeWorkspace);
             renderingOverview = false;
         }
         return {};
@@ -448,8 +451,12 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
     if (g_pOverview)
         return {};
 
+    const auto PMONITOR = g_pCompositor->getMonitorFromCursor();
+    if (!PMONITOR)
+        return {};
+
     renderingOverview = true;
-    g_pOverview       = std::make_unique<COverview>(g_pCompositor->getMonitorFromCursor()->m_activeWorkspace);
+    g_pOverview       = std::make_unique<COverview>(PMONITOR->m_activeWorkspace);
     renderingOverview = false;
     return {};
 }

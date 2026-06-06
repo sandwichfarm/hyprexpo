@@ -646,9 +646,9 @@ COverview::~COverview() {
     images.clear(); // otherwise we get a vram leak
     Cursor::overrideController->unsetOverride(Cursor::CURSOR_OVERRIDE_UNKNOWN);
     ensureOverviewCursorVisible(false, true);
-    if (pMonitor) {
-        normalizeMonitorWorkspaceRenderState(pMonitor.lock());
-        pMonitor->m_blurFBDirty = true;
+    if (const auto MON = pMonitor.lock()) {
+        normalizeMonitorWorkspaceRenderState(MON);
+        MON->m_blurFBDirty = true;
     }
     resetSubmapIfNeeded();
 }
