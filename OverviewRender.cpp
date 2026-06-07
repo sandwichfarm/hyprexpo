@@ -191,8 +191,6 @@ void COverview::close(bool switchToSelection) {
     *size = MON->m_size * MON->m_size / tileSize;
     *pos  = (-((MON->m_size / (double)SIDE_LENGTH) * Vector2D{SAFEID % SIDE_LENGTH, SAFEID / SIDE_LENGTH}) * MON->m_scale) * (MON->m_size / tileSize);
 
-    size->setCallbackOnEnd(removeOverview);
-
     closing = true;
 
     redrawAll();
@@ -218,6 +216,8 @@ void COverview::close(bool switchToSelection) {
 
         startedOn = MON->m_activeWorkspace;
     }
+
+    size->setCallbackOnEnd(removeOverview);
 }
 
 void COverview::onPreRender() {

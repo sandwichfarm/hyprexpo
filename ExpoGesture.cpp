@@ -46,5 +46,6 @@ void CExpoGesture::end(const ITrackpadGesture::STrackpadGestureEnd& e) {
 
     g_pOverview->setClosing(false);
     g_pOverview->onSwipeEnd();
-    g_pOverview->resetSwipe();
+    if (g_pOverview)
+        g_pOverview->resetSwipe();
 }
