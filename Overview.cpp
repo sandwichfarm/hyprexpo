@@ -24,6 +24,7 @@
 #include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/managers/PointerManager.hpp>
+#include <hyprland/src/helpers/math/Math.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
 #include <hyprland/src/helpers/varlist/VarList.hpp>
 #include <hyprland/src/helpers/Format.hpp>
@@ -835,6 +836,10 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
 
         g_pHyprRenderer->m_renderData.blockScreenShader = true;
         g_pHyprRenderer->endRender();
+
+        // Capture normalizes monitor geometry; preserve the real output direction on the texture.
+        if (const auto texture = image.fb->getTexture(); texture)
+            texture->m_transform = Math::wlTransformToHyprutils(Math::invertTransform(savedTransform));
     }
 
     g_pHyprRenderer->m_bBlockSurfaceFeedback = false;
