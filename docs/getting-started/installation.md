@@ -20,6 +20,9 @@ Build dependencies are a C++23 compiler, `pkg-config`, Hyprland development head
 hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua5.4
 ```
 
+The build prefers the `lua5.4` pkg-config module and falls back to `lua` for
+distributions such as Fedora where `lua-devel` exposes the generic module name.
+
 Build with the Makefile:
 
 ```bash

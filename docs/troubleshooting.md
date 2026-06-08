@@ -6,7 +6,7 @@ Rebuild HyprExpo against the same Hyprland revision that is running, then reload
 
 ## Plugin Load Fails Because Dependencies Are Missing
 
-Install the build dependencies and rebuild. Current linked runtime dependencies include `lua5.4`, `pangocairo`, and `xkbcommon`.
+Install the build dependencies and rebuild. Current linked runtime dependencies include Lua (`lua5.4` or `lua` through pkg-config), `pangocairo`, and `xkbcommon`.
 
 ## Invalid Config Values
 

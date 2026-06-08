@@ -31,6 +31,10 @@ src = files(
 )
 
 hyprland = dependency('hyprland')
+lua_dep = dependency('lua5.4', required: false)
+if not lua_dep.found()
+  lua_dep = dependency('lua')
+endif
 
 shared_module(meson.project_name(), src,
   dependencies: [
@@ -42,7 +46,7 @@ shared_module(meson.project_name(), src,
     dependency('libudev'),
     dependency('wayland-server'),
     dependency('xkbcommon'),
-    dependency('lua5.4'),
+    lua_dep,
   ],
   install: true,
 )

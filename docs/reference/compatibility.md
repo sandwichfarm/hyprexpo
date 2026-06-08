@@ -8,7 +8,7 @@ Release builds attach `release-provenance.txt` next to `hyprexpo.so`. That file 
 
 - `hyprctl version`
 - `pkg-config --modversion hyprland`
-- `pkg-config --modversion lua5.4`
+- `pkg-config --modversion lua5.4 || pkg-config --modversion lua`
 - compiler version
 - `ldd -r hyprexpo.so`
 
