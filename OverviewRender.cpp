@@ -136,8 +136,12 @@ void COverview::redrawAll(bool forcelowres) {
 }
 
 void COverview::damage() {
+    const auto MON = pMonitor.lock();
+    if (!MON)
+        return;
+
     blockDamageReporting = true;
-    g_pHyprRenderer->damageMonitor(pMonitor.lock());
+    g_pHyprRenderer->damageMonitor(MON);
     blockDamageReporting = false;
 }
 

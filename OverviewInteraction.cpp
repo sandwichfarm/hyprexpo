@@ -509,7 +509,7 @@ void COverview::setClosing(bool closing_) {
 }
 
 void COverview::onWindowMoveToWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace) {
-    if (!closing || externalWorkspaceMoveDuringClose || !pMonitor || !window)
+    if (!closing || externalWorkspaceMoveDuringClose || !window)
         return;
 
     const auto monitor = pMonitor.lock();
@@ -562,8 +562,13 @@ void COverview::onSwipeUpdate(double delta) {
 
 void COverview::onSwipeEnd() {
     const auto MON = pMonitor.lock();
-    if (!MON)
+    if (!MON) {
+        m_isSwiping       = false;
+        swipeWasCommenced = false;
+        closing           = true;
+        g_pOverview.reset();
         return;
+    }
 
     const auto SIZEMIN = MON->m_size;
     const auto SIZEMAX = MON->m_size * MON->m_size / (MON->m_size / SIDE_LENGTH);
