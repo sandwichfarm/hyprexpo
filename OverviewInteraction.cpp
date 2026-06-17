@@ -558,6 +558,9 @@ void COverview::onSwipeUpdate(double delta) {
     const auto SIZEMIN = MON->m_size;
     const auto POSMIN  = Vector2D{0, 0};
 
+    size->setCallbackOnEnd(nullptr);
+    pos->setCallbackOnEnd(nullptr);
+
     size->setValueAndWarp(lerp(SIZEMIN, SIZEMAX, PERC));
     pos->setValueAndWarp(lerp(POSMIN, POSMAX, PERC));
 }
