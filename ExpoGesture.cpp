@@ -17,14 +17,14 @@ void CExpoGesture::begin(const ITrackpadGesture::STrackpadGestureBegin& e) {
 
     if (!g_pOverview)
         g_pOverview = std::make_unique<COverview>(monitor->m_activeWorkspace, true);
-    else {
+    else if (!g_pOverview->closeCommitted()) {
         g_pOverview->selectHoveredWorkspace();
         g_pOverview->setClosing(true);
     }
 }
 
 void CExpoGesture::update(const ITrackpadGesture::STrackpadGestureUpdate& e) {
-    if (!g_pOverview)
+    if (!g_pOverview || g_pOverview->closeCommitted())
         return;
 
     if (m_firstUpdate) {
@@ -41,7 +41,7 @@ void CExpoGesture::update(const ITrackpadGesture::STrackpadGestureUpdate& e) {
 }
 
 void CExpoGesture::end(const ITrackpadGesture::STrackpadGestureEnd& e) {
-    if (!g_pOverview)
+    if (!g_pOverview || g_pOverview->closeCommitted())
         return;
 
     g_pOverview->setClosing(false);
