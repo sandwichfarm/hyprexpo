@@ -30,6 +30,12 @@ class COverview {
     void onPreRender();
 
     void setClosing(bool closing);
+    // True once close() has armed the teardown animation. Further gestures must
+    // be ignored until the overview is destroyed, otherwise a second swipe
+    // rewinds the in-flight close animation (the close "replays" from ~80%).
+    bool closeCommitted() const {
+        return m_closeCommitted;
+    }
     bool shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const;
     void onWindowMoveToWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace);
 
@@ -134,6 +140,7 @@ class COverview {
     PHLANIMVAR<Vector2D>         pos;
 
     bool                         closing = false;
+    bool                         m_closeCommitted = false;
     bool                         externalWorkspaceMoveDuringClose = false;
 
     CHyprSignalListener          mouseMoveHook;

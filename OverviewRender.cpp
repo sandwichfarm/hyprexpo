@@ -180,6 +180,10 @@ void COverview::close(bool switchToSelection) {
     if (closing)
         return;
 
+    // The teardown animation is now committed; lock out further swipe input so a
+    // re-grabbed gesture can't rewind it (issue #57 follow-up: close replay).
+    m_closeCommitted = true;
+
     const auto MON = pMonitor.lock();
     if (!MON) {
         closing = true;

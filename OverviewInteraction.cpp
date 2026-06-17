@@ -532,6 +532,11 @@ void COverview::resetSwipe() {
 }
 
 void COverview::onSwipeUpdate(double delta) {
+    // Once the close animation is committed, ignore further swipe input so a
+    // re-grabbed gesture can't warp size/pos back and replay the close.
+    if (m_closeCommitted)
+        return;
+
     m_isSwiping = true;
 
     const auto MON = pMonitor.lock();
@@ -566,6 +571,9 @@ void COverview::onSwipeUpdate(double delta) {
 }
 
 void COverview::onSwipeEnd() {
+    if (m_closeCommitted)
+        return;
+
     const auto MON = pMonitor.lock();
     if (!MON) {
         m_isSwiping       = false;
