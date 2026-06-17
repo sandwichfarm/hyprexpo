@@ -39,6 +39,14 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Need the full history + tags so the build bakes the exact tag
+          # version (scripts/version.sh uses `git describe`).
+          fetch-depth: 0
+
+      - name: Verify version matches tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: make check-version TAG="${GITHUB_REF_NAME}"
 
       - name: Verify parser tests
         run: make test

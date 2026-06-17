@@ -13,6 +13,13 @@
 #include <stdexcept>
 #include <string>
 
+// Plugin version, baked in at build time from the VERSION file (see
+// scripts/version.sh). The fallback only applies to ad-hoc builds that bypass
+// the build system; real builds always define this.
+#ifndef HYPREXPO_VERSION
+#define HYPREXPO_VERSION "v0.0.0-dev"
+#endif
+
 // Methods
 inline CFunctionHook* g_pRenderWorkspaceHook = nullptr;
 inline CFunctionHook* g_pAddDamageHookA      = nullptr;
@@ -124,7 +131,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     HyprlandAPI::reloadConfig();
 
-    return {"hyprexpo", "hyprexpo+ with keyboard selection, labels, and borders", "sandwich", "1.0"};
+    return {"hyprexpo", "hyprexpo+ with keyboard selection, labels, and borders", "sandwich", HYPREXPO_VERSION};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {

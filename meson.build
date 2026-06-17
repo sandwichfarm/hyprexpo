@@ -18,6 +18,10 @@ add_project_arguments(
   ],
   language: 'cpp')
 
+# Bake the plugin version from the VERSION file (single source of truth).
+version_baked = run_command('sh', meson.current_source_dir() / 'scripts/version.sh', check: true).stdout().strip()
+add_project_arguments('-DHYPREXPO_VERSION="' + version_baked + '"', language: 'cpp')
+
 src = files(
   'main.cpp',
   'Dispatchers.cpp',

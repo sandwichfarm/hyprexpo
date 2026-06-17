@@ -21,6 +21,14 @@ set(HYPREXPO_SRC
 
 add_library(hyprexpo SHARED ${HYPREXPO_SRC})
 
+# Bake the plugin version from the VERSION file (single source of truth).
+execute_process(
+    COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/scripts/version.sh
+    OUTPUT_VARIABLE HYPREXPO_VERSION_BAKED
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+target_compile_definitions(hyprexpo PRIVATE HYPREXPO_VERSION="${HYPREXPO_VERSION_BAKED}")
+
 find_package(PkgConfig REQUIRED)
 
 set(HYPREXPO_LUA_PKG_CONFIG "" CACHE STRING "Lua pkg-config module to use; leave empty to try lua5.4 then lua")
