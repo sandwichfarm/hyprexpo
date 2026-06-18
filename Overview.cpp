@@ -597,7 +597,19 @@ void restoreActiveWorkspaceAfterPreview(PHLMONITOR monitor, const PHLWORKSPACE& 
 }
 
 void removeOverview(WP<Hyprutils::Animation::CBaseAnimatedVariable> thisptr) {
+    if (!g_pOverview)
+        return;
+
+    const auto MON = g_pOverview->pMonitor.lock();
     g_pOverview.reset();
+
+    if (!MON)
+        return;
+
+    // Force one normal compositor frame after the overview pass is removed.
+    // Idle/empty workspaces may not produce their own damage immediately.
+    g_pHyprRenderer->damageMonitor(MON);
+    g_pCompositor->scheduleFrameForMonitor(MON);
 }
 
 static bool shouldShowCursorDuringOverview() {
