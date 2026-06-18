@@ -26,6 +26,7 @@ SRC = main.cpp Dispatchers.cpp PluginConfig.cpp Overview.cpp OverviewInteraction
 HEADERS = globals.hpp Dispatchers.hpp PluginConfig.hpp HyprlandConfigCompat.hpp Overview.hpp OverviewInternal.hpp ExpoGesture.hpp OverviewPassElement.hpp HyprexpoConfig.hpp HyprexpoLogic.hpp
 TARGET = hyprexpo.so
 TEST_TARGET = HyprexpoLogicTests
+SOURCE_TEST_TARGET = OverviewSourceTests
 INSTALL_DIR = /var/cache/hyprpm/$(USER)/hyprexpo
 INSTALL_NAME = hyprexpo.so
 
@@ -39,13 +40,17 @@ install: $(TARGET)
 	install -Dm755 $(TARGET) $(INSTALL_DIR)/$(INSTALL_NAME)
 
 clean:
-	rm -f ./$(TARGET) ./$(TEST_TARGET)
+	rm -f ./$(TARGET) ./$(TEST_TARGET) ./$(SOURCE_TEST_TARGET)
 
-test: $(TEST_TARGET)
+test: $(TEST_TARGET) $(SOURCE_TEST_TARGET)
 	./$(TEST_TARGET)
+	./$(SOURCE_TEST_TARGET)
 
 $(TEST_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp HyprexpoConfig.hpp tests/HyprexpoLogicTests.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror HyprexpoLogic.cpp tests/HyprexpoLogicTests.cpp -o $@
+
+$(SOURCE_TEST_TARGET): tests/OverviewSourceTests.cpp Overview.cpp
+	$(CXX) -std=c++2b -Wall -Wextra -Werror tests/OverviewSourceTests.cpp -o $@
 
 # --- Release ceremony -----------------------------------------------------
 # 1. make version vX.Y.Z+N   set + commit the VERSION file
