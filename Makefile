@@ -36,7 +36,7 @@ $(TARGET): $(SRC) $(HEADERS) $(VERSION_FILE)
 	$(CXX) $(CXXFLAGS) $(EXTRA_FLAGS) $(VERSION_DEFINE) $(INCLUDES) $(SRC) -o $@ $(LIBS)
 
 install: $(TARGET)
-	install -Dm755 $(TARGET) $(INSTALL_DIR)/$(INSTALL_NAME)
+	sudo install -Dm755 $(TARGET) $(INSTALL_DIR)/$(INSTALL_NAME)
 
 clean:
 	rm -f ./$(TARGET) ./$(TEST_TARGET)
