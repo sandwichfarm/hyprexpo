@@ -27,17 +27,43 @@ HEADERS = globals.hpp Dispatchers.hpp PluginConfig.hpp HyprlandConfigCompat.hpp 
 TARGET = hyprexpo.so
 TEST_TARGET = HyprexpoLogicTests
 SOURCE_TEST_TARGET = OverviewSourceTests
-INSTALL_DIR = /var/cache/hyprpm/$(USER)/hyprexpo
+INSTALL_USER ?= $(if $(SUDO_USER),$(SUDO_USER),$(USER))
+INSTALL_DIR ?= /var/cache/hyprpm/$(INSTALL_USER)/hyprexpo
 INSTALL_NAME = hyprexpo.so
+XDG_CACHE_HOME ?= $(HOME)/.cache
+DEV_DIR ?= $(XDG_CACHE_HOME)/hyprexpo
+DEV_TARGET ?= $(DEV_DIR)/$(INSTALL_NAME)
+COMPILE_PLUGIN = $(CXX) $(CXXFLAGS) $(EXTRA_FLAGS) $(VERSION_DEFINE) $(INCLUDES) $(SRC) -o $@ $(LIBS)
 
 all: $(TARGET)
 
 # Rebuild when the version changes so the baked-in value stays correct.
 $(TARGET): $(SRC) $(HEADERS) $(VERSION_FILE)
-	$(CXX) $(CXXFLAGS) $(EXTRA_FLAGS) $(VERSION_DEFINE) $(INCLUDES) $(SRC) -o $@ $(LIBS)
+	$(COMPILE_PLUGIN)
+
+$(DEV_TARGET): $(SRC) $(HEADERS) $(VERSION_FILE)
+	@mkdir -p "$(dir $@)"
+	$(COMPILE_PLUGIN)
+
+dev-build: $(DEV_TARGET)
+
+dev-load: dev-build
+	@so="$$(readlink -f "$(DEV_TARGET)")"; \
+	echo "loading $$so"; \
+	hyprctl plugin load "$$so"
+
+dev-reload: dev-build
+	@so="$$(readlink -f "$(DEV_TARGET)")"; \
+	echo "reloading $$so"; \
+	hyprctl plugin unload "$$so" >/dev/null 2>&1 || true; \
+	hyprctl plugin load "$$so"
+
+dev-nested:
+	./scripts/run-nested.sh
 
 install: $(TARGET)
-	sudo install -Dm755 $(TARGET) $(INSTALL_DIR)/$(INSTALL_NAME)
+	@echo "Installing for $(INSTALL_USER) into $(INSTALL_DIR)/$(INSTALL_NAME)"
+	install -Dm755 $(TARGET) $(INSTALL_DIR)/$(INSTALL_NAME)
 
 clean:
 	rm -f ./$(TARGET) ./$(TEST_TARGET) ./$(SOURCE_TEST_TARGET)
@@ -111,4 +137,4 @@ check-version:
 		|| { echo "::error::VERSION ($$file_ver) does not match tag ($$tag_ver)"; exit 1; }; \
 	echo "version aligned: $$file_ver"
 
-.PHONY: all clean install test version tag publish check-version
+.PHONY: all clean install test dev-build dev-load dev-reload dev-nested version tag publish check-version

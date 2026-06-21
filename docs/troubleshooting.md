@@ -18,7 +18,7 @@ Invalid `workspace_method` or border color values should be logged and fall back
 
 ## Replacing a Loaded Plugin Crashes Hyprland
 
-Use `make install` or `install` instead of overwriting the file with `cp`.
+For development, prefer `./scripts/run-nested.sh` or `make dev-reload` so Hyprland loads a fresh user-owned build by absolute path. If you intentionally replace an installed plugin file, use `make install` or `install` instead of overwriting the file with `cp`.
 
 ## Per-Monitor Placement Does Not Apply
 

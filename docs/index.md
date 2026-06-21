@@ -18,4 +18,4 @@ HyprExpo uses modern `plugin:hyprexpo:*` configuration keys plus Lua helpers und
 
 ## Runtime Boundary
 
-HyprExpo is a shared object loaded by Hyprland. Build it against the Hyprland revision you run, and use `install` or `make install` when replacing a loaded plugin file so Hyprland does not keep a corrupted mapping.
+HyprExpo is a shared object loaded by Hyprland. Build it against the Hyprland revision you run, test local changes in a nested session or with `hyprctl plugin load /absolute/path/to/hyprexpo.so`, and use `install` or `make install` only when replacing an installed plugin file so Hyprland does not keep a corrupted mapping.

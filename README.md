@@ -53,14 +53,42 @@ cd hyprexpo
 make all
 ```
 
-Install the local build over the hyprpm-managed copy:
+For day-to-day development, prefer a disposable nested Hyprland session. This
+matches Hyprland's plugin development guidance: build the plugin, load it by
+absolute path with `hyprctl plugin load`, then unload and load again after
+changes.
+
+```bash
+./scripts/run-nested.sh
+```
+
+If you already have a disposable Hyprland session running, build to a
+user-owned cache path and load or reload that `.so` directly:
+
+```bash
+make dev-load
+make dev-reload
+```
+
+Only replace the hyprpm-managed copy when you intentionally want the installed
+plugin to point at this checkout's build:
 
 ```bash
 make install
 hyprpm reload
 ```
 
-Use `install` or `make install`, not plain `cp`, when replacing a loaded `.so`. Hyprland maps plugin files into the running process, and overwriting that file in place can corrupt the live mapping.
+If your distro or install path stores hyprpm artifacts under a root-owned cache,
+keep privilege at the command line instead of baking `sudo` into the Makefile:
+
+```bash
+sudo make install INSTALL_USER="$USER"
+hyprpm reload
+```
+
+Use `install` or `make install`, not plain `cp`, when replacing a loaded `.so`.
+Hyprland maps plugin files into the running process, and overwriting that file
+in place can corrupt the live mapping.
 
 Other build entry points:
 

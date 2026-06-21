@@ -45,10 +45,38 @@ cmake --build build
 
 ## Install a Local Build
 
-Install the Makefile build over the hyprpm-managed copy:
+For development, do not replace the hyprpm-managed copy first. Hyprland's
+plugin development docs recommend testing in a nested debug session and loading
+the built plugin by absolute path with `hyprctl plugin load`.
+
+Launch a disposable nested session that builds and loads a user-owned local
+plugin artifact:
+
+```bash
+./scripts/run-nested.sh
+```
+
+If you already have a disposable Hyprland session running, build to
+`${XDG_CACHE_HOME:-$HOME/.cache}/hyprexpo/hyprexpo.so` and load or reload it:
+
+```bash
+make dev-load
+make dev-reload
+```
+
+Only replace the hyprpm-managed copy when you intentionally want the installed
+plugin to point at this checkout's build:
 
 ```bash
 make install
+hyprpm reload
+```
+
+If the hyprpm artifact path is root-owned, keep the privilege at the command
+line and preserve the target user explicitly:
+
+```bash
+sudo make install INSTALL_USER="$USER"
 hyprpm reload
 ```
 
@@ -59,6 +87,8 @@ install -Dm755 hyprexpo.so \
     /var/cache/hyprpm/$USER/hyprexpo/hyprexpo.so
 hyprpm reload
 ```
+
+Use `sudo install ...` only if that destination is intentionally root-owned.
 
 ::: warning
 Use `install`, not plain `cp`, when replacing a loaded `.so`. Hyprland maps the plugin into the running process. Overwriting that file in place can corrupt the live mapping and crash the session.

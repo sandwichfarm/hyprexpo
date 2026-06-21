@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Link a cached local hyprexpo.so into the hyprpm-installed plugin path.
+# Link a cached local hyprexpo.so into a user-writable plugin path.
+# Prefer scripts/run-nested.sh or make dev-reload for normal development.
 #
 # Usage:
 #   ./scripts/dev-link.sh                 # auto-detect installed hyprexpo.so and symlink to cached build
@@ -10,8 +11,8 @@ set -euo pipefail
 #   ./scripts/dev-link.sh -r              # restore original file from .bak and remove symlink
 #
 # Notes:
-# - This script only affects your local user install if hyprpm installed to XDG_DATA_HOME.
-# - If your hyprexpo is system-wide, you may need sudo to replace it.
+# - This script only affects user-writable installs.
+# - Do not run this script with sudo; use make install for intentional system-cache replacement.
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
@@ -28,7 +29,8 @@ err() { echo "[dev-link] ERROR: $*" >&2; exit 1; }
 
 usage() {
   cat <<'EOF'
-Link a cached local hyprexpo.so into the hyprpm-installed plugin path.
+Link a cached local hyprexpo.so into a user-writable plugin path.
+For normal development, prefer ./scripts/run-nested.sh or make dev-reload.
 
 Usage:
   ./scripts/dev-link.sh                 # auto-detect installed hyprexpo.so and symlink to cached build
@@ -38,9 +40,27 @@ Usage:
 
 Notes:
 - Local builds default to ${XDG_CACHE_HOME:-$HOME/.cache}/hyprexpo/hyprexpo.so.
-- This script only affects your local user install if hyprpm installed to XDG_DATA_HOME.
-- If your hyprexpo is system-wide, you may need sudo to replace it.
+- This script only affects user-writable installs.
+- Do not run this script with sudo; use make install for intentional system-cache replacement.
 EOF
+}
+
+ensure_not_root() {
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
+    err "Do not run this development linker as root. Use ./scripts/run-nested.sh, make dev-reload, or sudo make install INSTALL_USER=\$USER for intentional system-cache replacement."
+  fi
+}
+
+ensure_writable_target() {
+  local target="$1"
+  local target_dir
+  target_dir="$(dirname "$target")"
+
+  [[ -d "$target_dir" ]] || err "Target directory does not exist: $target_dir"
+  [[ -w "$target_dir" ]] || err "Target directory is not writable: $target_dir. Use ./scripts/run-nested.sh or make dev-reload for development; use sudo make install INSTALL_USER=\$USER only for intentional system-cache replacement."
+  if [[ -e "$target" && ! -w "$target" ]]; then
+    err "Target is not writable: $target. Use ./scripts/run-nested.sh or make dev-reload for development; use sudo make install INSTALL_USER=\$USER only for intentional system-cache replacement."
+  fi
 }
 
 detect_target() {
@@ -95,6 +115,8 @@ while (( "$#" )); do
     *) err "Unknown arg: $1" ;;
   esac
 done
+
+ensure_not_root
 
 if (( do_restore )); then
   if [[ -z "$target_so" ]]; then
@@ -183,6 +205,7 @@ fi
 [[ -n "$target_so" ]] || err "Could not detect hyprexpo.so. Pass -t /path/to/hyprexpo.so"
 
 msg "Target: $target_so"
+ensure_writable_target "$target_so"
 
 local_abs="$(readlink -f "$local_so")"
 target_abs="$(readlink -f "$target_so" 2>/dev/null || true)"
