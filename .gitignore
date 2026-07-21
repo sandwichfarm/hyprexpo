@@ -44,6 +44,7 @@ dist/
 # Nix
 result
 result-man
+.direnv/
 
 # Local helper scripts
 /*.sh
@@ -61,3 +62,7 @@ HyprexpoLogicTests
 .planning/*
 .omx/*
 AGENTS.md
+
+# Clangd
+.cache/
+compile_commands.json
