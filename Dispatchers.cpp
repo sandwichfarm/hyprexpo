@@ -8,12 +8,16 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
+#include <hyprland/src/desktop/state/GlobalWindowController.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
-#include <hyprland/src/helpers/Monitor.hpp>
+#include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
+#include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/managers/input/trackpad/GestureTypes.hpp>
 #include <hyprland/src/managers/input/trackpad/TrackpadGestures.hpp>
+#include <hyprland/src/state/MonitorState.hpp>
+#include <hyprland/src/state/WorkspaceState.hpp>
 #include <lua.hpp>
 #include <xkbcommon/xkbcommon.h>
 #include <algorithm>
@@ -124,7 +128,8 @@ static PHLWINDOW windowToBringFromWorkspace(const PHLWORKSPACE& workspace) {
     if (!workspace)
         return nullptr;
 
-    for (auto it = g_pCompositor->m_windows.rbegin(); it != g_pCompositor->m_windows.rend(); ++it) {
+    const auto& windows = Desktop::windowState()->windows();
+    for (auto it = windows.rbegin(); it != windows.rend(); ++it) {
         const auto& window = *it;
         if (!window || window->m_workspace != workspace || !window->m_isMapped || window->isHidden())
             continue;
@@ -140,14 +145,20 @@ static SDispatchResult bringWindowFromWorkspace(int64_t sourceWorkspaceID) {
         return {.success = false, .error = "selected workspace is empty"};
 
     const auto focusState = Desktop::focusState();
-    const auto monitor    = focusState ? focusState->monitor() : g_pCompositor->getMonitorFromCursor();
+    const auto monitor    = focusState ? focusState->monitor() : State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
     if (!monitor || !monitor->m_activeWorkspace)
         return {.success = false, .error = "no active monitor/workspace"};
 
     if (sourceWorkspaceID == monitor->activeWorkspaceID())
         return {};
 
-    const auto sourceWorkspace = g_pCompositor->getWorkspaceByID(sourceWorkspaceID);
+    PHLWORKSPACE sourceWorkspace;
+    for (const auto& w : State::workspaceState()->workspacesCopy()) {
+        if (w->m_id == sourceWorkspaceID) {
+            sourceWorkspace = w;
+            break;
+        }
+    }
     if (!sourceWorkspace)
         return {.success = false, .error = "selected workspace is not open"};
 
@@ -155,10 +166,10 @@ static SDispatchResult bringWindowFromWorkspace(int64_t sourceWorkspaceID) {
     if (!window)
         return {.success = false, .error = "selected workspace has no mapped windows"};
 
-    g_pCompositor->moveWindowToWorkspaceSafe(window, monitor->m_activeWorkspace);
+    Desktop::globalWindowController()->moveWindowToWorkspace(window, monitor->m_activeWorkspace);
     if (focusState)
         focusState->fullWindowFocus(window, Desktop::FOCUS_REASON_KEYBIND);
-    g_pCompositor->warpCursorTo(window->middle());
+    window->warpCursor();
     return {};
 }
 
@@ -426,7 +437,7 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
         if (g_pOverview)
             g_pOverview->close();
         else {
-            const auto PMONITOR = g_pCompositor->getMonitorFromCursor();
+            const auto PMONITOR = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
             if (!PMONITOR)
                 return {};
             renderingOverview = true;
@@ -451,7 +462,7 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
     if (g_pOverview)
         return {};
 
-    const auto PMONITOR = g_pCompositor->getMonitorFromCursor();
+    const auto PMONITOR = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
     if (!PMONITOR)
         return {};
 
@@ -573,7 +584,7 @@ static SDispatchResult onMovePreviewWindowDispatcher(std::string arg) {
         if (!windowAddress.starts_with("address:"))
             windowAddress = "address:" + windowAddress;
 
-        window = g_pCompositor->getWindowByRegex(windowAddress);
+        window = Desktop::viewState()->query().selector(windowAddress).runWindow();
         if (!window)
             return {.success = false, .error = "window address did not match a mapped window"};
     }

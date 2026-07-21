@@ -9,10 +9,11 @@
 #include <hyprland/src/config/ConfigValue.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
-#include <hyprland/src/managers/animation/DesktopAnimationManager.hpp>
+#include <hyprland/src/animation/WorkspaceAnimationController.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
+#include <hyprland/src/state/WorkspaceState.hpp>
 #undef private
 #undef protected
 #include <algorithm>
@@ -70,7 +71,18 @@ void COverview::redrawID(int id, bool forcelowres) {
 
     clearWithColor(CHyprColor{0, 0, 0, 1.0});
 
-    const auto PWORKSPACE = image.pWorkspace ? image.pWorkspace : g_pCompositor->getWorkspaceByID(image.workspaceID);
+    PHLWORKSPACE PWORKSPACE;
+    if (image.pWorkspace) {
+        PWORKSPACE = image.pWorkspace;
+    }
+    else {
+        for (const auto& w : State::workspaceState()->workspacesCopy()) {
+            if (w->m_id == image.workspaceID) {
+                PWORKSPACE = w;
+                break;
+            }
+        }
+    }
     image.pWorkspace      = PWORKSPACE;
 
     const auto   restoreWorkspace = MON->m_activeWorkspace;
@@ -123,7 +135,7 @@ void COverview::redrawID(int id, bool forcelowres) {
     if (activeWorkspace) {
         activeWorkspace->m_visible = true;
         if (activeWorkspace == startedOn)
-            g_pDesktopAnimationManager->startAnimation(activeWorkspace, CDesktopAnimationManager::ANIMATION_TYPE_IN, true, true);
+            Animation::Workspace::startAnimation(activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
     }
 
     blockOverviewRendering = false;
@@ -173,7 +185,7 @@ void COverview::onDamageReported() {
     blockDamageReporting = true;
     g_pHyprRenderer->damageBox(texbox);
     blockDamageReporting = false;
-    g_pCompositor->scheduleFrameForMonitor(MON);
+    MON->scheduleFrame();
 }
 
 void COverview::close(bool switchToSelection) {
@@ -215,7 +227,13 @@ void COverview::close(bool switchToSelection) {
         // which case some tiles will be left with this ID intentionally.
         const int  NEWID = TILE.workspaceID == WORKSPACE_INVALID ? getWorkspaceIDNameFromString("emptynm").id : TILE.workspaceID;
 
-        const auto NEWIDWS = g_pCompositor->getWorkspaceByID(NEWID);
+        PHLWORKSPACE NEWIDWS;
+        for (const auto& w : State::workspaceState()->workspacesCopy()) {
+            if (w->m_id == NEWID) {
+                NEWIDWS = w;
+                break;
+            }
+        }
 
         const auto OLDWS = MON->m_activeWorkspace;
 
@@ -223,8 +241,8 @@ void COverview::close(bool switchToSelection) {
         if (!CHANGE)
             Log::logger->log(Log::ERR, "[hyprexpo] failed to change workspace: {}", CHANGE.error().message);
 
-        g_pDesktopAnimationManager->startAnimation(MON->m_activeWorkspace, CDesktopAnimationManager::ANIMATION_TYPE_IN, true, true);
-        g_pDesktopAnimationManager->startAnimation(OLDWS, CDesktopAnimationManager::ANIMATION_TYPE_OUT, false, true);
+        Animation::Workspace::startAnimation(MON->m_activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
+        Animation::Workspace::startAnimation(OLDWS, Animation::Workspace::ANIMATION_TYPE_OUT, false, true);
 
         startedOn = MON->m_activeWorkspace;
     }
@@ -245,7 +263,7 @@ void COverview::onWorkspaceChange() {
         return;
 
     if (valid(startedOn))
-        g_pDesktopAnimationManager->startAnimation(startedOn, CDesktopAnimationManager::ANIMATION_TYPE_OUT, false, true);
+        Animation::Workspace::startAnimation(startedOn, Animation::Workspace::ANIMATION_TYPE_OUT, false, true);
     else
         startedOn = MON->m_activeWorkspace;
 

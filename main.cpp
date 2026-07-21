@@ -36,7 +36,7 @@ static void hkRenderWorkspace(void* thisptr, PHLMONITOR pMonitor, PHLWORKSPACE p
 }
 
 static void hkAddDamageA(void* thisptr, const CBox& box) {
-    const auto PMONITOR = (CMonitor*)thisptr;
+    const auto PMONITOR = (Monitor::CMonitor*)thisptr;
 
     if (!g_pOverview || !g_pOverview->shouldRenderOverviewForMonitor(PMONITOR->m_self.lock()) || g_pOverview->blockDamageReporting) {
         ((origAddDamageA)g_pAddDamageHookA->m_original)(thisptr, box);
@@ -47,7 +47,7 @@ static void hkAddDamageA(void* thisptr, const CBox& box) {
 }
 
 static void hkAddDamageB(void* thisptr, const pixman_region32_t* rg) {
-    const auto PMONITOR = (CMonitor*)thisptr;
+    const auto PMONITOR = (Monitor::CMonitor*)thisptr;
 
     if (!g_pOverview || !g_pOverview->shouldRenderOverviewForMonitor(PMONITOR->m_self.lock()) || g_pOverview->blockDamageReporting) {
         ((origAddDamageB)g_pAddDamageHookB->m_original)(thisptr, rg);

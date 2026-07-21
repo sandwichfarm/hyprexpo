@@ -17,16 +17,17 @@
 #include <hyprland/src/desktop/view/Window.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
 #include <hyprland/src/layout/space/Space.hpp>
-#include <hyprland/src/managers/animation/AnimationManager.hpp>
-#include <hyprland/src/managers/animation/DesktopAnimationManager.hpp>
-#include <hyprland/src/managers/cursor/CursorShapeOverrideController.hpp>
+#include <hyprland/src/animation/AnimationManager.hpp>
+#include <hyprland/src/animation/WorkspaceAnimationController.hpp>
+#include <hyprland/src/pointer/cursor/CursorShapeOverrideController.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
-#include <hyprland/src/managers/PointerManager.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
 #include <hyprland/src/helpers/varlist/VarList.hpp>
 #include <hyprland/src/helpers/Format.hpp>
+#include <hyprland/src/state/MonitorState.hpp>
+#include <hyprland/src/state/WorkspaceState.hpp>
 #include <drm_fourcc.h>
 #undef private
 #undef protected
@@ -376,7 +377,7 @@ void restoreWorkspacePreviewState(const PHLWORKSPACE& workspace, const SWorkspac
 std::vector<std::pair<PHLWORKSPACE, SWorkspacePreviewState>> applyExclusiveWorkspacePreviewState(const PHLWORKSPACE& targetWorkspace) {
     std::vector<std::pair<PHLWORKSPACE, SWorkspacePreviewState>> states;
 
-    for (const auto& workspaceRef : g_pCompositor->getWorkspaces()) {
+    for (const auto& workspaceRef : State::workspaceState()->workspaces()) {
         const auto workspace = workspaceRef.lock();
         if (!workspace)
             continue;
@@ -421,7 +422,7 @@ void normalizeMonitorWorkspaceRenderState(PHLMONITOR monitor) {
     if (!monitor || !monitor->m_activeWorkspace)
         return;
 
-    for (const auto& workspaceRef : g_pCompositor->getWorkspaces()) {
+    for (const auto& workspaceRef : State::workspaceState()->workspaces()) {
         const auto workspace = workspaceRef.lock();
         if (!workspace || workspace->m_monitor != monitor || workspace->m_isSpecialWorkspace)
             continue;
@@ -431,13 +432,13 @@ void normalizeMonitorWorkspaceRenderState(PHLMONITOR monitor) {
 
         if (active) {
             workspace->m_visible = true;
-            g_pDesktopAnimationManager->startAnimation(workspace, CDesktopAnimationManager::ANIMATION_TYPE_IN, true, true);
+            Animation::Workspace::startAnimation(workspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
         } else if (!workspace->m_alpha->isBeingAnimated() && !workspace->m_renderOffset->isBeingAnimated()) {
             workspace->m_visible = false;
         }
     }
 
-    for (const auto& window : g_pCompositor->m_windows) {
+    for (const auto& window : Desktop::windowState()->windows()) {
         if (!window || !window->m_isMapped || window->isHidden() || window->m_pinned || !window->m_workspace || window->m_workspace->m_monitor != monitor)
             continue;
 
@@ -456,7 +457,7 @@ std::vector<SPinnedWindowPreviewState> applyPinnedWindowPreviewState(bool showPi
     if (showPinnedWindows)
         return states;
 
-    for (const auto& window : g_pCompositor->m_windows) {
+    for (const auto& window : Desktop::windowState()->windows()) {
         if (!window || !window->m_isMapped || !window->m_pinned)
             continue;
 
@@ -506,7 +507,7 @@ void settleWorkspaceMoveAnimation(const PHLWINDOW& window) {
 }
 
 void settleWorkspaceMoveAnimations() {
-    for (const auto& window : g_pCompositor->m_windows) {
+    for (const auto& window : Desktop::windowState()->windows()) {
         if (!window)
             continue;
 
@@ -534,7 +535,7 @@ std::vector<SWindowPreviewState> applyWorkspaceWindowGoalState(const PHLWORKSPAC
     if (!workspace)
         return states;
 
-    for (const auto& window : g_pCompositor->m_windows) {
+    for (const auto& window : Desktop::windowState()->windows()) {
         if (!windowVisibleOnWorkspace(window, workspace))
             continue;
 
@@ -609,7 +610,7 @@ void removeOverview(WP<Hyprutils::Animation::CBaseAnimatedVariable> thisptr) {
     // Force one normal compositor frame after the overview pass is removed.
     // Idle/empty workspaces may not produce their own damage immediately.
     g_pHyprRenderer->damageMonitor(MON);
-    g_pCompositor->scheduleFrameForMonitor(MON);
+    MON->scheduleFrame();
 }
 
 static bool shouldShowCursorDuringOverview() {
@@ -623,7 +624,7 @@ static void ensureOverviewCursorVisible(bool forceOverviewShape = false, bool re
 
     g_pHyprRenderer->setCursorHidden(false);
     if (forceOverviewShape)
-        Cursor::overrideController->setOverride("left_ptr", Cursor::CURSOR_OVERRIDE_UNKNOWN);
+        Pointer::Cursor::overrideController->setOverride("left_ptr", Pointer::Cursor::CURSOR_OVERRIDE_UNKNOWN);
     if (refreshPosition)
         g_pInputManager->simulateMouseMovement();
 }
@@ -656,7 +657,7 @@ static std::pair<bool, int> getWorkspaceMethodForMonitor(PHLMONITOR monitor) {
 COverview::~COverview() {
     Render::GL::g_pHyprOpenGL->makeEGLCurrent();
     images.clear(); // otherwise we get a vram leak
-    Cursor::overrideController->unsetOverride(Cursor::CURSOR_OVERRIDE_UNKNOWN);
+    Pointer::Cursor::overrideController->unsetOverride(Pointer::Cursor::CURSOR_OVERRIDE_UNKNOWN);
     ensureOverviewCursorVisible(false, true);
     if (const auto MON = pMonitor.lock()) {
         normalizeMonitorWorkspaceRenderState(MON);
@@ -666,7 +667,7 @@ COverview::~COverview() {
 }
 
 COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn_), swipe(swipe_) {
-    const auto PMONITOR = g_pCompositor->getMonitorFromCursor();
+    const auto PMONITOR = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
     pMonitor            = PMONITOR;
 
     static auto* const* PCOLUMNS = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:columns")->getDataStaticPtr();
@@ -742,7 +743,13 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
         int currentID         = methodStartID;
         images[0].workspaceID = currentID;
 
-        auto PWORKSPACESTART = g_pCompositor->getWorkspaceByID(currentID);
+        PHLWORKSPACE PWORKSPACESTART;
+        for (const auto& w : State::workspaceState()->workspacesCopy()) {
+            if (w->m_id == currentID) {
+                PWORKSPACESTART = w;
+                break;
+            }
+        }
         if (!PWORKSPACESTART)
             PWORKSPACESTART = CWorkspace::create(currentID, pMonitor.lock(), std::to_string(currentID));
 
@@ -811,7 +818,13 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
 
         clearWithColor(CHyprColor{0, 0, 0, 1.0});
 
-        const auto PWORKSPACE = g_pCompositor->getWorkspaceByID(image.workspaceID);
+        PHLWORKSPACE PWORKSPACE;
+        for (const auto& w : State::workspaceState()->workspacesCopy()) {
+            if (w->m_id == image.workspaceID) {
+                PWORKSPACE = w;
+                break;
+            }
+        }
 
         if (PWORKSPACE == startedOn)
             currentid = i;
@@ -863,13 +876,13 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
     PMONITOR->m_activeSpecialWorkspace = openSpecial;
     PMONITOR->m_activeWorkspace        = startedOn;
     startedOn->m_visible               = true;
-    g_pDesktopAnimationManager->startAnimation(startedOn, CDesktopAnimationManager::ANIMATION_TYPE_IN, true, true);
+    Animation::Workspace::startAnimation(startedOn, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
 
     // zoom on the current workspace.
     // const auto& TILE = images[std::clamp(currentid, 0, SIDE_LENGTH * SIDE_LENGTH)];
 
-    g_pAnimationManager->createAnimation(pMonitor->m_size * pMonitor->m_size / tileSize, size, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
-    g_pAnimationManager->createAnimation((-((pMonitor->m_size / (double)SIDE_LENGTH) * Vector2D{currentid % SIDE_LENGTH, currentid / SIDE_LENGTH}) * pMonitor->m_scale) *
+    Animation::mgr()->createAnimation(pMonitor->m_size * pMonitor->m_size / tileSize, size, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
+    Animation::mgr()->createAnimation((-((pMonitor->m_size / (double)SIDE_LENGTH) * Vector2D{currentid % SIDE_LENGTH, currentid / SIDE_LENGTH}) * pMonitor->m_scale) *
                                              (pMonitor->m_size / tileSize),
                                          pos, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
 
