@@ -573,7 +573,7 @@ void COverview::onWindowMoveToWorkspace(const PHLWINDOW& window, const PHLWORKSP
 
     externalWorkspaceMoveDuringClose = true;
     damage();
-    pMonitor->scheduleFrame();
+    monitor->scheduleFrame();
 }
 
 void COverview::resetSwipe() {

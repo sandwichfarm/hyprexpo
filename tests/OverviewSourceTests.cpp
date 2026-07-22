@@ -57,7 +57,7 @@ int main() {
     const auto lockPos     = function.find("const auto MON = g_pOverview->pMonitor.lock();");
     const auto resetPos    = function.find("g_pOverview.reset();");
     const auto damagePos   = function.find("g_pHyprRenderer->damageMonitor(MON);");
-    const auto schedulePos = function.find("g_pCompositor->scheduleFrameForMonitor(MON);");
+    const auto schedulePos = function.find("MON->scheduleFrame();");
 
     expect(lockPos != std::string::npos, "removeOverview captures monitor before teardown");
     expect(resetPos != std::string::npos, "removeOverview destroys active overview");
@@ -66,6 +66,14 @@ int main() {
     expect(lockPos < resetPos, "monitor is captured before overview reset");
     expect(resetPos < damagePos, "monitor damage happens after overview reset");
     expect(damagePos < schedulePos, "frame scheduling follows monitor damage");
+
+    const auto mainSource = readFile("main.cpp");
+    expect(!mainSource.empty(), "main.cpp can be read from repo root");
+    expect(mainSource.find("const Time::steady_tp& now") != std::string::npos, "render hook uses the Hyprland 0.56 time-point ABI");
+    expect(mainSource.find("_ZN7Monitor8CMonitor9addDamageERKN9Hyprutils4Math4CBoxE") != std::string::npos,
+           "damage hook uses the Hyprland 0.56 namespaced monitor symbol");
+    expect(mainSource.find("_ZN8CMonitor9addDamageERKN9Hyprutils4Math4CBoxE") == std::string::npos,
+           "damage hook no longer uses the pre-0.56 monitor symbol");
 
     if (failures != 0)
         return 1;

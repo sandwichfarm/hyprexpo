@@ -17,8 +17,6 @@
 // hyprland's fault, but cba to fix.
 constexpr bool ENABLE_LOWRES = false;
 
-class CMonitor;
-
 class COverview {
   public:
     COverview(PHLWORKSPACE startedOn_, bool swipe = false);
