@@ -162,6 +162,7 @@ class COverview {
     bool                         showWorkspaceNumbers = false;
     bool                         showWorkspaceNames = false;
     bool                         animateEntry = false;
+    bool                         wallpaperBg = false;
     std::chrono::steady_clock::time_point createdAt;
 
     friend class COverviewPassElement;

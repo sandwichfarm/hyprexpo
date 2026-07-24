@@ -732,6 +732,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
     static auto* const* PMRUSORT  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:mru_sort")->getDataStaticPtr();
     static auto* const* PSHNAMES  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:show_workspace_names")->getDataStaticPtr();
     static auto* const* PANIMATE  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:animate_entry")->getDataStaticPtr();
+    static auto* const* PWALLBG   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:wallpaper_bg")->getDataStaticPtr();
 
     createdAt            = std::chrono::steady_clock::now();
     SIDE_LENGTH          = Hyprexpo::clampGridColumns(**PCOLUMNS);
@@ -741,6 +742,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
     showWorkspaceNumbers = **PSHOWNUM;
     showWorkspaceNames   = **PSHNAMES;
     animateEntry         = **PANIMATE;
+    wallpaperBg          = **PWALLBG;
     dynamicGrid          = **PDYNAMIC;
 
     // Get workspace method for this specific monitor

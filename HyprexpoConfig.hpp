@@ -18,6 +18,7 @@ inline constexpr int         LEGACY_SHOW_WORKSPACE_NAMES_DEFAULT = 0;
 inline constexpr int         LEGACY_ENABLE_KEYBOARD_NAV_DEFAULT  = 1;
 inline constexpr int         LEGACY_ENABLE_DRAG_MOVE_DEFAULT     = 0;
 inline constexpr int         LEGACY_ANIMATE_ENTRY_DEFAULT        = 0;
+inline constexpr int         WALLPAPER_BG_DEFAULT                = 0;
 
 inline constexpr int         COLUMNS_DEFAULT                 = 3;
 inline constexpr int         COLUMNS_MIN                     = 1;

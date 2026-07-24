@@ -316,6 +316,12 @@ void COverview::fullRender() {
     const auto SHAPE   = currentGridShape();
 
     clearWithColor(BG_COLOR.stripA());
+    if (wallpaperBg && MON->m_background) {
+        CRegion backgroundDamage{0, 0, INT16_MAX, INT16_MAX};
+        CBox    backgroundBox{{0, 0}, MON->m_transformedSize};
+        Render::GL::g_pHyprOpenGL->renderTextureInternal(MON->m_background, backgroundBox, {.damage = &backgroundDamage, .a = 1.0f});
+        Render::GL::g_pHyprOpenGL->renderRect(backgroundBox, CHyprColor{0x00000066}, {});
+    }
 
     static auto* const* PTILEROUND  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding")->getDataStaticPtr();
     static auto* const* PTOUNDPWR   = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_power")->getDataStaticPtr();

@@ -70,6 +70,7 @@ integration and should not replace the newer keys below.
 | `plugin:hyprexpo:enable_keyboard_nav` | int | legacy keyboard-navigation toggle | `keynav_enable` |
 | `plugin:hyprexpo:enable_drag_move` | int | legacy drag-move toggle | no direct equivalent yet |
 | `plugin:hyprexpo:animate_entry` | int | legacy open animation toggle | no direct equivalent yet |
+| `plugin:hyprexpo:wallpaper_bg` | int | draw the monitor wallpaper behind the overview tiles | optional active-overview extension |
 
 
 ## Layout and Behavior

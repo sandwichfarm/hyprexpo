@@ -32,6 +32,7 @@ void registerHyprexpoConfigValues() {
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:enable_keyboard_nav", "legacy keyboard navigation toggle", HyprexpoConfig::LEGACY_ENABLE_KEYBOARD_NAV_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:enable_drag_move", "legacy drag-move toggle", HyprexpoConfig::LEGACY_ENABLE_DRAG_MOVE_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:animate_entry", "legacy entry animation toggle", HyprexpoConfig::LEGACY_ANIMATE_ENTRY_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:wallpaper_bg", "draw the monitor wallpaper behind overview tiles", HyprexpoConfig::WALLPAPER_BG_DEFAULT));
 
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:columns", "columns", HyprexpoConfig::COLUMNS_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gaps_in", "inner gaps", HyprexpoConfig::GAPS_IN_DEFAULT));
