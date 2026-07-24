@@ -1,9 +1,12 @@
 #include "../HyprexpoLogic.hpp"
 #include "../HyprexpoConfig.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -17,12 +20,132 @@ void expect(bool condition, const std::string& label) {
     std::cerr << "FAIL: " << label << '\n';
 }
 
-bool near(float a, float b) {
-    return std::abs(a - b) < 0.001F;
+bool near(double a, double b, double eps = 0.001) {
+    return std::abs(a - b) < eps;
 }
 
-bool near(double a, double b) {
-    return std::abs(a - b) < 0.001;
+Hyprexpo::SSize makeSize(double w, double h) {
+    return {w, h};
+}
+
+std::vector<Hyprexpo::STileLayout> layoutsFor(int count, const Hyprexpo::SGridShape& shape, const Hyprexpo::SSize& total, double gap, bool centerPartialRows) {
+    std::vector<Hyprexpo::STileLayout> layouts;
+    for (int i = 0; i < count; ++i)
+        layouts.push_back(Hyprexpo::computeTileLayout(i, count, shape, total, gap, centerPartialRows));
+    return layouts;
+}
+
+void checkGeometryForMonitor(const Hyprexpo::SSize& total) {
+    constexpr double gap = 24.0;
+
+    for (int count = 1; count <= 10; ++count) {
+        const auto shape = Hyprexpo::computeDynamicGridShape(count);
+        const int  expectedCols = std::max(1, static_cast<int>(std::ceil(std::sqrt(static_cast<double>(count)))));
+        int        expectedRows = static_cast<int>(std::ceil(static_cast<double>(count) / expectedCols));
+        if (count > 1 && expectedRows < 2)
+            expectedRows = 2;
+
+        expect(shape.cols == expectedCols, "dynamic cols for count " + std::to_string(count));
+        expect(shape.rows == expectedRows, "dynamic rows for count " + std::to_string(count));
+
+        const auto tile = Hyprexpo::aspectCorrectTileSize(total.w, total.h, shape.cols, shape.rows, gap);
+        const double monitorAspect = total.w / total.h;
+        expect(near(tile.w / tile.h, monitorAspect), "tile aspect matches monitor aspect for count " + std::to_string(count));
+
+        const double maxTileW = std::max(0.0, (total.w - gap * (shape.cols - 1)) / shape.cols);
+        const double maxTileH = std::max(0.0, (total.h - gap * (shape.rows - 1)) / shape.rows);
+        expect(tile.w <= maxTileW + 0.001 && tile.h <= maxTileH + 0.001, "tile fits within cell for count " + std::to_string(count));
+
+        const auto layouts = layoutsFor(count, shape, total, gap, true);
+        const int occupiedRows = std::max(1, static_cast<int>(std::ceil(static_cast<double>(count) / shape.cols)));
+        const double gridW = shape.cols * tile.w + (shape.cols - 1) * gap;
+        const double gridH = occupiedRows * tile.h + (occupiedRows - 1) * gap;
+        const double baseX = (total.w - gridW) / 2.0;
+        const double baseY = (total.h - gridH) / 2.0;
+
+        double minX = layouts.front().box.x;
+        double minY = layouts.front().box.y;
+        double maxX = layouts.front().box.x + layouts.front().box.w;
+        double maxY = layouts.front().box.y + layouts.front().box.h;
+        for (const auto& layout : layouts) {
+            minX = std::min(minX, layout.box.x);
+            minY = std::min(minY, layout.box.y);
+            maxX = std::max(maxX, layout.box.x + layout.box.w);
+            maxY = std::max(maxY, layout.box.y + layout.box.h);
+        }
+
+        expect(near(minX, baseX), "grid centered horizontally for count " + std::to_string(count));
+        expect(near(minY, baseY), "grid centered vertically for count " + std::to_string(count));
+        expect(near(maxX - minX, gridW), "grid width consistent for count " + std::to_string(count));
+        expect(near(maxY - minY, gridH), "grid height consistent for count " + std::to_string(count));
+
+        for (int row = 0; row < occupiedRows; ++row) {
+            std::vector<const Hyprexpo::STileLayout*> rowTiles;
+            for (const auto& layout : layouts) {
+                if (layout.row == row)
+                    rowTiles.push_back(&layout);
+            }
+            std::sort(rowTiles.begin(), rowTiles.end(), [](const auto* a, const auto* b) { return a->col < b->col; });
+
+            for (size_t i = 1; i < rowTiles.size(); ++i) {
+                const auto& left = *rowTiles[i - 1];
+                const auto& right = *rowTiles[i];
+                expect(near(right.box.x - (left.box.x + left.box.w), gap), "uniform horizontal gap for count " + std::to_string(count));
+            }
+        }
+
+        for (int row = 1; row < occupiedRows; ++row) {
+            for (int col = 0; col < shape.cols; ++col) {
+                const int upperIndex = row * shape.cols + col;
+                const int lowerIndex = (row - 1) * shape.cols + col;
+                if (upperIndex >= count || lowerIndex >= count)
+                    continue;
+
+                const auto& upper = layouts[lowerIndex];
+                const auto& lower = layouts[upperIndex];
+                expect(near(lower.box.y - (upper.box.y + upper.box.h), gap), "uniform vertical gap for count " + std::to_string(count));
+            }
+        }
+
+        for (int i = 0; i < count; ++i) {
+            const auto& box = layouts[i].box;
+            const double centerX = box.x + box.w / 2.0;
+            const double centerY = box.y + box.h / 2.0;
+            expect(Hyprexpo::tileIndexAtPoint(centerX, centerY, count, shape, total, gap, true) == i, "hit test returns tile center for count " + std::to_string(count));
+        }
+
+        if (shape.cols > 1) {
+            const auto& left = layouts[0].box;
+            const double gapX = left.x + left.w + gap / 2.0;
+            const double gapY = left.y + left.h / 2.0;
+            expect(Hyprexpo::tileIndexAtPoint(gapX, gapY, count, shape, total, gap, true) == -1, "hit test rejects tile gap for count " + std::to_string(count));
+        }
+
+        const int lastRowCount = count % shape.cols == 0 ? shape.cols : count % shape.cols;
+        if (lastRowCount < shape.cols && count > shape.cols) {
+            const int lastRow = occupiedRows - 1;
+            std::vector<const Hyprexpo::STileLayout*> rowTiles;
+            for (const auto& layout : layouts) {
+                if (layout.row == lastRow)
+                    rowTiles.push_back(&layout);
+            }
+            std::sort(rowTiles.begin(), rowTiles.end(), [](const auto* a, const auto* b) { return a->col < b->col; });
+
+            const double rowMinX = rowTiles.front()->box.x;
+            const double rowMaxX = rowTiles.back()->box.x + rowTiles.back()->box.w;
+            expect(near((rowMinX - minX), (maxX - rowMaxX)), "partial row is centered for count " + std::to_string(count));
+
+            const double emptyX = rowMinX - gap / 2.0;
+            const double emptyY = rowTiles.front()->box.y + rowTiles.front()->box.h / 2.0;
+            expect(Hyprexpo::tileIndexAtPoint(emptyX, emptyY, count, shape, total, gap, true) == -1, "hit test rejects centered empty region for count " + std::to_string(count));
+        }
+
+        if (count == 2) {
+            expect(shape.rows == 2, "count 2 keeps two-row grid shape");
+            expect(near(layouts[0].box.y, layouts[1].box.y), "count 2 stays on one occupied row");
+            expect(near(layouts[0].box.y, (total.h - tile.h) / 2.0), "count 2 row is vertically centered");
+        }
+    }
 }
 
 }
@@ -38,10 +161,10 @@ int main() {
     expect(clampGridColumns(99) == 7, "columns clamp upper bound");
     expect(HyprexpoConfig::SHOW_PINNED_WINDOWS_DEFAULT == 0, "pinned windows are hidden from previews by default");
 
-    expect(tileIndexFromPoint(0, 0, 300, 300, 3) == 0, "tile index top-left");
-    expect(tileIndexFromPoint(299, 299, 300, 300, 3) == 8, "tile index bottom-right inside");
-    expect(tileIndexFromPoint(300, 300, 300, 300, 3) == 8, "tile index clamps monitor edge");
-    expect(tileIndexFromPoint(10, 10, 0, 300, 3) == -1, "tile index rejects invalid width");
+    expect(tileIndexFromPoint(0, 0, 300, 300, 3) == 0, "legacy tile index top-left");
+    expect(tileIndexFromPoint(299, 299, 300, 300, 3) == 8, "legacy tile index bottom-right inside");
+    expect(tileIndexFromPoint(300, 300, 300, 300, 3) == 8, "legacy tile index clamps monitor edge");
+    expect(tileIndexFromPoint(10, 10, 0, 300, 3) == -1, "legacy tile index rejects invalid width");
 
     SDropIntentInput dropInput{
         .targetValid     = true,
@@ -69,7 +192,7 @@ int main() {
 
     dropInput.targetValid = false;
     expect(!computeDropIntentGeometry(dropInput).valid, "drop intent rejects invalid target");
-    dropInput.targetValid  = true;
+    dropInput.targetValid   = true;
     dropInput.windowSize.w = 0;
     expect(!computeDropIntentGeometry(dropInput).valid, "drop intent rejects invalid window size");
 
@@ -81,16 +204,16 @@ int main() {
 
     SColorRGBA color;
     expect(parseHexRGBA8("33ccffee", color), "parse rgba hex");
-    expect(near(color.r, 0x33 / 255.F) && near(color.a, 0xee / 255.F), "rgba channels are in rrggbbaa order");
+    expect(near(color.r, 0x33 / 255.0) && near(color.a, 0xee / 255.0), "rgba channels are in rrggbbaa order");
     expect(parseSolidColorSpec("rgb(66ccff)", color), "parse rgb solid color");
-    expect(near(color.r, 0x66 / 255.F) && near(color.a, 1.F), "rgb solid color is opaque");
+    expect(near(color.r, 0x66 / 255.0) && near(color.a, 1.0), "rgb solid color is opaque");
     expect(parseSolidColorSpec("0x8066ccff", color), "parse argb solid color");
-    expect(near(color.a, 0x80 / 255.F) && near(color.r, 0x66 / 255.F), "argb solid channel order");
+    expect(near(color.a, 0x80 / 255.0) && near(color.r, 0x66 / 255.0), "argb solid channel order");
     expect(!parseSolidColorSpec("rgb(nothex)", color), "invalid rgb solid rejected");
 
     const auto gradient = parseGradientSpec("rgba(33ccffee) rgba(00ff99ee) 45deg");
     expect(gradient.valid, "gradient parses two rgba colors");
-    expect(near(gradient.angleDeg, 45.F), "gradient angle parses");
+    expect(near(gradient.angleDeg, 45.0), "gradient angle parses");
     expect(!parseGradientSpec("rgba(33ccffee) nope 45deg").valid, "invalid gradient rejected");
     expect(isGradientBorderSpec("rgba(33ccffee) rgba(00ff99ee) 45deg"), "gradient border detected");
 
@@ -103,6 +226,10 @@ int main() {
     expect(method.valid && method.mode == EWorkspaceMethodMode::Center && method.workspace == "9", "per-monitor method wins");
     method = resolveWorkspaceMethodForMonitor("DP-1 first 1, center current", "eDP-1");
     expect(method.valid && method.mode == EWorkspaceMethodMode::Center && method.workspace == "current", "global fallback method applies");
+
+    checkGeometryForMonitor(makeSize(1600, 900));
+    checkGeometryForMonitor(makeSize(900, 1600));
+    checkGeometryForMonitor(makeSize(2560, 1080));
 
     if (failures != 0)
         return 1;

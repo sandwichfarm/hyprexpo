@@ -49,25 +49,41 @@ struct SRect {
     double h = 0.0;
 };
 
+struct SGridShape {
+    int cols = 1;
+    int rows = 1;
+};
+
+struct STileLayout {
+    SRect box;
+    int   row = -1;
+    int   col = -1;
+};
+
 struct SDropIntentInput {
-    bool   targetValid        = false;
-    SPoint pointerLocal       = {};
-    SRect  targetTileLocal    = {};
-    SSize  workspaceSize      = {};
-    SSize  windowSize         = {};
-    SPoint grabOffset         = {};
-    double minProxySize       = 24.0;
+    bool   targetValid     = false;
+    SPoint pointerLocal    = {};
+    SRect  targetTileLocal = {};
+    SSize  workspaceSize   = {};
+    SSize  windowSize      = {};
+    SPoint grabOffset      = {};
+    double minProxySize    = 24.0;
 };
 
 struct SDropIntentGeometry {
-    bool   valid                = false;
+    bool   valid               = false;
     SPoint targetWorkspacePoint = {};
     SRect  targetProxyLocal     = {};
 };
 
-std::string              trimString(std::string value);
-std::string              lowerString(std::string value);
+std::string trimString(std::string value);
+std::string lowerString(std::string value);
 std::vector<std::string> splitCommaList(const std::string& value);
+
+SGridShape               computeDynamicGridShape(int visibleCount);
+SSize                    aspectCorrectTileSize(double screenW, double screenH, int cols, int rows, double gap);
+STileLayout              computeTileLayout(int index, int visibleCount, SGridShape shape, SSize total, double gap, bool centerPartialRows);
+int                      tileIndexAtPoint(double x, double y, int visibleCount, SGridShape shape, SSize total, double gap, bool centerPartialRows);
 
 int                      clampGridColumns(int columns);
 int                      tileIndexFromPoint(double x, double y, double width, double height, int sideLength);
