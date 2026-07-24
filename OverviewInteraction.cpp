@@ -9,6 +9,7 @@
 #include <hyprland/src/pointer/cursor/CursorShapeOverrideController.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
+#include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -652,14 +653,14 @@ void COverview::enterSubmapIfEnabled() {
     static auto* const* PKEYNAV = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_enable")->getDataStaticPtr();
     if (**PKEYNAV && !submapActive) {
         // switch to a dedicated submap for hyprexpo navigation
-        g_pKeybindManager->m_dispatchers["submap"]("hyprexpo");
+        (void)Config::Actions::setSubmap("hyprexpo");
         submapActive = true;
     }
 }
 
 void COverview::resetSubmapIfNeeded() {
     if (submapActive) {
-        g_pKeybindManager->m_dispatchers["submap"]("reset");
+        (void)Config::Actions::setSubmap("reset");
         submapActive = false;
     }
 }
