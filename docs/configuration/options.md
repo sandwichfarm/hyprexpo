@@ -48,6 +48,30 @@ hl.config({
 `hl.plugin.hyprexpo` is the Lua helper namespace for dispatchers and gestures;
 it is not the configuration block.
 
+## PR #605 Compatibility Keys
+
+These keys are registered for the active-overview port and are intentionally
+separate from the richer sandwichfarm config surface. They are kept for later
+integration and should not replace the newer keys below.
+
+| key | type | legacy meaning | newer sandwichfarm counterpart |
+| --- | --- | --- | --- |
+| `plugin:hyprexpo:dynamic_grid` | int | dynamic workspace enumeration toggle | no direct equivalent yet |
+| `plugin:hyprexpo:fill_gaps` | int | expand min..max workspace IDs when dynamic | no direct equivalent yet |
+| `plugin:hyprexpo:mru_sort` | int | put the current workspace first | no direct equivalent yet |
+| `plugin:hyprexpo:active_highlight_col` | color | active tile highlight color | `border_color_current` |
+| `plugin:hyprexpo:active_highlight_border` | int | active tile highlight width | `border_width` |
+| `plugin:hyprexpo:hover_highlight_col` | color | hovered tile highlight color | `border_color_hover` |
+| `plugin:hyprexpo:hover_highlight_border` | int | hovered tile highlight width | `border_width` |
+| `plugin:hyprexpo:label_pos` | string | legacy underscore anchor such as `top_right` | `label_position` (`top-right`) |
+| `plugin:hyprexpo:label_size` | int | legacy label font size | `label_font_size` |
+| `plugin:hyprexpo:label_col` | color | legacy label tint | `label_color` / `label_color_default` |
+| `plugin:hyprexpo:show_workspace_names` | int | legacy name/number toggle | `show_workspace_numbers` and `label_text_mode` |
+| `plugin:hyprexpo:enable_keyboard_nav` | int | legacy keyboard-navigation toggle | `keynav_enable` |
+| `plugin:hyprexpo:enable_drag_move` | int | legacy drag-move toggle | no direct equivalent yet |
+| `plugin:hyprexpo:animate_entry` | int | legacy open animation toggle | no direct equivalent yet |
+
+
 ## Layout and Behavior
 
 | key | type | description | default |

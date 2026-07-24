@@ -1,6 +1,24 @@
 #pragma once
 
 namespace HyprexpoConfig {
+// PR #605 compatibility defaults kept separate from the richer sandwichfarm
+// runtime options below. These values are registered for later integration and
+// must not replace the newer config surface.
+inline constexpr int         LEGACY_DYNAMIC_GRID_DEFAULT         = 0;
+inline constexpr int         LEGACY_FILL_GAPS_DEFAULT            = 0;
+inline constexpr int         LEGACY_MRU_SORT_DEFAULT             = 0;
+inline constexpr unsigned    LEGACY_ACTIVE_HIGHLIGHT_COL_DEFAULT = 0xFF3584E4;
+inline constexpr int         LEGACY_ACTIVE_HIGHLIGHT_BORDER_DEFAULT = 2;
+inline constexpr unsigned    LEGACY_HOVER_HIGHLIGHT_COL_DEFAULT  = 0x80FFFFFF;
+inline constexpr int         LEGACY_HOVER_HIGHLIGHT_BORDER_DEFAULT = 2;
+inline constexpr const char* LEGACY_LABEL_POS_DEFAULT            = "top_right";
+inline constexpr int         LEGACY_LABEL_SIZE_DEFAULT           = 36;
+inline constexpr unsigned    LEGACY_LABEL_COL_DEFAULT            = 0xFFFFFFFF;
+inline constexpr int         LEGACY_SHOW_WORKSPACE_NAMES_DEFAULT = 0;
+inline constexpr int         LEGACY_ENABLE_KEYBOARD_NAV_DEFAULT  = 1;
+inline constexpr int         LEGACY_ENABLE_DRAG_MOVE_DEFAULT     = 0;
+inline constexpr int         LEGACY_ANIMATE_ENTRY_DEFAULT        = 0;
+
 inline constexpr int         COLUMNS_DEFAULT                 = 3;
 inline constexpr int         COLUMNS_MIN                     = 1;
 inline constexpr int         COLUMNS_MAX                     = 7;

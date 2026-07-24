@@ -15,6 +15,24 @@ static void addConfigValue(SP<Config::Values::IValue> value) {
 }
 
 void registerHyprexpoConfigValues() {
+    // PR #605 compatibility keys: registered separately from the richer
+    // sandwichfarm config surface so later integration can consume them
+    // without changing existing option names or defaults.
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:dynamic_grid", "legacy dynamic grid toggle", HyprexpoConfig::LEGACY_DYNAMIC_GRID_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:fill_gaps", "legacy gap filling toggle", HyprexpoConfig::LEGACY_FILL_GAPS_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:mru_sort", "legacy mru sorting toggle", HyprexpoConfig::LEGACY_MRU_SORT_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:active_highlight_col", "legacy active tile highlight color", HyprexpoConfig::LEGACY_ACTIVE_HIGHLIGHT_COL_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:active_highlight_border", "legacy active tile highlight border", HyprexpoConfig::LEGACY_ACTIVE_HIGHLIGHT_BORDER_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:hover_highlight_col", "legacy hovered tile highlight color", HyprexpoConfig::LEGACY_HOVER_HIGHLIGHT_COL_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:hover_highlight_border", "legacy hovered tile highlight border", HyprexpoConfig::LEGACY_HOVER_HIGHLIGHT_BORDER_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:label_pos", "legacy label anchor", HyprexpoConfig::LEGACY_LABEL_POS_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_size", "legacy label font size", HyprexpoConfig::LEGACY_LABEL_SIZE_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:label_col", "legacy label color", HyprexpoConfig::LEGACY_LABEL_COL_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:show_workspace_names", "legacy workspace-name label toggle", HyprexpoConfig::LEGACY_SHOW_WORKSPACE_NAMES_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:enable_keyboard_nav", "legacy keyboard navigation toggle", HyprexpoConfig::LEGACY_ENABLE_KEYBOARD_NAV_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:enable_drag_move", "legacy drag-move toggle", HyprexpoConfig::LEGACY_ENABLE_DRAG_MOVE_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:animate_entry", "legacy entry animation toggle", HyprexpoConfig::LEGACY_ANIMATE_ENTRY_DEFAULT));
+
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:columns", "columns", HyprexpoConfig::COLUMNS_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gaps_in", "inner gaps", HyprexpoConfig::GAPS_IN_DEFAULT));
     addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:bg_col", "background color", HyprexpoConfig::BG_COL_DEFAULT));
