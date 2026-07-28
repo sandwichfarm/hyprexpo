@@ -79,9 +79,10 @@ $(SOURCE_TEST_TARGET): tests/OverviewSourceTests.cpp Overview.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror tests/OverviewSourceTests.cpp -o $@
 
 # --- Release ceremony -----------------------------------------------------
-# 1. make version vX.Y.Z+N   set + commit the VERSION file
-# 2. make tag                create the matching annotated git tag
-# 3. make publish            push branch + tag (triggers the release workflow)
+# 1. make check-pins          verify hyprpm pins are on the release history
+# 2. make version vX.Y.Z+N   set + commit the VERSION file
+# 3. make tag                create the matching annotated git tag
+# 4. make publish            push branch + tag (triggers the release workflow)
 
 # Support positional syntax: `make version v0.55.2+2`.
 # Turn the trailing word(s) into no-op goals so make doesn't error on them.
@@ -100,6 +101,9 @@ version:
 	else \
 		printf '%s' '$(SET_VERSION)' | grep -Eq '$(VERSION_REGEX)' \
 			|| { echo "error: '$(SET_VERSION)' must look like v1.2.3 or v1.2.3+4"; exit 1; }; \
+		if [ -n "$$(git status --porcelain -- hyprpm.toml)" ]; then \
+			echo "error: hyprpm.toml has uncommitted changes; commit the landed pin first"; exit 1; fi; \
+		./scripts/check-commit-pins.sh HEAD; \
 		printf '%s\n' '$(SET_VERSION)' > $(VERSION_FILE); \
 		git add $(VERSION_FILE); \
 		git commit -m 'release $(SET_VERSION)' -- $(VERSION_FILE); \
@@ -112,6 +116,9 @@ tag:
 		|| { echo "error: VERSION file '$$v' must look like v1.2.3 or v1.2.3+4"; exit 1; }; \
 	if [ -n "$$(git status --porcelain -- $(VERSION_FILE))" ]; then \
 		echo "error: $(VERSION_FILE) has uncommitted changes; run 'make version ...' first"; exit 1; fi; \
+	if [ -n "$$(git status --porcelain -- hyprpm.toml)" ]; then \
+		echo "error: hyprpm.toml has uncommitted changes; commit the landed pin first"; exit 1; fi; \
+	./scripts/check-commit-pins.sh HEAD; \
 	if git rev-parse -q --verify "refs/tags/$$v" >/dev/null; then \
 		echo "error: tag $$v already exists"; exit 1; fi; \
 	git tag -a "$$v" -m "$$v"; \
@@ -121,9 +128,16 @@ publish:
 	@v='$(VERSION_BASE)'; \
 	if ! git rev-parse -q --verify "refs/tags/$$v" >/dev/null; then \
 		echo "error: tag $$v does not exist; run 'make tag' first"; exit 1; fi; \
+	./scripts/check-commit-pins.sh "$$v"; \
 	git push origin HEAD; \
 	git push origin "$$v"; \
 	echo "pushed branch + tag $$v; the release workflow will build and publish."
+
+# Verify the plugin-side hash in every hyprpm commit pin is part of the release
+# history. Pass REF= to inspect a committed tree or tag; the working tree is
+# checked by default.
+check-pins:
+	@./scripts/check-commit-pins.sh '$(REF)'
 
 # Used by CI to guarantee the VERSION file matches the tag being released.
 # Pass the tag via TAG=, otherwise the exact tag on HEAD is used.
@@ -137,4 +151,4 @@ check-version:
 		|| { echo "::error::VERSION ($$file_ver) does not match tag ($$tag_ver)"; exit 1; }; \
 	echo "version aligned: $$file_ver"
 
-.PHONY: all clean install test dev-build dev-load dev-reload dev-nested version tag publish check-version
+.PHONY: all clean install test dev-build dev-load dev-reload dev-nested version tag publish check-pins check-version
