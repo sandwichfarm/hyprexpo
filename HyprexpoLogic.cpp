@@ -53,6 +53,31 @@ SGridShape computeDynamicGridShape(int visibleCount) {
     return {cols, rows};
 }
 
+std::optional<std::vector<int64_t>> expandDynamicWorkspaceIDs(const std::vector<int64_t>& workspaceIDs, bool fillGaps, std::size_t maxExpandedWorkspaces) {
+    std::vector<int64_t> normalized = workspaceIDs;
+    std::sort(normalized.begin(), normalized.end());
+    normalized.erase(std::unique(normalized.begin(), normalized.end()), normalized.end());
+
+    if (!fillGaps || normalized.empty())
+        return normalized;
+    if (maxExpandedWorkspaces == 0)
+        return std::nullopt;
+
+    const int64_t  minID = normalized.front();
+    const int64_t  maxID = normalized.back();
+    const __int128 expandedCountWide = static_cast<__int128>(maxID) - static_cast<__int128>(minID) + 1;
+    if (expandedCountWide <= 0 || expandedCountWide > static_cast<__int128>(maxExpandedWorkspaces))
+        return std::nullopt;
+
+    const std::size_t expandedCount = static_cast<std::size_t>(expandedCountWide);
+    std::vector<int64_t> expanded;
+    expanded.reserve(expandedCount);
+    for (std::size_t offset = 0; offset < expandedCount; ++offset)
+        expanded.push_back(minID + static_cast<int64_t>(offset));
+
+    return expanded;
+}
+
 SSize aspectCorrectTileSize(double screenW, double screenH, int cols, int rows, double gap) {
     if (screenW <= 0.0 || screenH <= 0.0 || cols <= 0 || rows <= 0)
         return {};
@@ -303,6 +328,30 @@ SGradientSpec parseGradientSpec(const std::string& value) {
 bool isGradientBorderSpec(const std::string& value) {
     const auto first = value.find("rgba(");
     return first != std::string::npos && value.find("rgba(", first + 1) != std::string::npos;
+}
+
+bool shouldShowWorkspaceLabel(bool labelEnabled, const std::string& labelShow, bool isHovered, bool isFocused, bool isCurrent) {
+    if (!labelEnabled)
+        return false;
+
+    const auto mode = lowerString(trimString(labelShow));
+    if (mode == "never")
+        return false;
+    if (mode == "hover")
+        return isHovered;
+    if (mode == "focus")
+        return isFocused;
+    if (mode == "hover+focus")
+        return isHovered || isFocused;
+    if (mode == "current+focus")
+        return isCurrent || isFocused;
+
+    return true;
+}
+
+std::string resolveBorderSpec(const std::string& modernSpec, const std::string& legacySpec) {
+    const auto modern = trimString(modernSpec);
+    return modern.empty() ? trimString(legacySpec) : modern;
 }
 
 static std::vector<std::string> splitWhitespace(const std::string& value) {

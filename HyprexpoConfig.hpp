@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 namespace HyprexpoConfig {
 // PR #605 compatibility defaults kept separate from the richer sandwichfarm
 // runtime options below. These values are registered for later integration and
@@ -19,6 +21,7 @@ inline constexpr int         LEGACY_ENABLE_KEYBOARD_NAV_DEFAULT  = 1;
 inline constexpr int         LEGACY_ENABLE_DRAG_MOVE_DEFAULT     = 0;
 inline constexpr int         LEGACY_ANIMATE_ENTRY_DEFAULT        = 0;
 inline constexpr int         WALLPAPER_BG_DEFAULT                = 0;
+inline constexpr std::size_t DYNAMIC_GRID_MAX_TILES              = 64;
 
 inline constexpr int         COLUMNS_DEFAULT                 = 3;
 inline constexpr int         COLUMNS_MIN                     = 1;

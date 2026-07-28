@@ -75,6 +75,39 @@ int main() {
     expect(mainSource.find("_ZN8CMonitor9addDamageERKN9Hyprutils4Math4CBoxE") == std::string::npos,
            "damage hook no longer uses the pre-0.56 monitor symbol");
 
+    const auto dispatchersSource = readFile("Dispatchers.cpp");
+    expect(!dispatchersSource.empty(), "Dispatchers.cpp can be read from repo root");
+    const auto expoDispatcher = extractFunction(dispatchersSource, "static SDispatchResult onExpoDispatcher(std::string arg) {");
+    expect(!expoDispatcher.empty(), "expo dispatcher function exists");
+
+    const auto toggleStart = expoDispatcher.find("if (arg == \"toggle\")");
+    const auto cancelStart = expoDispatcher.find("if (arg == \"cancel\")", toggleStart);
+    const auto toggleBlock = toggleStart == std::string::npos || cancelStart == std::string::npos ? std::string{} : expoDispatcher.substr(toggleStart, cancelStart - toggleStart);
+    expect(toggleBlock.find("g_pOverview->close(false);") != std::string::npos, "plain toggle close does not select a fallback workspace");
+
+    const auto offStart = expoDispatcher.find("if (arg == \"off\" || arg == \"close\" || arg == \"disable\")");
+    const auto offEnd   = expoDispatcher.find("\n    if (g_pOverview)\n        return {};", offStart);
+    const auto offBlock = offStart == std::string::npos || offEnd == std::string::npos ? std::string{} : expoDispatcher.substr(offStart, offEnd - offStart);
+    expect(offBlock.find("g_pOverview->close(false);") != std::string::npos, "plain off and close commands do not select a fallback workspace");
+
+    const auto overviewConstructor = extractFunction(source, "COverview::COverview(");
+    expect(!overviewConstructor.empty(), "overview constructor exists");
+    const auto gapExpansionPos = overviewConstructor.find("Hyprexpo::expandDynamicWorkspaceIDs(");
+    const auto dynamicResizePos = overviewConstructor.find("images.resize(visibleWorkspaceIDs.size())");
+    expect(gapExpansionPos != std::string::npos, "dynamic workspace enumeration uses the bounded expansion helper");
+    expect(dynamicResizePos != std::string::npos && gapExpansionPos < dynamicResizePos, "dynamic expansion is bounded before image allocation");
+    expect(overviewConstructor.find("for (int64_t id = minID; id <= maxID; ++id)") == std::string::npos,
+           "dynamic workspace enumeration has no unbounded min-to-max fill loop");
+
+    const auto renderSource = readFile("OverviewRender.cpp");
+    expect(!renderSource.empty(), "OverviewRender.cpp can be read from repo root");
+    const auto fullRender = extractFunction(renderSource, "void COverview::fullRender(");
+    expect(!fullRender.empty(), "overview fullRender function exists");
+    expect(fullRender.find("Hyprexpo::shouldShowWorkspaceLabel(") != std::string::npos,
+           "runtime label rendering uses modern label_enable and label_show policy in every grid mode");
+    expect(fullRender.find("Hyprexpo::resolveBorderSpec(") != std::string::npos,
+           "runtime border rendering uses modern-first border resolution with legacy fallback");
+
     if (failures != 0)
         return 1;
 

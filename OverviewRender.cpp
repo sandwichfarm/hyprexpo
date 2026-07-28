@@ -381,11 +381,8 @@ void COverview::fullRender() {
     static auto const*  PLABELPOS   = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_position")->getDataStaticPtr();
     static auto const*  PLABELPOSL  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_pos")->getDataStaticPtr();
     static auto* const* PLABELSIZEL = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_size")->getDataStaticPtr();
-    static auto* const* PLABELCOLL  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_col")->getDataStaticPtr();
     static auto* const* PACTCOL     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:active_highlight_col")->getDataStaticPtr();
-    static auto* const* PACTBORDER  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:active_highlight_border")->getDataStaticPtr();
     static auto* const* PHOVCOL     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:hover_highlight_col")->getDataStaticPtr();
-    static auto* const* PHOVBORDER  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:hover_highlight_border")->getDataStaticPtr();
     static auto const*  PLABELMODE  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_text_mode")->getDataStaticPtr();
     static auto const*  PTOKENMAP   = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_token_map")->getDataStaticPtr();
     static auto* const* PLABELOX    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_offset_x")->getDataStaticPtr();
@@ -535,7 +532,7 @@ void COverview::fullRender() {
             return;
 
         const int BWIDTH = std::max(1, borderWidthOverride > 0 ? borderWidthOverride : (int)**PBWIDTH);
-        std::string effectiveSpec = borderSpec.empty() ? deprecatedGradSpec : borderSpec;
+        const std::string effectiveSpec = Hyprexpo::resolveBorderSpec(borderSpec, deprecatedGradSpec);
 
         if (isGradientBorderSpec(effectiveSpec)) {
             const auto spec = parseGradientSpec(effectiveSpec);
@@ -591,74 +588,15 @@ void COverview::fullRender() {
         Render::GL::g_pHyprOpenGL->renderBorder(proxy, grad, {.round = round, .roundingPower = ROUND_PWR, .borderSize = borderWidth});
     };
 
-    auto drawSolidBorderForID = [&](int id, const CHyprColor& color, int roundScaled, int borderWidth) {
-        if (!isTileValid(id) || id < 0 || id >= (int)tileBoxes.size())
-            return;
-        if (borderWidth <= 0)
-            return;
-
-        const CBox& box = tileBoxes[id];
-        if (box.w <= 0.0 || box.h <= 0.0)
-            return;
-
-        Render::GL::g_pHyprOpenGL->renderBorder(box, color, {.round = roundScaled, .roundingPower = ROUND_PWR, .borderSize = borderWidth});
-    };
-
     std::vector<std::string> selectionTokens;
     if (!std::string{*PSELECTMAP}.empty())
         selectionTokens = splitCommaList(std::string{*PSELECTMAP});
 
-    if (dynamicGrid) {
-        const std::string legacyAnchor = normalizeAnchor(std::string{*PLABELPOSL});
-        // PR #605 treated label_size as the badge size and rendered text at
-        // half that size; preserve that legacy meaning on the richer renderer.
-        const int         legacyFont   = std::max(8, (int)**PLABELSIZEL / 2);
-        const CHyprColor  legacyColor{(uint64_t)**PLABELCOLL};
-
-        int tokenCounter = 0;
-        for (size_t id = 0; id < images.size(); ++id) {
-            const auto& image = images[id];
-            if (image.workspaceID == WORKSPACE_INVALID)
-                continue;
-
-            const auto& tile = tileBoxes[id];
-            if (tile.w <= 0.0 || tile.h <= 0.0)
-                continue;
-
-            const std::string label = showWorkspaceNames ? resolveWorkspaceName(id) : std::to_string(image.workspaceID);
-            if (!label.empty())
-                renderLabel(images[id].labelTexDefault, images[id].labelSizeDefault, label, legacyColor, 1.0f, tile, legacyAnchor, **PLABELOX, **PLABELOY, legacyFont);
-
-            if (**PSELECTEN && tokenCounter < (int)selectionTokens.size() && !selectionTokens[tokenCounter].empty())
-                renderLabel(images[id].selectionLabelTex, images[id].selectionLabelSize, selectionTokens[tokenCounter], CHyprColor{(uint64_t)**PSELECTCOL}, 1.0f, tile,
-                            std::string{*PSELECTPOS}, **PSELECTOX, **PSELECTOY, **PLABELSIZE);
-
-            ++tokenCounter;
-        }
-    } else if (**PLABELEN || **PSELECTEN || showWorkspaceNumbers) {
+    if (**PLABELEN || **PSELECTEN || showWorkspaceNumbers) {
         const int labelHoveredID = closing ? -1 : hoveredID;
-
-        auto shouldShow = [&](int id) -> bool {
-            if (showWorkspaceNumbers)
-                return true;
-            if (std::string{*PLABELSHOW} == "never")
-                return false;
-            if (std::string{*PLABELSHOW} == "always")
-                return true;
-            const bool isHover = id == labelHoveredID;
-            const bool isFocus = id == kbFocusID;
-            const bool isCurr  = id == openedID;
-            const std::string mode{*PLABELSHOW};
-            if (mode == "hover")
-                return isHover;
-            if (mode == "focus")
-                return isFocus;
-            if (mode == "hover+focus")
-                return isHover || isFocus;
-            if (mode == "current+focus")
-                return isCurr || isFocus;
-            return true;
-        };
+        const std::string modernAnchor = Hyprexpo::trimString(std::string{*PLABELPOS});
+        const std::string labelAnchor  = normalizeAnchor(modernAnchor.empty() ? std::string{*PLABELPOSL} : modernAnchor);
+        const int labelFontSize = **PLABELSIZE > 0 ? **PLABELSIZE : std::max(8, (int)**PLABELSIZEL / 2);
 
         auto resolveState = [&](int id) -> int {
             if (id == kbFocusID)
@@ -682,10 +620,14 @@ void COverview::fullRender() {
             if (image.workspaceID == WORKSPACE_INVALID || tile.w <= 0.0 || tile.h <= 0.0)
                 continue;
 
-            if ((**PLABELEN || showWorkspaceNumbers) && shouldShow((int)id)) {
+            const bool labelEnabled = **PLABELEN || showWorkspaceNumbers;
+            const std::string labelShow = showWorkspaceNumbers ? "always" : std::string{*PLABELSHOW};
+            if (Hyprexpo::shouldShowWorkspaceLabel(labelEnabled, labelShow, (int)id == labelHoveredID, (int)id == kbFocusID, (int)id == openedID)) {
                 std::string label;
                 const std::string mode = showWorkspaceNumbers ? std::string{"id"} : std::string{*PLABELMODE};
-                if (mode == "token") {
+                if (dynamicGrid && showWorkspaceNames) {
+                    label = resolveWorkspaceName(id);
+                } else if (mode == "token") {
                     if (tokenCounter < (int)labelTokens.size() && !labelTokens[tokenCounter].empty())
                         label = labelTokens[tokenCounter];
                     else
@@ -699,20 +641,20 @@ void COverview::fullRender() {
                 const int st = resolveState((int)id);
                 if (!label.empty()) {
                     if (showWorkspaceNumbers)
-                        renderLabel(images[id].labelTexDefault, images[id].labelSizeDefault, label, CHyprColor{(uint64_t)**PWSNUMCOL}, 1.0f, tile, std::string{*PLABELPOS}, **PLABELOX, **PLABELOY,
-                                    **PLABELSIZE);
+                        renderLabel(images[id].labelTexDefault, images[id].labelSizeDefault, label, CHyprColor{(uint64_t)**PWSNUMCOL}, 1.0f, tile, labelAnchor, **PLABELOX, **PLABELOY,
+                                    labelFontSize);
                     else if (st == 1)
-                        renderLabel(images[id].labelTexHover, images[id].labelSizeHover, label, CHyprColor{(uint64_t)**PLCOLHOV}, **PLSCALEH, tile, std::string{*PLABELPOS}, **PLABELOX,
-                                    **PLABELOY, **PLABELSIZE);
+                        renderLabel(images[id].labelTexHover, images[id].labelSizeHover, label, CHyprColor{(uint64_t)**PLCOLHOV}, **PLSCALEH, tile, labelAnchor, **PLABELOX,
+                                    **PLABELOY, labelFontSize);
                     else if (st == 2)
-                        renderLabel(images[id].labelTexFocus, images[id].labelSizeFocus, label, CHyprColor{(uint64_t)**PLCOLFOC}, **PLSCALEF, tile, std::string{*PLABELPOS}, **PLABELOX,
-                                    **PLABELOY, **PLABELSIZE);
+                        renderLabel(images[id].labelTexFocus, images[id].labelSizeFocus, label, CHyprColor{(uint64_t)**PLCOLFOC}, **PLSCALEF, tile, labelAnchor, **PLABELOX,
+                                    **PLABELOY, labelFontSize);
                     else if (st == 3)
-                        renderLabel(images[id].labelTexCurrent, images[id].labelSizeCurrent, label, CHyprColor{(uint64_t)**PLCOLCUR}, 1.0f, tile, std::string{*PLABELPOS}, **PLABELOX,
-                                    **PLABELOY, **PLABELSIZE);
+                        renderLabel(images[id].labelTexCurrent, images[id].labelSizeCurrent, label, CHyprColor{(uint64_t)**PLCOLCUR}, 1.0f, tile, labelAnchor, **PLABELOX,
+                                    **PLABELOY, labelFontSize);
                     else
-                        renderLabel(images[id].labelTexDefault, images[id].labelSizeDefault, label, CHyprColor{(uint64_t)**PLCOLDEF}, 1.0f, tile, std::string{*PLABELPOS}, **PLABELOX,
-                                    **PLABELOY, **PLABELSIZE);
+                        renderLabel(images[id].labelTexDefault, images[id].labelSizeDefault, label, CHyprColor{(uint64_t)**PLCOLDEF}, 1.0f, tile, labelAnchor, **PLABELOX,
+                                    **PLABELOY, labelFontSize);
                 }
             }
 
@@ -728,26 +670,24 @@ void COverview::fullRender() {
     const int RND_FOC = FOCUS_ROUND_SCALED;
     const int RND_HOV = HOVER_ROUND_SCALED;
 
-    if (dynamicGrid) {
-        if (hoveredID != -1 && hoveredID != openedID && hoveredID != kbFocusID) {
-            const int hoverWidth = **PHOVBORDER;
-            if (hoverWidth > 0)
-                drawSolidBorderForID(hoveredID, CHyprColor{(uint64_t)**PHOVCOL}, RND_HOV, std::max(1, (int)std::lround(hoverWidth * MON->m_scale)));
-        }
+    auto legacyColorSpec = [](uint64_t color) {
+        constexpr char HEX[] = "0123456789abcdef";
+        std::string    spec  = "0x00000000";
+        for (int index = 0; index < 8; ++index)
+            spec[9 - index] = HEX[(color >> (index * 4)) & 0xF];
+        return spec;
+    };
 
-        const int activeWidth = **PACTBORDER;
-        if (activeWidth > 0)
-            drawSolidBorderForID(openedID, CHyprColor{(uint64_t)**PACTCOL}, RND_CUR, std::max(1, (int)std::lround(activeWidth * MON->m_scale)));
+    const std::string currentLegacySpec = dynamicGrid ? legacyColorSpec((uint64_t)**PACTCOL) : std::string{};
+    const std::string hoverLegacySpec   = dynamicGrid ? legacyColorSpec((uint64_t)**PHOVCOL) : std::string{};
+    const std::string currentFallback   = Hyprexpo::resolveBorderSpec(std::string{*PBGRCUR}, currentLegacySpec);
+    const std::string hoverFallback     = Hyprexpo::resolveBorderSpec(std::string{*PBGREHOV}, hoverLegacySpec);
 
-        if (kbFocusID != -1)
-            drawBorderForID(kbFocusID, std::string{*PBCOLFOC}, std::string{*PBGREFOC}, RND_FOC);
-    } else {
-        if (hoveredID != -1 && hoveredID != openedID && hoveredID != kbFocusID)
-            drawBorderForID(hoveredID, std::string{*PBCOLHOV}, std::string{*PBGREHOV}, RND_HOV);
-        drawBorderForID(openedID, std::string{*PBCOLCUR}, std::string{*PBGRCUR}, RND_CUR);
-        if (kbFocusID != -1)
-            drawBorderForID(kbFocusID, std::string{*PBCOLFOC}, std::string{*PBGREFOC}, RND_FOC);
-    }
+    if (hoveredID != -1 && hoveredID != openedID && hoveredID != kbFocusID)
+        drawBorderForID(hoveredID, std::string{*PBCOLHOV}, hoverFallback, RND_HOV);
+    drawBorderForID(openedID, std::string{*PBCOLCUR}, currentFallback, RND_CUR);
+    if (kbFocusID != -1)
+        drawBorderForID(kbFocusID, std::string{*PBCOLFOC}, std::string{*PBGREFOC}, RND_FOC);
 
     if (dragMoved && dragSourceID != -1) {
         const std::string sourceBorder = std::string{*PDRAGSOURCEBORDER}.empty() ? std::string{*PBCOLFOC} : std::string{*PDRAGSOURCEBORDER};

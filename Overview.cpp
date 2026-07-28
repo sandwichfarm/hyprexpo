@@ -847,15 +847,13 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
         if (visibleWorkspaceIDs.empty() && currentWorkspaceID != WORKSPACE_INVALID)
             visibleWorkspaceIDs.push_back(currentWorkspaceID);
 
-        std::sort(visibleWorkspaceIDs.begin(), visibleWorkspaceIDs.end());
-        visibleWorkspaceIDs.erase(std::unique(visibleWorkspaceIDs.begin(), visibleWorkspaceIDs.end()), visibleWorkspaceIDs.end());
-
-        if (**PFILLGAPS && !visibleWorkspaceIDs.empty()) {
-            const int64_t minID = visibleWorkspaceIDs.front();
-            const int64_t maxID = visibleWorkspaceIDs.back();
-            visibleWorkspaceIDs.clear();
-            for (int64_t id = minID; id <= maxID; ++id)
-                visibleWorkspaceIDs.push_back(id);
+        const auto expandedWorkspaceIDs =
+            Hyprexpo::expandDynamicWorkspaceIDs(visibleWorkspaceIDs, **PFILLGAPS, HyprexpoConfig::DYNAMIC_GRID_MAX_TILES);
+        if (expandedWorkspaceIDs)
+            visibleWorkspaceIDs = *expandedWorkspaceIDs;
+        else {
+            visibleWorkspaceIDs = *Hyprexpo::expandDynamicWorkspaceIDs(visibleWorkspaceIDs, false, HyprexpoConfig::DYNAMIC_GRID_MAX_TILES);
+            Log::logger->log(Log::ERR, "[hyprexpo] fill_gaps range exceeds {} tiles; using sparse workspace IDs", HyprexpoConfig::DYNAMIC_GRID_MAX_TILES);
         }
 
         if (**PMRUSORT) {

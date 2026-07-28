@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -160,6 +161,27 @@ int main() {
     expect(clampGridColumns(3) == 3, "columns keep valid value");
     expect(clampGridColumns(99) == 7, "columns clamp upper bound");
     expect(HyprexpoConfig::SHOW_PINNED_WINDOWS_DEFAULT == 0, "pinned windows are hidden from previews by default");
+
+    const auto boundedGapFill = expandDynamicWorkspaceIDs({2, 4}, true, 64);
+    expect(boundedGapFill.has_value(), "bounded fill_gaps range is accepted");
+    expect(boundedGapFill == std::optional<std::vector<int64_t>>{{2, 3, 4}}, "bounded fill_gaps range expands missing IDs");
+
+    const auto distantGapFill = expandDynamicWorkspaceIDs({1, 5000}, true, 64);
+    expect(!distantGapFill.has_value(), "distant fill_gaps range is rejected before allocation");
+
+    const auto extremeGapFill = expandDynamicWorkspaceIDs({std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max()}, true, 64);
+    expect(!extremeGapFill.has_value(), "fill_gaps span check cannot overflow");
+
+    const auto sparseWithoutFill = expandDynamicWorkspaceIDs({1, 5000}, false, 64);
+    expect(sparseWithoutFill == std::optional<std::vector<int64_t>>{{1, 5000}}, "disabled fill_gaps preserves sparse workspace IDs");
+
+    expect(!shouldShowWorkspaceLabel(false, "always", true, true, true), "modern label_enable disables labels in dynamic mode");
+    expect(!shouldShowWorkspaceLabel(true, "never", true, true, true), "modern label_show never hides labels in dynamic mode");
+    expect(shouldShowWorkspaceLabel(true, "hover", true, false, false), "modern label_show hover displays the hovered label");
+    expect(!shouldShowWorkspaceLabel(true, "hover", false, true, true), "modern label_show hover does not fall through to focus or current");
+
+    expect(resolveBorderSpec("rgb(010203)", "0xffaabbcc") == "rgb(010203)", "modern border spec takes precedence over legacy color");
+    expect(resolveBorderSpec("", "0xffaabbcc") == "0xffaabbcc", "legacy border color is used only when the modern spec is empty");
 
     expect(tileIndexFromPoint(0, 0, 300, 300, 3) == 0, "legacy tile index top-left");
     expect(tileIndexFromPoint(299, 299, 300, 300, 3) == 8, "legacy tile index bottom-right inside");

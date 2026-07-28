@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -81,6 +83,7 @@ std::string lowerString(std::string value);
 std::vector<std::string> splitCommaList(const std::string& value);
 
 SGridShape               computeDynamicGridShape(int visibleCount);
+std::optional<std::vector<int64_t>> expandDynamicWorkspaceIDs(const std::vector<int64_t>& workspaceIDs, bool fillGaps, std::size_t maxExpandedWorkspaces);
 SSize                    aspectCorrectTileSize(double screenW, double screenH, int cols, int rows, double gap);
 STileLayout              computeTileLayout(int index, int visibleCount, SGridShape shape, SSize total, double gap, bool centerPartialRows);
 int                      tileIndexAtPoint(double x, double y, int visibleCount, SGridShape shape, SSize total, double gap, bool centerPartialRows);
@@ -96,6 +99,8 @@ bool                     parseHexRGBA8(const std::string& value, SColorRGBA& out
 bool                     parseSolidColorSpec(const std::string& value, SColorRGBA& out);
 SGradientSpec            parseGradientSpec(const std::string& value);
 bool                     isGradientBorderSpec(const std::string& value);
+bool                     shouldShowWorkspaceLabel(bool labelEnabled, const std::string& labelShow, bool isHovered, bool isFocused, bool isCurrent);
+std::string              resolveBorderSpec(const std::string& modernSpec, const std::string& legacySpec);
 
 SWorkspaceMethodSpec     parseWorkspaceMethodSpec(const std::string& method);
 SWorkspaceMethodSpec     resolveWorkspaceMethodForMonitor(const std::string& config, const std::string& monitorName);

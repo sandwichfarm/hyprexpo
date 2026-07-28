@@ -40,6 +40,9 @@ Nested test binds:
 20. Toggle `wallpaper_bg` and reopen the overview. Confirm the wallpaper changes only the background and does not move or resize tiles.
 21. Toggle `mru_sort` and confirm the current workspace moves to the first tile only when enabled. Toggle `fill_gaps` with non-contiguous workspace IDs and confirm missing IDs are added only when enabled.
 22. With only one active workspace, complete and cancel a swipe. Confirm the overview exits cleanly without a crash or invalid animation state.
+23. With `dynamic_grid = 1`, leave the current workspace empty and open a window on a neighboring workspace. Open and close with `hyprexpo:expo, toggle`; confirm the current workspace does not change.
+24. With `dynamic_grid = 1` and `fill_gaps = 1`, create distant workspace IDs (for example 1 and 5000). Open the overview; confirm it rejects gap expansion, remains responsive, and shows only the sparse workspaces.
+25. With `dynamic_grid = 1`, set `label_enable = 0`, then `label_show = never`, and set modern `border_color_current` / `border_color_hover` values. Confirm labels stay hidden and the modern border colors win over legacy highlight values.
 
 ::: warning
 The public site and docs should not claim full release readiness until this runtime smoke gate has been completed for the intended release artifact.
