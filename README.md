@@ -167,7 +167,7 @@ Optional keyboard navigation:
 plugin {
     hyprexpo {
         keynav_enable = 1
-        number_keys_select_by_index = 0
+        number_key_mode = passthrough
         keynav_wrap_h = 1
         keynav_wrap_v = 1
         keynav_reading_order = 0
@@ -175,10 +175,13 @@ plugin {
 }
 ```
 
-`number_keys_select_by_index` defaults to `0`, preserving number keys as
-workspace IDs. Set it to `1` to make number keys select positions in the active
-overview instead; for example, `2` selects its second visible tile even when
-that tile is workspace 11 on a monitor-specific workspace range.
+`number_key_mode` controls the plugin's automatic raw digit handling:
+
+- `workspace` (default) keeps selecting global workspace IDs.
+- `index` selects positions in the active overview; for example, `2` selects
+  its second visible tile even when that tile is workspace 11.
+- `passthrough` leaves digits to user-defined mappings such as the `kb_selecti`
+  bindings below.
 
 ```ini
 submap = hyprexpo

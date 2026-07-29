@@ -167,6 +167,16 @@ int numberKeyToVisibleIndex(int number) {
     return number - 1;
 }
 
+ENumberKeyMode numberKeyModeFromString(const std::string& mode) {
+    const auto normalized = lowerString(trimString(mode));
+    if (normalized == "index")
+        return ENumberKeyMode::Index;
+    if (normalized == "passthrough")
+        return ENumberKeyMode::Passthrough;
+
+    return ENumberKeyMode::Workspace;
+}
+
 SDropIntentGeometry computeDropIntentGeometry(const SDropIntentInput& input) {
     SDropIntentGeometry geometry;
 

@@ -27,6 +27,12 @@ enum class EWorkspaceMethodMode {
     First,
 };
 
+enum class ENumberKeyMode {
+    Workspace,
+    Index,
+    Passthrough,
+};
+
 struct SWorkspaceMethodSpec {
     bool                 valid = false;
     EWorkspaceMethodMode mode  = EWorkspaceMethodMode::Center;
@@ -91,6 +97,7 @@ int                      tileIndexAtPoint(double x, double y, int visibleCount, 
 int                      clampGridColumns(int columns);
 int                      tileIndexFromPoint(double x, double y, double width, double height, int sideLength);
 int                      numberKeyToVisibleIndex(int number);
+ENumberKeyMode           numberKeyModeFromString(const std::string& mode);
 SDropIntentGeometry      computeDropIntentGeometry(const SDropIntentInput& input);
 
 std::string              fallbackTokenForVisibleIndex(int visibleIndex);

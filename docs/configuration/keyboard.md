@@ -7,11 +7,17 @@ Keyboard navigation is enabled by default. The overview can activate a `hyprexpo
 | key | type | description | default |
 | --- | --- | --- | --- |
 | `plugin:hyprexpo:keynav_enable` | bool int | enable keyboard navigation and the overview submap | `1` |
+| `plugin:hyprexpo:number_key_mode` | string | raw digit handling: `workspace`, `index`, or `passthrough` | `workspace` |
 | `plugin:hyprexpo:keynav_wrap_h` | bool int | wrap horizontally at row edges | `1` |
 | `plugin:hyprexpo:keynav_wrap_v` | bool int | wrap vertically at column edges | `1` |
 | `plugin:hyprexpo:keynav_reading_order` | bool int | use row-major horizontal movement | `0` |
 
 ## Binds
+
+Set `plugin:hyprexpo:number_key_mode = passthrough` when defining digit binds
+manually. This leaves those key events available to the active submap. Use
+`index` instead when you want the plugin to select visible tile positions
+without explicit digit binds.
 
 Use this syntax in `hyprland.conf`:
 

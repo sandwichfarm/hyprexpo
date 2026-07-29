@@ -82,21 +82,45 @@ int main() {
 
     const auto numberKeyDispatcher = extractFunction(dispatchersSource, "static SDispatchResult changeToSingleDigitWorkspace(const std::string& arg) {");
     expect(!numberKeyDispatcher.empty(), "number-key dispatcher function exists");
-    expect(numberKeyDispatcher.find("g_pOverview->onKbSelectNumber(workspaceID)") != std::string::npos,
-           "raw number keys use the shared overview number-selection policy");
-    expect(numberKeyDispatcher.find("g_pOverview->selectWorkspaceByID(workspaceID)") == std::string::npos,
-           "raw number keys do not bypass the shared overview number-selection policy");
+    expect(numberKeyDispatcher.find("g_pOverview->selectWorkspaceByID(workspaceID)") != std::string::npos,
+           "workspace-mode raw number keys preserve workspace-ID selection");
+
+    const auto rawNumberSelection = extractFunction(dispatchersSource, "bool shouldSelectWorkspaceFromKey(const IKeyboard::SKeyEvent& event) {");
+    expect(!rawNumberSelection.empty(), "raw number-key selection function exists");
+    expect(rawNumberSelection.find("plugin:hyprexpo:number_key_mode") != std::string::npos,
+           "raw number-key handling reads the dedicated mode");
+    const auto passthroughMode = rawNumberSelection.find("ENumberKeyMode::Passthrough");
+    const auto indexMode       = rawNumberSelection.find("ENumberKeyMode::Index", passthroughMode);
+    const auto workspaceMode   = rawNumberSelection.find("return changeToSingleDigitWorkspace(arg).success;", indexMode);
+    expect(passthroughMode != std::string::npos && indexMode != std::string::npos &&
+               rawNumberSelection.substr(passthroughMode, indexMode - passthroughMode).find("return false;") != std::string::npos,
+           "passthrough mode leaves raw number keys uncancelled");
+    expect(indexMode != std::string::npos && workspaceMode != std::string::npos &&
+               rawNumberSelection.substr(indexMode, workspaceMode - indexMode).find("g_pOverview->onKbSelectToken(visibleIndex)") != std::string::npos &&
+               rawNumberSelection.substr(indexMode, workspaceMode - indexMode).find("return true;") != std::string::npos,
+           "index mode selects from active-overview visible tile positions");
+    expect(workspaceMode != std::string::npos,
+           "workspace mode retains the legacy global-workspace fallback");
+    expect(rawNumberSelection.find("if (arg == \"0\")") != std::string::npos,
+           "workspace mode preserves legacy zero-key passthrough");
+    expect(mainSource.find("if (shouldSelectWorkspaceFromKey(event))\n            info.cancelled = true;") != std::string::npos,
+           "raw key events are cancelled only when the mode-specific handler consumes them");
 
     const auto interactionSource = readFile("OverviewInteraction.cpp");
     expect(!interactionSource.empty(), "OverviewInteraction.cpp can be read from repo root");
-    const auto numberSelection = extractFunction(interactionSource, "bool COverview::onKbSelectNumber(int num) {");
-    expect(!numberSelection.empty(), "shared overview number-selection function exists");
-    expect(numberSelection.find("plugin:hyprexpo:number_keys_select_by_index") != std::string::npos,
-           "number selection is gated by the default-off index-mode config");
-    expect(numberSelection.find("Hyprexpo::numberKeyToVisibleIndex(num)") != std::string::npos,
-           "index mode converts number keys to visible tile positions");
-    expect(numberSelection.find("return true;") != std::string::npos,
-           "index mode consumes unavailable tile positions instead of falling through");
+    const auto numberSelection = extractFunction(interactionSource, "void COverview::onKbSelectNumber(int num) {");
+    expect(!numberSelection.empty(), "workspace-number dispatcher selection function exists");
+    expect(numberSelection.find("selectWorkspaceByID(num)") != std::string::npos,
+           "kb_selectn remains workspace-ID based");
+    expect(numberSelection.find("number_key_mode") == std::string::npos && numberSelection.find("numberKeyToVisibleIndex") == std::string::npos,
+           "kb_selectn semantics do not depend on the raw number-key mode");
+
+    const auto numberDispatcher = extractFunction(dispatchersSource, "static SDispatchResult onKbSelectNumberDispatcher(std::string arg) {");
+    const auto indexDispatcher  = extractFunction(dispatchersSource, "static SDispatchResult onKbSelectIndexDispatcher(std::string arg) {");
+    expect(numberDispatcher.find("g_pOverview->onKbSelectNumber(num)") != std::string::npos,
+           "kb_selectn keeps routing to workspace-number selection");
+    expect(indexDispatcher.find("g_pOverview->onKbSelectToken(idx - 1)") != std::string::npos,
+           "kb_selecti keeps routing to one-based visible-index selection");
 
     const auto toggleStart = expoDispatcher.find("if (arg == \"toggle\")");
     const auto cancelStart = expoDispatcher.find("if (arg == \"cancel\")", toggleStart);

@@ -57,6 +57,7 @@ Optional keyboard navigation:
 plugin {
     hyprexpo {
         keynav_enable = 1
+        number_key_mode = passthrough
         keynav_wrap_h = 1
         keynav_wrap_v = 1
         keynav_reading_order = 0

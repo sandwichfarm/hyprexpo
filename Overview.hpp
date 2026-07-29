@@ -49,7 +49,7 @@ class COverview {
     // keyboard navigation interface
     void          onKbMoveFocus(const std::string& dir);
     void          onKbConfirm();
-    bool          onKbSelectNumber(int num);
+    void          onKbSelectNumber(int num);
     void          onKbSelectToken(int visibleIdx);
     bool          selectVisibleToken(const std::string& token);
     int64_t       selectedWorkspaceID() const;

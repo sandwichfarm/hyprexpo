@@ -181,8 +181,10 @@ static SDispatchResult changeToSingleDigitWorkspace(const std::string& arg) {
     const int workspaceID = arg[0] - '0';
 
     if (g_pOverview) {
-        if (g_pOverview->onKbSelectNumber(workspaceID))
+        if (g_pOverview->selectWorkspaceByID(workspaceID)) {
+            g_pOverview->close();
             return {};
+        }
 
         g_pOverview->close(false);
     }
@@ -196,6 +198,8 @@ static SDispatchResult changeToSingleDigitWorkspace(const std::string& arg) {
 
 static std::string workspaceArgForKeysym(xkb_keysym_t keysym) {
     switch (keysym) {
+        case XKB_KEY_0:
+        case XKB_KEY_KP_0: return "0";
         case XKB_KEY_1:
         case XKB_KEY_KP_1: return "1";
         case XKB_KEY_2:
@@ -246,6 +250,24 @@ bool shouldSelectWorkspaceFromKey(const IKeyboard::SKeyEvent& event) {
 
     const auto arg = workspaceArgForKeyEvent(event);
     if (arg.empty())
+        return false;
+
+    static auto const* PNUMBERKEYMODE = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:number_key_mode")->getDataStaticPtr();
+    const auto         mode           = Hyprexpo::numberKeyModeFromString(std::string{*PNUMBERKEYMODE});
+
+    if (mode == Hyprexpo::ENumberKeyMode::Passthrough)
+        return false;
+
+    if (mode == Hyprexpo::ENumberKeyMode::Index) {
+        const int visibleIndex = Hyprexpo::numberKeyToVisibleIndex(arg[0] - '0');
+        if (visibleIndex >= 0)
+            g_pOverview->onKbSelectToken(visibleIndex);
+        return true;
+    }
+
+    // Zero was not handled by the legacy raw-key path. Preserve that behavior
+    // in workspace mode while still allowing zero to select tile 10 in index mode.
+    if (arg == "0")
         return false;
 
     return changeToSingleDigitWorkspace(arg).success;
