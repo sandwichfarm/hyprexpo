@@ -3,9 +3,6 @@
 #include <cstddef>
 
 namespace HyprexpoConfig {
-// PR #605 compatibility defaults kept separate from the richer sandwichfarm
-// runtime options below. These values are registered for later integration and
-// must not replace the newer config surface.
 inline constexpr int         LEGACY_DYNAMIC_GRID_DEFAULT         = 0;
 inline constexpr int         LEGACY_FILL_GAPS_DEFAULT            = 0;
 inline constexpr int         LEGACY_MRU_SORT_DEFAULT             = 0;
