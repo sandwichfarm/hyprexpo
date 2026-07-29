@@ -4,6 +4,7 @@
 
 #include "ExpoGesture.hpp"
 #include "HyprexpoConfig.hpp"
+#include "HyprexpoLogic.hpp"
 #include "HyprlandConfigCompat.hpp"
 #include "Overview.hpp"
 #include <hyprland/src/Compositor.hpp>
@@ -12,6 +13,7 @@
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/state/GlobalWindowController.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/helpers/Color.hpp>
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
@@ -510,6 +512,11 @@ void disableExpoGestureSync() {
     g_gestureSyncDisabled = true;
 }
 
+static void reportGestureConfigError(const std::string& error) {
+    Log::logger->log(Log::ERR, "[hyprexpo] {}", error);
+    HyprlandAPI::addNotification(PHANDLE, "[hyprexpo] " + error, CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
+}
+
 void syncExpoGestureFromConfig() {
     if (g_unloading || g_gestureSyncDisabled)
         return;
@@ -517,11 +524,22 @@ void syncExpoGestureFromConfig() {
     const int         FINGERS = (int)CompatHyprlandAPI::intValue("plugin:hyprexpo:gesture_fingers");
     const std::string DIR     = CompatHyprlandAPI::stringValue("plugin:hyprexpo:gesture_direction");
 
-    if (FINGERS <= 0)
+    const auto DECISION = Hyprexpo::evaluateGestureSync({
+        .fingers        = FINGERS,
+        .direction      = DIR,
+        .directionValid = g_pTrackpadGestures && g_pTrackpadGestures->dirForString(DIR) != TRACKPAD_GESTURE_DIR_NONE,
+    });
+
+    if (!DECISION.error.empty()) {
+        reportGestureConfigError(DECISION.error);
+        return;
+    }
+
+    if (!DECISION.registerGesture)
         return;
 
     if (const auto RESULT = registerExpoGesture(FINGERS, DIR, "expo", "", 1.F, false); !RESULT.success)
-        Log::logger->log(Log::ERR, "[hyprexpo] gesture_fingers/gesture_direction: {}", RESULT.error);
+        reportGestureConfigError(RESULT.error);
 }
 
 static SDispatchResult onKbFocusDispatcher(std::string arg) {

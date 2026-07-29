@@ -9,9 +9,23 @@
 #include <hyprland/src/config/values/types/FloatValue.hpp>
 #include <hyprland/src/config/values/types/IntValue.hpp>
 #include <hyprland/src/config/values/types/StringValue.hpp>
+#include <hyprland/src/managers/input/trackpad/GestureTypes.hpp>
+#include <hyprland/src/managers/input/trackpad/TrackpadGestures.hpp>
+#include <expected>
+#include <string>
 
 static void addConfigValue(SP<Config::Values::IValue> value) {
     HyprlandAPI::addConfigValueV2(PHANDLE, value);
+}
+
+// Runs at config parse time, so a typo lands in hyprctl configerrors instead of silently
+// leaving the gesture unregistered. Plugin values are only ever parsed after the plugin is
+// loaded, so the trackpad manager always exists by then.
+static std::expected<void, std::string> validateGestureDirection(const Config::STRING& value) {
+    if (!g_pTrackpadGestures || g_pTrackpadGestures->dirForString(value) != TRACKPAD_GESTURE_DIR_NONE)
+        return {};
+
+    return std::unexpected("invalid direction '" + value + "'");
 }
 
 void registerHyprexpoConfigValues() {
@@ -40,8 +54,10 @@ void registerHyprexpoConfigValues() {
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:show_workspace_numbers", "force workspace ID labels", HyprexpoConfig::SHOW_WORKSPACE_NUMBERS_DEFAULT));
 
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gesture_distance", "gesture distance", HyprexpoConfig::GESTURE_DISTANCE_DEFAULT));
-    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gesture_fingers", "fingers for the swipe gesture (0 disables)", HyprexpoConfig::GESTURE_FINGERS_DEFAULT));
-    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:gesture_direction", "swipe direction for the gesture", HyprexpoConfig::GESTURE_DIRECTION_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gesture_fingers", "fingers for the swipe gesture (0 disables)", HyprexpoConfig::GESTURE_FINGERS_DEFAULT,
+                                                         Config::Values::SIntValueOptions{.min = 0, .max = 9}));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:gesture_direction", "swipe direction for the gesture", HyprexpoConfig::GESTURE_DIRECTION_DEFAULT,
+                                                            Config::Values::SStringValueOptions{.validator = validateGestureDirection}));
     addConfigValue(createCancelKeyConfig());
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:show_cursor", "show cursor during overview", HyprexpoConfig::SHOW_CURSOR_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:show_pinned_windows", "show pinned windows in previews", HyprexpoConfig::SHOW_PINNED_WINDOWS_DEFAULT));

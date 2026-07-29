@@ -101,7 +101,7 @@ plugin {
 | `plugin:hyprexpo:skip_empty` | bool int | skip empty workspaces using selector `m` when enabled | `0` |
 | `plugin:hyprexpo:max_workspace` | int | when `skip_empty = 0`, cap sequential overview tiles at this workspace ID; `0` keeps Hyprland selector behavior | `0` |
 | `plugin:hyprexpo:gesture_distance` | int | swipe distance considered complete | `200` |
-| `plugin:hyprexpo:gesture_fingers` | int | fingers for the interactive swipe gesture; `0` disables | `0` |
+| `plugin:hyprexpo:gesture_fingers` | int | fingers for the interactive swipe gesture; `0` disables, otherwise `2`-`9` | `0` |
 | `plugin:hyprexpo:gesture_direction` | string | swipe direction: `up`, `down`, `left`, `right`, `vertical`, `horizontal`, `pinch` | `up` |
 | `plugin:hyprexpo:cancel_key` | string | comma-separated key names that close overview without selecting; `none` or `off` disables | `escape` |
 | `plugin:hyprexpo:show_cursor` | bool int | keep the cursor visible while overview is open; set `0` for old hidden-cursor behavior | `1` |
@@ -123,6 +123,8 @@ plugin {
 ```
 
 `gesture_fingers = 0` (the default) registers nothing, leaving trackpad handling entirely to Hyprland and Lua. Use a `gesture_direction` that does not collide with an existing Hyprland `gesture =` binding for the same finger count.
+
+An unknown `gesture_direction` is rejected while the config is parsed, so it shows up in `hyprctl configerrors`. A `gesture_fingers` value that is out of range is reported as a notification and leaves the gesture unregistered rather than failing silently.
 
 ## Tile Appearance
 
