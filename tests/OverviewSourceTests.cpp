@@ -108,6 +108,23 @@ int main() {
     expect(fullRender.find("Hyprexpo::resolveBorderSpec(") != std::string::npos,
            "runtime border rendering uses modern-first border resolution with legacy fallback");
 
+    expect(dispatchersSource.find("HyprlandAPI::getConfigValue") == std::string::npos,
+           "gesture config avoids the legacy hyprlang getter, which is null under CONFIG_LUA");
+
+    const auto gestureSync = extractFunction(dispatchersSource, "void syncExpoGestureFromConfig(");
+    expect(!gestureSync.empty(), "syncExpoGestureFromConfig exists");
+    expect(gestureSync.find("g_unloading || g_gestureSyncDisabled") != std::string::npos, "gesture sync bails out while the plugin is unloading");
+
+    const auto exitFunction = extractFunction(mainSource, "APICALL EXPORT void PLUGIN_EXIT(");
+    expect(!exitFunction.empty(), "PLUGIN_EXIT exists");
+    const auto disablePos = exitFunction.find("disableExpoGestureSync();");
+    const auto reloadPos  = exitFunction.find("Config::mgr()->reload();");
+    expect(disablePos != std::string::npos, "PLUGIN_EXIT disables gesture sync");
+    expect(reloadPos != std::string::npos, "PLUGIN_EXIT reloads the config to clear registered gestures");
+    expect(disablePos < reloadPos, "gesture sync is disabled before the teardown reload fires config.reloaded");
+
+    expect(mainSource.find("config.reloaded.listen") != std::string::npos, "the gesture is re-applied after every config reload");
+
     if (failures != 0)
         return 1;
 

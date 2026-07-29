@@ -242,6 +242,25 @@ int main() {
     dropInput.windowSize.w = 0;
     expect(!computeDropIntentGeometry(dropInput).valid, "drop intent rejects invalid window size");
 
+    const auto gestureDisabled = evaluateGestureSync({.fingers = 0, .direction = "up", .directionValid = true});
+    expect(!gestureDisabled.registerGesture, "gesture_fingers = 0 registers nothing");
+    expect(gestureDisabled.error.empty(), "gesture_fingers = 0 is opt-out, not a misconfiguration");
+
+    const auto gestureEnabled = evaluateGestureSync({.fingers = 3, .direction = "vertical", .directionValid = true});
+    expect(gestureEnabled.registerGesture && gestureEnabled.error.empty(), "a valid finger count and direction registers the gesture");
+
+    // 1 is the interesting one: it is in range for the declared min/max but too few fingers for a
+    // gesture, so it can only be caught here.
+    for (const int fingers : {-1, 1, 10}) {
+        const auto rejected = evaluateGestureSync({.fingers = fingers, .direction = "up", .directionValid = true});
+        expect(!rejected.registerGesture, "gesture_fingers " + std::to_string(fingers) + " registers nothing");
+        expect(rejected.error.find(std::to_string(fingers)) != std::string::npos, "gesture_fingers " + std::to_string(fingers) + " is reported with the offending value");
+    }
+
+    const auto badDirection = evaluateGestureSync({.fingers = 3, .direction = "sideways", .directionValid = false});
+    expect(!badDirection.registerGesture, "an unknown gesture_direction registers nothing");
+    expect(badDirection.error.find("sideways") != std::string::npos, "an unknown gesture_direction is reported with the offending value");
+
     expect(fallbackTokenForVisibleIndex(0) == "1", "fallback token first workspace");
     expect(fallbackTokenForVisibleIndex(9) == "0", "fallback token tenth workspace");
     expect(fallbackTokenForVisibleIndex(10) == "a", "fallback token alpha start");

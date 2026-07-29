@@ -57,6 +57,7 @@ test_version
 test_hash
 hyprexpo_logic_tests
 HyprexpoLogicTests
+OverviewSourceTests
 
 # Planning files
 .planning/*

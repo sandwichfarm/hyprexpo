@@ -75,7 +75,7 @@ test: $(TEST_TARGET) $(SOURCE_TEST_TARGET)
 $(TEST_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp HyprexpoConfig.hpp tests/HyprexpoLogicTests.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror HyprexpoLogic.cpp tests/HyprexpoLogicTests.cpp -o $@
 
-$(SOURCE_TEST_TARGET): tests/OverviewSourceTests.cpp Overview.cpp
+$(SOURCE_TEST_TARGET): tests/OverviewSourceTests.cpp Overview.cpp OverviewRender.cpp Dispatchers.cpp main.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror tests/OverviewSourceTests.cpp -o $@
 
 # --- Release ceremony -----------------------------------------------------
