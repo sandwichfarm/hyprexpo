@@ -32,8 +32,6 @@ inline constexpr int         MAX_WORKSPACE_DEFAULT           = 0;
 inline constexpr int         SHOW_WORKSPACE_NUMBERS_DEFAULT  = 0;
 inline constexpr unsigned    WORKSPACE_NUMBER_COLOR_DEFAULT  = 0xFFFFFFFF;
 inline constexpr int         GESTURE_DISTANCE_DEFAULT        = 200;
-// 0 disables the config-driven trackpad gesture, so this stays inert unless opted into.
-// Lua users can keep calling hl.plugin.hyprexpo.gesture{}; both paths coexist.
 inline constexpr int         GESTURE_FINGERS_DEFAULT         = 0;
 inline constexpr const char* GESTURE_DIRECTION_DEFAULT       = "up";
 inline constexpr const char* CANCEL_KEY_DEFAULT              = "escape";
