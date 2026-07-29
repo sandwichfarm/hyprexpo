@@ -176,11 +176,19 @@ SDropIntentGeometry computeDropIntentGeometry(const SDropIntentInput& input) {
     const double pointX  = input.targetTileLocal.x + ratioX * input.targetTileLocal.w;
     const double pointY  = input.targetTileLocal.y + ratioY * input.targetTileLocal.h;
 
+    // proxyW/proxyH are clamped to at most the tile size above, so `tile.x + tile.w - proxyW` is
+    // algebraically >= tile.x. In floating point it is not: when the dragged window is at least as
+    // large as the tile the proxy clamps to exactly tile.w/tile.h, and the subtraction can land an
+    // ULP below tile.x. Passing that as clamp()'s upper bound is UB, and libstdc++ builds with
+    // assertions enabled turn it into an abort() that takes the whole compositor down mid-render.
+    const double maxProxyX = std::max(input.targetTileLocal.x, input.targetTileLocal.x + input.targetTileLocal.w - proxyW);
+    const double maxProxyY = std::max(input.targetTileLocal.y, input.targetTileLocal.y + input.targetTileLocal.h - proxyH);
+
     geometry.valid                = true;
     geometry.targetWorkspacePoint = {ratioX * input.workspaceSize.w, ratioY * input.workspaceSize.h};
     geometry.targetProxyLocal     = {
-        std::clamp(pointX - input.grabOffset.x * scaleX, input.targetTileLocal.x, input.targetTileLocal.x + input.targetTileLocal.w - proxyW),
-        std::clamp(pointY - input.grabOffset.y * scaleY, input.targetTileLocal.y, input.targetTileLocal.y + input.targetTileLocal.h - proxyH),
+        std::clamp(pointX - input.grabOffset.x * scaleX, input.targetTileLocal.x, maxProxyX),
+        std::clamp(pointY - input.grabOffset.y * scaleY, input.targetTileLocal.y, maxProxyY),
         proxyW,
         proxyH,
     };
