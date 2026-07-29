@@ -126,16 +126,26 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             info.cancelled = true;
     });
 
+    // A config reload wipes every registered trackpad gesture (see PLUGIN_EXIT), so re-apply ours
+    // on each reload rather than only here.
+    static auto PCFG = Event::bus()->m_events.config.reloaded.listen([]() { syncExpoGestureFromConfig(); });
+
     registerHyprexpoDispatchers();
 
     registerHyprexpoConfigValues();
 
     HyprlandAPI::reloadConfig();
 
+    syncExpoGestureFromConfig();
+
     return {"hyprexpo", "hyprexpo+ with keyboard selection, labels, and borders", "sandwich", HYPREXPO_VERSION};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
+    // Must come first: the reload below fires config.reloaded, and the listener would otherwise
+    // re-register a CExpoGesture that Hyprland keeps after this library is unloaded.
+    disableExpoGestureSync();
+
     g_pOverview.reset();
     g_pHyprRenderer->m_renderPass.removeAllOfType("COverviewPassElement");
 

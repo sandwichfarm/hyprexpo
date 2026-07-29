@@ -101,11 +101,28 @@ plugin {
 | `plugin:hyprexpo:skip_empty` | bool int | skip empty workspaces using selector `m` when enabled | `0` |
 | `plugin:hyprexpo:max_workspace` | int | when `skip_empty = 0`, cap sequential overview tiles at this workspace ID; `0` keeps Hyprland selector behavior | `0` |
 | `plugin:hyprexpo:gesture_distance` | int | swipe distance considered complete | `200` |
+| `plugin:hyprexpo:gesture_fingers` | int | fingers for the interactive swipe gesture; `0` disables | `0` |
+| `plugin:hyprexpo:gesture_direction` | string | swipe direction: `up`, `down`, `left`, `right`, `vertical`, `horizontal`, `pinch` | `up` |
 | `plugin:hyprexpo:cancel_key` | string | comma-separated key names that close overview without selecting; `none` or `off` disables | `escape` |
 | `plugin:hyprexpo:show_cursor` | bool int | keep the cursor visible while overview is open; set `0` for old hidden-cursor behavior | `1` |
 | `plugin:hyprexpo:show_pinned_windows` | bool int | render pinned/PiP windows in workspace preview thumbnails; default `0` hides them from previews only | `0` |
 
 Pinned windows, including browser Picture-in-Picture windows, stay pinned and visible in normal Hyprland. By default HyprExpo hides them only while capturing workspace preview thumbnails so they do not appear on every tile. Set `show_pinned_windows = 1` to opt in to the old preview behavior.
+
+### Trackpad gesture
+
+`gesture_fingers` and `gesture_direction` register the same interactive, follow-your-finger overview gesture that [`hl.plugin.hyprexpo.gesture{}`](../guides/lua-gestures.md) provides, but from plain config. Hyprland selects either hyprlang or Lua for the whole config and a `.lua` cannot be sourced from a `.conf`, so hyprlang users need this to reach the gesture at all.
+
+```ini
+plugin {
+    hyprexpo {
+        gesture_fingers = 3
+        gesture_direction = vertical
+    }
+}
+```
+
+`gesture_fingers = 0` (the default) registers nothing, leaving trackpad handling entirely to Hyprland and Lua. Use a `gesture_direction` that does not collide with an existing Hyprland `gesture =` binding for the same finger count.
 
 ## Tile Appearance
 

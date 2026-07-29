@@ -7,6 +7,7 @@
 #include "Overview.hpp"
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
+#include <hyprland/src/debug/log/Logger.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/state/GlobalWindowController.hpp>
 #include <hyprland/src/desktop/view/Window.hpp>
@@ -29,6 +30,7 @@
 #include <string_view>
 
 static bool g_unloading         = false;
+static bool g_gestureSyncDisabled = false;
 static bool renderingOverview   = false;
 static SP<Config::Values::CStringValue> g_pCancelKeyConfig;
 
@@ -501,6 +503,30 @@ static SDispatchResult registerExpoGesture(int fingerCount, const std::string& d
         return {.success = false, .error = result.error()};
 
     return {};
+}
+
+void disableExpoGestureSync() {
+    g_gestureSyncDisabled = true;
+}
+
+void syncExpoGestureFromConfig() {
+    // g_unloading is only set by resetDispatcherRuntime(), which PLUGIN_EXIT runs *after* its
+    // Config::mgr()->reload(). That reload fires config.reloaded, so without the separate flag
+    // this would re-register a CExpoGesture during teardown and hand Hyprland an object whose
+    // vtable dies with the dlclose()d library.
+    if (g_unloading || g_gestureSyncDisabled)
+        return;
+
+    static auto* const* PFINGERS = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gesture_fingers")->getDataStaticPtr();
+    static auto const*  PDIR     = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gesture_direction")->getDataStaticPtr();
+
+    const int FINGERS = (int)**PFINGERS;
+    if (FINGERS <= 0) // opt-in; 0 leaves trackpad handling entirely to Hyprland/Lua
+        return;
+
+    const auto RESULT = registerExpoGesture(FINGERS, std::string{*PDIR}, "expo", "", 1.F, false);
+    if (!RESULT.success)
+        Log::logger->log(Log::ERR, "[hyprexpo] gesture_fingers/gesture_direction: {}", RESULT.error);
 }
 
 static SDispatchResult onKbFocusDispatcher(std::string arg) {
