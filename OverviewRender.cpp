@@ -531,9 +531,6 @@ void COverview::fullRender() {
         if (box.w <= 0.0 || box.h <= 0.0)
             return;
 
-        // border_width = 0 means "no border". This used to be clamped up to 1px, so there was no
-        // way to turn tile borders off from the config at all -- the override path already honoured
-        // 0 above, but the config value itself could not.
         const int BWIDTH = borderWidthOverride > 0 ? borderWidthOverride : (int)**PBWIDTH;
         if (BWIDTH <= 0)
             return;
