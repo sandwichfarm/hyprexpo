@@ -15,9 +15,6 @@ static void addConfigValue(SP<Config::Values::IValue> value) {
 }
 
 void registerHyprexpoConfigValues() {
-    // PR #605 compatibility keys: registered separately from the richer
-    // sandwichfarm config surface so later integration can consume them
-    // without changing existing option names or defaults.
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:dynamic_grid", "legacy dynamic grid toggle", HyprexpoConfig::LEGACY_DYNAMIC_GRID_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:fill_gaps", "legacy gap filling toggle", HyprexpoConfig::LEGACY_FILL_GAPS_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:mru_sort", "legacy mru sorting toggle", HyprexpoConfig::LEGACY_MRU_SORT_DEFAULT));
@@ -37,19 +34,12 @@ void registerHyprexpoConfigValues() {
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:columns", "columns", HyprexpoConfig::COLUMNS_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gaps_in", "inner gaps", HyprexpoConfig::GAPS_IN_DEFAULT));
     addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:bg_col", "background color", HyprexpoConfig::BG_COL_DEFAULT));
-    // Supports both global and per-monitor formats:
-    // Global: "center current" or "first 1"
-    // Per-monitor with comma delimiter: "DP-1 first 1, HDMI-1 center current"
-    // Mixed: "DP-1 first 1, center current" (DP-1 uses first 1, others use center current)
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:workspace_method", "workspace method", HyprexpoConfig::WORKSPACE_METHOD_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:skip_empty", "skip empty workspaces", HyprexpoConfig::SKIP_EMPTY_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:max_workspace", "maximum sequential workspace", HyprexpoConfig::MAX_WORKSPACE_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:show_workspace_numbers", "force workspace ID labels", HyprexpoConfig::SHOW_WORKSPACE_NUMBERS_DEFAULT));
 
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gesture_distance", "gesture distance", HyprexpoConfig::GESTURE_DISTANCE_DEFAULT));
-    // Config-driven trackpad gesture, so hyprlang users can reach the interactive overview too.
-    // The direction goes straight to CTrackpadGestures::dirForString, so "vertical", "horizontal",
-    // "up"/"u", "down", "left", "right", "pinch" and friends all work.
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gesture_fingers", "fingers for the swipe gesture (0 disables)", HyprexpoConfig::GESTURE_FINGERS_DEFAULT));
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:gesture_direction", "swipe direction for the gesture", HyprexpoConfig::GESTURE_DIRECTION_DEFAULT));
     addConfigValue(createCancelKeyConfig());
@@ -127,7 +117,6 @@ void registerHyprexpoConfigValues() {
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_pixel_snap", "label pixel snap", HyprexpoConfig::LABEL_PIXEL_SNAP_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_center_adjust_x", "label center adjust x", HyprexpoConfig::LABEL_CENTER_ADJUST_X_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_center_adjust_y", "label center adjust y", HyprexpoConfig::LABEL_CENTER_ADJUST_Y_DEFAULT));
-    // gaps
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gaps_out", "outer gaps", HyprexpoConfig::GAPS_OUT_DEFAULT));
     // Deprecated: use border_color_* instead (supports both solid and gradient)
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:border_grad_current", "current border gradient", HyprexpoConfig::BORDER_GRAD_CURRENT_DEFAULT));
