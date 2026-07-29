@@ -161,6 +161,7 @@ int main() {
     expect(clampGridColumns(3) == 3, "columns keep valid value");
     expect(clampGridColumns(99) == 7, "columns clamp upper bound");
     expect(HyprexpoConfig::SHOW_PINNED_WINDOWS_DEFAULT == 0, "pinned windows are hidden from previews by default");
+    expect(HyprexpoConfig::NUMBER_KEYS_SELECT_BY_INDEX_DEFAULT == 0, "number keys keep selecting workspace IDs by default");
 
     const auto boundedGapFill = expandDynamicWorkspaceIDs({2, 4}, true, 64);
     expect(boundedGapFill.has_value(), "bounded fill_gaps range is accepted");
@@ -187,6 +188,11 @@ int main() {
     expect(tileIndexFromPoint(299, 299, 300, 300, 3) == 8, "legacy tile index bottom-right inside");
     expect(tileIndexFromPoint(300, 300, 300, 300, 3) == 8, "legacy tile index clamps monitor edge");
     expect(tileIndexFromPoint(10, 10, 0, 300, 3) == -1, "legacy tile index rejects invalid width");
+    expect(numberKeyToVisibleIndex(1) == 0, "number key 1 selects the first visible tile");
+    expect(numberKeyToVisibleIndex(2) == 1, "number key 2 selects the second visible tile");
+    expect(numberKeyToVisibleIndex(9) == 8, "number key 9 selects the ninth visible tile");
+    expect(numberKeyToVisibleIndex(0) == 9, "number key 0 selects the tenth visible tile");
+    expect(numberKeyToVisibleIndex(10) == -1, "out-of-range number is not a visible tile index");
 
     SDropIntentInput dropInput{
         .targetValid     = true,

@@ -167,12 +167,20 @@ Optional keyboard navigation:
 plugin {
     hyprexpo {
         keynav_enable = 1
+        number_keys_select_by_index = 0
         keynav_wrap_h = 1
         keynav_wrap_v = 1
         keynav_reading_order = 0
     }
 }
+```
 
+`number_keys_select_by_index` defaults to `0`, preserving number keys as
+workspace IDs. Set it to `1` to make number keys select positions in the active
+overview instead; for example, `2` selects its second visible tile even when
+that tile is workspace 11 on a monitor-specific workspace range.
+
+```ini
 submap = hyprexpo
     bind = , left,   hyprexpo:kb_focus, left
     bind = , right,  hyprexpo:kb_focus, right

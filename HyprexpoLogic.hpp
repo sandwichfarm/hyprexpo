@@ -90,6 +90,7 @@ int                      tileIndexAtPoint(double x, double y, int visibleCount, 
 
 int                      clampGridColumns(int columns);
 int                      tileIndexFromPoint(double x, double y, double width, double height, int sideLength);
+int                      numberKeyToVisibleIndex(int number);
 SDropIntentGeometry      computeDropIntentGeometry(const SDropIntentInput& input);
 
 std::string              fallbackTokenForVisibleIndex(int visibleIndex);

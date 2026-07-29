@@ -80,6 +80,24 @@ int main() {
     const auto expoDispatcher = extractFunction(dispatchersSource, "static SDispatchResult onExpoDispatcher(std::string arg) {");
     expect(!expoDispatcher.empty(), "expo dispatcher function exists");
 
+    const auto numberKeyDispatcher = extractFunction(dispatchersSource, "static SDispatchResult changeToSingleDigitWorkspace(const std::string& arg) {");
+    expect(!numberKeyDispatcher.empty(), "number-key dispatcher function exists");
+    expect(numberKeyDispatcher.find("g_pOverview->onKbSelectNumber(workspaceID)") != std::string::npos,
+           "raw number keys use the shared overview number-selection policy");
+    expect(numberKeyDispatcher.find("g_pOverview->selectWorkspaceByID(workspaceID)") == std::string::npos,
+           "raw number keys do not bypass the shared overview number-selection policy");
+
+    const auto interactionSource = readFile("OverviewInteraction.cpp");
+    expect(!interactionSource.empty(), "OverviewInteraction.cpp can be read from repo root");
+    const auto numberSelection = extractFunction(interactionSource, "bool COverview::onKbSelectNumber(int num) {");
+    expect(!numberSelection.empty(), "shared overview number-selection function exists");
+    expect(numberSelection.find("plugin:hyprexpo:number_keys_select_by_index") != std::string::npos,
+           "number selection is gated by the default-off index-mode config");
+    expect(numberSelection.find("Hyprexpo::numberKeyToVisibleIndex(num)") != std::string::npos,
+           "index mode converts number keys to visible tile positions");
+    expect(numberSelection.find("return true;") != std::string::npos,
+           "index mode consumes unavailable tile positions instead of falling through");
+
     const auto toggleStart = expoDispatcher.find("if (arg == \"toggle\")");
     const auto cancelStart = expoDispatcher.find("if (arg == \"cancel\")", toggleStart);
     const auto toggleBlock = toggleStart == std::string::npos || cancelStart == std::string::npos ? std::string{} : expoDispatcher.substr(toggleStart, cancelStart - toggleStart);

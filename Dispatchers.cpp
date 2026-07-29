@@ -181,10 +181,8 @@ static SDispatchResult changeToSingleDigitWorkspace(const std::string& arg) {
     const int workspaceID = arg[0] - '0';
 
     if (g_pOverview) {
-        if (g_pOverview->selectWorkspaceByID(workspaceID)) {
-            g_pOverview->close();
+        if (g_pOverview->onKbSelectNumber(workspaceID))
             return {};
-        }
 
         g_pOverview->close(false);
     }

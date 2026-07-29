@@ -247,6 +247,7 @@ Then bind `hyprexpo:kb_select` to those tokens in the overview submap.
 | key | type | description | default |
 | --- | --- | --- | --- |
 | `plugin:hyprexpo:keynav_enable` | bool int | enable keyboard navigation and the overview submap behavior | `1` |
+| `plugin:hyprexpo:number_keys_select_by_index` | bool int | treat number keys as positions in the active overview instead of global workspace IDs | `0` |
 | `plugin:hyprexpo:keynav_wrap_h` | bool int | wrap horizontally at row edges | `1` |
 | `plugin:hyprexpo:keynav_wrap_v` | bool int | wrap vertically at column edges | `1` |
 | `plugin:hyprexpo:keynav_reading_order` | bool int | use row-major horizontal movement instead of spatial movement | `0` |

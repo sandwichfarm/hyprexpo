@@ -528,15 +528,28 @@ void COverview::onKbConfirm() {
     close();
 }
 
-void COverview::onKbSelectNumber(int num) {
+bool COverview::onKbSelectNumber(int num) {
+    static auto* const* PSELECTBYINDEX = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:number_keys_select_by_index")->getDataStaticPtr();
+
+    if (**PSELECTBYINDEX) {
+        if (closing)
+            return true;
+
+        const int visibleIndex = Hyprexpo::numberKeyToVisibleIndex(num);
+        if (visibleIndex >= 0 && selectVisibleIndex(visibleIndex))
+            close();
+        return true;
+    }
+
     if (closing)
-        return;
+        return false;
 
-    if (num == 0)
-        num = 10;
+    const int workspaceID = num == 0 ? 10 : num;
+    if (!selectWorkspaceByID(workspaceID))
+        return false;
 
-    if (selectWorkspaceByID(num))
-        close();
+    close();
+    return true;
 }
 
 void COverview::onKbSelectToken(int visibleIdx) {
