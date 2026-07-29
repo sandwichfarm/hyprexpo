@@ -37,6 +37,7 @@ int main() {
     expect(clampGridColumns(3) == 3, "columns keep valid value");
     expect(clampGridColumns(99) == 7, "columns clamp upper bound");
     expect(HyprexpoConfig::SHOW_PINNED_WINDOWS_DEFAULT == 0, "pinned windows are hidden from previews by default");
+    expect(HyprexpoConfig::DRAG_DROP_ENABLE_DEFAULT == 1, "drag and drop is enabled by default");
 
     expect(tileIndexFromPoint(0, 0, 300, 300, 3) == 0, "tile index top-left");
     expect(tileIndexFromPoint(299, 299, 300, 300, 3) == 8, "tile index bottom-right inside");

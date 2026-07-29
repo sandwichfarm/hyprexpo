@@ -125,6 +125,7 @@ static Config::INTEGER intDefault(const std::string& name) {
         {"plugin:hyprexpo:gesture_distance", HyprexpoConfig::GESTURE_DISTANCE_DEFAULT},
         {"plugin:hyprexpo:show_cursor", HyprexpoConfig::SHOW_CURSOR_DEFAULT},
         {"plugin:hyprexpo:show_pinned_windows", HyprexpoConfig::SHOW_PINNED_WINDOWS_DEFAULT},
+        {"plugin:hyprexpo:drag_drop_enable", HyprexpoConfig::DRAG_DROP_ENABLE_DEFAULT},
         {"plugin:hyprexpo:max_workspace", HyprexpoConfig::MAX_WORKSPACE_DEFAULT},
         {"plugin:hyprexpo:show_workspace_numbers", HyprexpoConfig::SHOW_WORKSPACE_NUMBERS_DEFAULT},
         {"plugin:hyprexpo:workspace_number_color", HyprexpoConfig::WORKSPACE_NUMBER_COLOR_DEFAULT},
@@ -676,6 +677,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
     static auto* const* PSKIP    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:skip_empty")->getDataStaticPtr();
     static auto* const* PMAXWS   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:max_workspace")->getDataStaticPtr();
     static auto* const* PSHOWNUM = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:show_workspace_numbers")->getDataStaticPtr();
+    static auto* const* PDRAGDROPENABLE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_enable")->getDataStaticPtr();
 
     SIDE_LENGTH          = Hyprexpo::clampGridColumns(**PCOLUMNS);
     GAP_WIDTH            = std::max<Hyprlang::INT>(0, **PGAPS);
@@ -931,11 +933,12 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
         info.cancelled = true;
 
         if (event.state == WL_POINTER_BUTTON_STATE_PRESSED) {
-            beginWindowDrag();
+            if (**PDRAGDROPENABLE)
+                beginWindowDrag();
             return;
         }
 
-        if (finishWindowDrag())
+        if (**PDRAGDROPENABLE && finishWindowDrag())
             return;
 
         selectHoveredWorkspace();
