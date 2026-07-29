@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cctype>
+#include <cmath>
 
 namespace Hyprexpo {
 
@@ -38,6 +39,109 @@ std::vector<std::string> splitCommaList(const std::string& value) {
     }
 
     return entries;
+}
+
+SGridShape computeDynamicGridShape(int visibleCount) {
+    if (visibleCount <= 0)
+        return {1, 1};
+
+    const int cols = std::max(1, static_cast<int>(std::ceil(std::sqrt(static_cast<double>(visibleCount)))));
+    int       rows = static_cast<int>(std::ceil(static_cast<double>(visibleCount) / cols));
+    if (visibleCount > 1 && rows < 2)
+        rows = 2;
+
+    return {cols, rows};
+}
+
+std::optional<std::vector<int64_t>> expandDynamicWorkspaceIDs(const std::vector<int64_t>& workspaceIDs, bool fillGaps, std::size_t maxExpandedWorkspaces) {
+    std::vector<int64_t> normalized = workspaceIDs;
+    std::sort(normalized.begin(), normalized.end());
+    normalized.erase(std::unique(normalized.begin(), normalized.end()), normalized.end());
+
+    if (!fillGaps || normalized.empty())
+        return normalized;
+    if (maxExpandedWorkspaces == 0)
+        return std::nullopt;
+
+    const int64_t  minID = normalized.front();
+    const int64_t  maxID = normalized.back();
+    const __int128 expandedCountWide = static_cast<__int128>(maxID) - static_cast<__int128>(minID) + 1;
+    if (expandedCountWide <= 0 || expandedCountWide > static_cast<__int128>(maxExpandedWorkspaces))
+        return std::nullopt;
+
+    const std::size_t expandedCount = static_cast<std::size_t>(expandedCountWide);
+    std::vector<int64_t> expanded;
+    expanded.reserve(expandedCount);
+    for (std::size_t offset = 0; offset < expandedCount; ++offset)
+        expanded.push_back(minID + static_cast<int64_t>(offset));
+
+    return expanded;
+}
+
+SSize aspectCorrectTileSize(double screenW, double screenH, int cols, int rows, double gap) {
+    if (screenW <= 0.0 || screenH <= 0.0 || cols <= 0 || rows <= 0)
+        return {};
+
+    const double safeGap = std::max(0.0, gap);
+    const double monAspect = screenW / screenH;
+    const double maxTileW  = std::max(0.0, (screenW - safeGap * (cols - 1)) / cols);
+    const double maxTileH  = std::max(0.0, (screenH - safeGap * (rows - 1)) / rows);
+
+    if (maxTileW <= 0.0 || maxTileH <= 0.0 || monAspect <= 0.0)
+        return {0.0, 0.0};
+
+    const double cellAspect = maxTileW / maxTileH;
+    if (cellAspect > monAspect)
+        return {maxTileH * monAspect, maxTileH};
+
+    return {maxTileW, maxTileW / monAspect};
+}
+
+STileLayout computeTileLayout(int index, int visibleCount, SGridShape shape, SSize total, double gap, bool centerPartialRows) {
+    STileLayout layout;
+
+    if (visibleCount <= 0 || index < 0 || index >= visibleCount)
+        return layout;
+
+    shape.cols = std::max(1, shape.cols);
+    shape.rows = std::max(1, shape.rows);
+
+    const SSize tileSize = aspectCorrectTileSize(total.w, total.h, shape.cols, shape.rows, gap);
+    const int   row      = index / shape.cols;
+    const int   col      = index % shape.cols;
+
+    const int    occupiedRows = std::max(1, static_cast<int>(std::ceil(static_cast<double>(visibleCount) / shape.cols)));
+    const int    lastRow      = occupiedRows - 1;
+    const int    tilesInLastRow = visibleCount % shape.cols == 0 ? shape.cols : visibleCount % shape.cols;
+    const double stepX        = tileSize.w + gap;
+    const double stepY        = tileSize.h + gap;
+    const double gridW        = shape.cols * tileSize.w + (shape.cols - 1) * gap;
+    const double gridH        = occupiedRows * tileSize.h + (occupiedRows - 1) * gap;
+    const double baseX        = (total.w - gridW) / 2.0;
+    const double baseY        = (total.h - gridH) / 2.0;
+
+    double x = baseX + col * stepX;
+    const double y = baseY + row * stepY;
+
+    if (centerPartialRows && row == lastRow && tilesInLastRow < shape.cols) {
+        const double rowW = tilesInLastRow * tileSize.w + (tilesInLastRow - 1) * gap;
+        x                 = (total.w - rowW) / 2.0 + col * stepX;
+    }
+
+    layout.box = {x, y, tileSize.w, tileSize.h};
+    layout.row = row;
+    layout.col = col;
+    return layout;
+}
+
+int tileIndexAtPoint(double x, double y, int visibleCount, SGridShape shape, SSize total, double gap, bool centerPartialRows) {
+    for (int i = 0; i < visibleCount; ++i) {
+        const auto layout = computeTileLayout(i, visibleCount, shape, total, gap, centerPartialRows);
+        if (x >= layout.box.x && x < layout.box.x + layout.box.w && y >= layout.box.y && y < layout.box.y + layout.box.h)
+            return i;
+    }
+
+    return -1;
 }
 
 int clampGridColumns(int columns) {
@@ -224,6 +328,30 @@ SGradientSpec parseGradientSpec(const std::string& value) {
 bool isGradientBorderSpec(const std::string& value) {
     const auto first = value.find("rgba(");
     return first != std::string::npos && value.find("rgba(", first + 1) != std::string::npos;
+}
+
+bool shouldShowWorkspaceLabel(bool labelEnabled, const std::string& labelShow, bool isHovered, bool isFocused, bool isCurrent) {
+    if (!labelEnabled)
+        return false;
+
+    const auto mode = lowerString(trimString(labelShow));
+    if (mode == "never")
+        return false;
+    if (mode == "hover")
+        return isHovered;
+    if (mode == "focus")
+        return isFocused;
+    if (mode == "hover+focus")
+        return isHovered || isFocused;
+    if (mode == "current+focus")
+        return isCurrent || isFocused;
+
+    return true;
+}
+
+std::string resolveBorderSpec(const std::string& modernSpec, const std::string& legacySpec) {
+    const auto modern = trimString(modernSpec);
+    return modern.empty() ? trimString(legacySpec) : modern;
 }
 
 static std::vector<std::string> splitWhitespace(const std::string& value) {

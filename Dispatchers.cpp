@@ -435,7 +435,7 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
 
     if (arg == "toggle") {
         if (g_pOverview)
-            g_pOverview->close();
+            g_pOverview->close(false);
         else {
             const auto PMONITOR = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
             if (!PMONITOR)
@@ -455,7 +455,7 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
 
     if (arg == "off" || arg == "close" || arg == "disable") {
         if (g_pOverview)
-            g_pOverview->close();
+            g_pOverview->close(false);
         return {};
     }
 

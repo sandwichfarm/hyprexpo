@@ -211,6 +211,26 @@ hl.define_submap("hyprexpo", function()
 end)
 ```
 
+## Active workspace grid
+
+For a more dynamic workspace grid with labels and wallpaper background:
+
+```
+plugin {
+    hyprexpo {
+        dynamic_grid = 1
+        fill_gaps = 0
+        mru_sort = 0
+        show_workspace_names = 1
+        label_pos = top_right
+        label_size = 48
+        wallpaper_bg = 1
+    }
+}
+```
+
+For more options, see the [configuration options](https://hyprexpo.lol/docs/configuration/options/).
+
 ## Next Steps
 
 - [Installation details](https://hyprexpo.lol/docs/getting-started/installation/)

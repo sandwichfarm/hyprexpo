@@ -21,7 +21,7 @@ void COverview::selectHoveredWorkspace() {
         return;
 
     updateHoveredFromMouse();
-    closeOnID = std::clamp(hoveredID, 0, SIDE_LENGTH * SIDE_LENGTH - 1);
+    closeOnID = hoveredID >= 0 && hoveredID < (int)images.size() ? hoveredID : -1;
 }
 
 int64_t COverview::selectedWorkspaceID() const {
@@ -72,7 +72,7 @@ void COverview::updateHoveredFromMouse() {
     if (!MON)
         return;
 
-    const int newHoveredID = Hyprexpo::tileIndexFromPoint(lastMousePosLocal.x, lastMousePosLocal.y, MON->m_size.x, MON->m_size.y, SIDE_LENGTH);
+    const int newHoveredID = tileIndexAtPoint(lastMousePosLocal, size->value(), GAP_WIDTH, currentOuterInset(), true);
     if (newHoveredID == hoveredID)
         return;
 
@@ -132,13 +132,12 @@ Vector2D COverview::tilePointToWorkspacePoint(int id, const Vector2D& localPoint
     if (!MON)
         return {};
 
-    const Vector2D tileSize = MON->m_size / SIDE_LENGTH;
-    const Vector2D tilePos  = tileSize * Vector2D{id % SIDE_LENGTH, id / SIDE_LENGTH};
-    const Vector2D inTile   = localPoint - tilePos;
+    const auto tileBox = tileBoxForIndex(id, size->value(), GAP_WIDTH, currentOuterInset(), true);
+    const Vector2D inTile = localPoint - Vector2D{tileBox.x, tileBox.y};
 
     return MON->m_position + Vector2D{
-        std::clamp(inTile.x / tileSize.x, 0.0, 1.0) * MON->m_size.x,
-        std::clamp(inTile.y / tileSize.y, 0.0, 1.0) * MON->m_size.y,
+        std::clamp(inTile.x / std::max(1.0, tileBox.w), 0.0, 1.0) * MON->m_size.x,
+        std::clamp(inTile.y / std::max(1.0, tileBox.h), 0.0, 1.0) * MON->m_size.y,
     };
 }
 
@@ -437,8 +436,9 @@ void COverview::moveFocus(int dx, int dy) {
     if (kbFocusID == -1)
         return;
 
-    int x = kbFocusID % SIDE_LENGTH;
-    int y = kbFocusID / SIDE_LENGTH;
+    const auto shape = currentGridShape();
+    int x = kbFocusID % shape.cols;
+    int y = kbFocusID / shape.cols;
 
     static auto* const* PWRAPH = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_wrap_h")->getDataStaticPtr();
     static auto* const* PWRAPV = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_wrap_v")->getDataStaticPtr();
@@ -448,7 +448,7 @@ void COverview::moveFocus(int dx, int dy) {
         int                 step     = dx > 0 ? 1 : -1;
         if (**PREADING) {
             // reading-order scan: proceed linearly across the grid (row-major)
-            const int total = SIDE_LENGTH * SIDE_LENGTH;
+            const int total = (int)images.size();
             int       idx   = kbFocusID;
             for (int tries = 0; tries < total; ++tries) {
                 idx += step;
@@ -467,15 +467,15 @@ void COverview::moveFocus(int dx, int dy) {
         } else {
             // in-row scan with optional horizontal wrap
             int nx = x;
-            for (int tries = 0; tries < SIDE_LENGTH; ++tries) {
+            for (int tries = 0; tries < shape.cols; ++tries) {
                 nx += step;
-                if (nx < 0 || nx >= SIDE_LENGTH) {
+                if (nx < 0 || nx >= shape.cols) {
                     if (**PWRAPH)
-                        nx = (nx + SIDE_LENGTH) % SIDE_LENGTH;
+                        nx = (nx + shape.cols) % shape.cols;
                     else
                         break;
                 }
-                const int nid = nx + y * SIDE_LENGTH;
+                const int nid = nx + y * shape.cols;
                 if (isTileValid(nid)) {
                     kbFocusID = nid;
                     return;
@@ -487,15 +487,15 @@ void COverview::moveFocus(int dx, int dy) {
     if (dy != 0) {
         int step = dy > 0 ? 1 : -1;
         int ny   = y;
-        for (int tries = 0; tries < SIDE_LENGTH; ++tries) {
+        for (int tries = 0; tries < shape.rows; ++tries) {
             ny += step;
-            if (ny < 0 || ny >= SIDE_LENGTH) {
+            if (ny < 0 || ny >= shape.rows) {
                 if (**PWRAPV)
-                    ny = (ny + SIDE_LENGTH) % SIDE_LENGTH;
+                    ny = (ny + shape.rows) % shape.rows;
                 else
                     break;
             }
-            const int nid = x + ny * SIDE_LENGTH;
+            const int nid = x + ny * shape.cols;
             if (isTileValid(nid)) {
                 kbFocusID = nid;
                 return;
@@ -604,11 +604,8 @@ void COverview::onSwipeUpdate(double delta) {
     const float         PERC               = closing ? std::clamp(delta / distance, 0.0, 1.0) : 1.0 - std::clamp(delta / distance, 0.0, 1.0);
     const auto          WORKSPACE_FOCUS_ID = closing && closeOnID != -1 ? closeOnID : openedID;
 
-    Vector2D            tileSize = (MON->m_size / SIDE_LENGTH);
-
-    const auto          SIZEMAX = MON->m_size * MON->m_size / tileSize;
-    const auto          POSMAX  = (-((MON->m_size / (double)SIDE_LENGTH) * Vector2D{WORKSPACE_FOCUS_ID % SIDE_LENGTH, WORKSPACE_FOCUS_ID / SIDE_LENGTH}) * MON->m_scale) *
-        (MON->m_size / tileSize);
+    const auto          SIZEMAX = zoomSizeForCurrentGrid(MON->m_size);
+    const auto          POSMAX  = -(tilePosForID(WORKSPACE_FOCUS_ID, SIZEMAX, 0.0) * MON->m_scale);
 
     const auto SIZEMIN = MON->m_size;
     const auto POSMIN  = Vector2D{0, 0};
@@ -634,8 +631,13 @@ void COverview::onSwipeEnd() {
     }
 
     const auto SIZEMIN = MON->m_size;
-    const auto SIZEMAX = MON->m_size * MON->m_size / (MON->m_size / SIDE_LENGTH);
-    const auto PERC    = (size->value() - SIZEMIN).x / (SIZEMAX - SIZEMIN).x;
+    const auto SIZEMAX = zoomSizeForCurrentGrid(MON->m_size);
+    const auto span    = SIZEMAX - SIZEMIN;
+    if (std::abs(span.x) <= 1e-6) {
+        close();
+        return;
+    }
+    const auto PERC    = (size->value() - SIZEMIN).x / span.x;
     if (PERC > 0.5) {
         close();
         return;

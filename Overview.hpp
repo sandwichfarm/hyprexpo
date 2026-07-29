@@ -10,6 +10,7 @@
 #include <hyprland/src/helpers/AnimatedVariable.hpp>
 #include <hyprland/src/helpers/signal/Signal.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -85,6 +86,13 @@ class COverview {
     void       redrawAll(bool forcelowres = false);
     void       onWorkspaceChange();
     void       fullRender();
+    Hyprexpo::SGridShape currentGridShape() const;
+    double     currentOuterInset() const;
+    Hyprexpo::STileLayout tileLayoutForIndex(int id, const Vector2D& totalSize, double gap, double outerInset = 0.0, bool centerPartialRows = true) const;
+    CBox       tileBoxForIndex(int id, const Vector2D& totalSize, double gap, double outerInset = 0.0, bool centerPartialRows = true) const;
+    int        tileIndexAtPoint(const Vector2D& point, const Vector2D& totalSize, double gap, double outerInset = 0.0, bool centerPartialRows = true) const;
+    Vector2D   tilePosForID(int id, const Vector2D& totalSize, double gap, double outerInset = 0.0, bool centerPartialRows = true) const;
+    Vector2D   zoomSizeForCurrentGrid(const Vector2D& monitorSize) const;
     void       updateHoveredFromMouse();
     void       ensureKbFocusInitialized();
     bool       isTileValid(int id) const;
@@ -104,6 +112,8 @@ class COverview {
     void       resetSubmapIfNeeded();
 
     int        SIDE_LENGTH = 3;
+    bool       dynamicGrid = false;
+    Hyprexpo::SGridShape gridShape{3, 3};
     int        GAP_WIDTH   = 5;
     CHyprColor BG_COLOR    = CHyprColor{0.1, 0.1, 0.1, 1.0};
 
@@ -150,6 +160,10 @@ class COverview {
     bool                         swipe             = false;
     bool                         swipeWasCommenced = false;
     bool                         showWorkspaceNumbers = false;
+    bool                         showWorkspaceNames = false;
+    bool                         animateEntry = false;
+    bool                         wallpaperBg = false;
+    std::chrono::steady_clock::time_point createdAt;
 
     friend class COverviewPassElement;
 };

@@ -34,6 +34,16 @@ Nested test binds:
 15. Set `plugin:hyprexpo:show_pinned_windows = 0` again, close overview, and confirm the pinned window is still visible and pinned in the normal Hyprland session.
 16. Unload or reload the plugin after closing overview and confirm no stale render pass callback crashes the session.
 
+17. Enable `dynamic_grid = 1`, then test with 1, 2, 3, and 5 non-empty, non-special workspaces. Confirm the overview contains exactly those workspaces without padded empty tiles.
+18. Confirm every preview preserves the monitor aspect ratio. For 3 and 5 workspaces, confirm the partial final row is independently centered.
+19. Set `label_pos = top_right`, choose a visible `label_size`, and toggle `show_workspace_names`. Confirm every label remains inside its corresponding tile.
+20. Toggle `wallpaper_bg` and reopen the overview. Confirm the wallpaper changes only the background and does not move or resize tiles.
+21. Toggle `mru_sort` and confirm the current workspace moves to the first tile only when enabled. Toggle `fill_gaps` with non-contiguous workspace IDs and confirm missing IDs are added only when enabled.
+22. With only one active workspace, complete and cancel a swipe. Confirm the overview exits cleanly without a crash or invalid animation state.
+23. With `dynamic_grid = 1`, leave the current workspace empty and open a window on a neighboring workspace. Open and close with `hyprexpo:expo, toggle`; confirm the current workspace does not change.
+24. With `dynamic_grid = 1` and `fill_gaps = 1`, create distant workspace IDs (for example 1 and 5000). Open the overview; confirm it rejects gap expansion, remains responsive, and shows only the sparse workspaces.
+25. With `dynamic_grid = 1`, set `label_enable = 0`, then `label_show = never`, and set modern `border_color_current` / `border_color_hover` values. Confirm labels stay hidden and the modern border colors win over legacy highlight values.
+
 ::: warning
 The public site and docs should not claim full release readiness until this runtime smoke gate has been completed for the intended release artifact.
 :::

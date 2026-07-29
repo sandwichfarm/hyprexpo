@@ -655,6 +655,57 @@ static std::pair<bool, int> getWorkspaceMethodForMonitor(PHLMONITOR monitor) {
     return {methodCenter, methodStartID};
 }
 
+Hyprexpo::SGridShape COverview::currentGridShape() const {
+    if (dynamicGrid)
+        return gridShape;
+
+    return {SIDE_LENGTH, SIDE_LENGTH};
+}
+
+double COverview::currentOuterInset() const {
+    const auto MON = pMonitor.lock();
+    if (!MON)
+        return 0.0;
+
+    static auto* const* PGAPSO = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gaps_out")->getDataStaticPtr();
+    const double        percent = closing ? (1.0 - size->getPercent()) : size->getPercent();
+    return std::max<Hyprlang::INT>(0, **PGAPSO) * percent;
+}
+
+Hyprexpo::STileLayout COverview::tileLayoutForIndex(int id, const Vector2D& totalSize, double gap, double outerInset, bool centerPartialRows) const {
+    const auto shape = currentGridShape();
+    const Hyprexpo::SSize total{std::max(0.0, totalSize.x - outerInset * 2.0), std::max(0.0, totalSize.y - outerInset * 2.0)};
+    auto                  layout = Hyprexpo::computeTileLayout(id, (int)images.size(), shape, total, gap, centerPartialRows);
+    layout.box.x += outerInset;
+    layout.box.y += outerInset;
+    return layout;
+}
+
+CBox COverview::tileBoxForIndex(int id, const Vector2D& totalSize, double gap, double outerInset, bool centerPartialRows) const {
+    const auto layout = tileLayoutForIndex(id, totalSize, gap, outerInset, centerPartialRows);
+    return {layout.box.x, layout.box.y, layout.box.w, layout.box.h};
+}
+
+int COverview::tileIndexAtPoint(const Vector2D& point, const Vector2D& totalSize, double gap, double outerInset, bool centerPartialRows) const {
+    const auto shape = currentGridShape();
+    const Hyprexpo::SSize total{std::max(0.0, totalSize.x - outerInset * 2.0), std::max(0.0, totalSize.y - outerInset * 2.0)};
+    return Hyprexpo::tileIndexAtPoint(point.x - outerInset, point.y - outerInset, (int)images.size(), shape, total, gap, centerPartialRows);
+}
+
+Vector2D COverview::tilePosForID(int id, const Vector2D& totalSize, double gap, double outerInset, bool centerPartialRows) const {
+    const auto box = tileBoxForIndex(id, totalSize, gap, outerInset, centerPartialRows);
+    return {box.x, box.y};
+}
+
+Vector2D COverview::zoomSizeForCurrentGrid(const Vector2D& monitorSize) const {
+    const auto shape = currentGridShape();
+    const auto tileSize = Hyprexpo::aspectCorrectTileSize(monitorSize.x, monitorSize.y, shape.cols, shape.rows, 0.0);
+    if (tileSize.w <= 0.0 || tileSize.h <= 0.0)
+        return monitorSize;
+
+    return {monitorSize.x * monitorSize.x / tileSize.w, monitorSize.y * monitorSize.y / tileSize.h};
+}
+
 COverview::~COverview() {
     Render::GL::g_pHyprOpenGL->makeEGLCurrent();
     images.clear(); // otherwise we get a vram leak
@@ -671,18 +722,30 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
     const auto PMONITOR = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
     pMonitor            = PMONITOR;
 
-    static auto* const* PCOLUMNS = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:columns")->getDataStaticPtr();
-    static auto* const* PGAPS    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gaps_in")->getDataStaticPtr();
-    static auto* const* PCOL     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:bg_col")->getDataStaticPtr();
-    static auto* const* PSKIP    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:skip_empty")->getDataStaticPtr();
-    static auto* const* PMAXWS   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:max_workspace")->getDataStaticPtr();
-    static auto* const* PSHOWNUM = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:show_workspace_numbers")->getDataStaticPtr();
+    static auto* const* PCOLUMNS  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:columns")->getDataStaticPtr();
+    static auto* const* PGAPS     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gaps_in")->getDataStaticPtr();
+    static auto* const* PCOL      = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:bg_col")->getDataStaticPtr();
+    static auto* const* PSKIP     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:skip_empty")->getDataStaticPtr();
+    static auto* const* PMAXWS    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:max_workspace")->getDataStaticPtr();
+    static auto* const* PSHOWNUM  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:show_workspace_numbers")->getDataStaticPtr();
+    static auto* const* PDYNAMIC  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:dynamic_grid")->getDataStaticPtr();
+    static auto* const* PFILLGAPS = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:fill_gaps")->getDataStaticPtr();
+    static auto* const* PMRUSORT  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:mru_sort")->getDataStaticPtr();
+    static auto* const* PSHNAMES  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:show_workspace_names")->getDataStaticPtr();
+    static auto* const* PANIMATE  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:animate_entry")->getDataStaticPtr();
+    static auto* const* PWALLBG   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:wallpaper_bg")->getDataStaticPtr();
     static auto* const* PDRAGDROPENABLE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_enable")->getDataStaticPtr();
 
+    createdAt            = std::chrono::steady_clock::now();
     SIDE_LENGTH          = Hyprexpo::clampGridColumns(**PCOLUMNS);
+    gridShape            = {SIDE_LENGTH, SIDE_LENGTH};
     GAP_WIDTH            = std::max<Hyprlang::INT>(0, **PGAPS);
     BG_COLOR             = **PCOL;
     showWorkspaceNumbers = **PSHOWNUM;
+    showWorkspaceNames   = **PSHNAMES;
+    animateEntry         = **PANIMATE;
+    wallpaperBg          = **PWALLBG;
+    dynamicGrid          = **PDYNAMIC;
 
     // Get workspace method for this specific monitor
     auto [methodCenter, methodStartID] = getWorkspaceMethodForMonitor(pMonitor.lock());
@@ -729,7 +792,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
         // Scan through workspaces higher than methodStartID. If using "m"
         // (skip_empty), stop when we wrap, leaving the rest of the workspace
         // ID's set to WORKSPACE_INVALID
-        for (size_t i = 0; i < (size_t)(SIDE_LENGTH * SIDE_LENGTH); ++i) {
+        for (size_t i = 0; i < images.size(); ++i) {
             auto& image = images[i];
             if ((int64_t)i - backtracked < 0) {
                 currentID = getWorkspaceIDNameFromString(selector + std::to_string((int64_t)i - backtracked)).id;
@@ -771,10 +834,49 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
         pMonitor->m_activeWorkspace = startedOn;
     }
 
+    if (dynamicGrid) {
+        std::vector<int64_t> visibleWorkspaceIDs;
+        const auto MON = pMonitor.lock();
+        const int64_t currentWorkspaceID = startedOn ? startedOn->m_id : (MON ? MON->activeWorkspaceID() : WORKSPACE_INVALID);
+
+        for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
+            if (!workspace || workspace->m_isSpecialWorkspace || workspace->m_monitor != MON || workspace->getWindowCount() <= 0)
+                continue;
+
+            visibleWorkspaceIDs.push_back(workspace->m_id);
+        }
+
+        if (visibleWorkspaceIDs.empty() && currentWorkspaceID != WORKSPACE_INVALID)
+            visibleWorkspaceIDs.push_back(currentWorkspaceID);
+
+        const auto expandedWorkspaceIDs =
+            Hyprexpo::expandDynamicWorkspaceIDs(visibleWorkspaceIDs, **PFILLGAPS, HyprexpoConfig::DYNAMIC_GRID_MAX_TILES);
+        if (expandedWorkspaceIDs)
+            visibleWorkspaceIDs = *expandedWorkspaceIDs;
+        else {
+            visibleWorkspaceIDs = *Hyprexpo::expandDynamicWorkspaceIDs(visibleWorkspaceIDs, false, HyprexpoConfig::DYNAMIC_GRID_MAX_TILES);
+            Log::logger->log(Log::ERR, "[hyprexpo] fill_gaps range exceeds {} tiles; using sparse workspace IDs", HyprexpoConfig::DYNAMIC_GRID_MAX_TILES);
+        }
+
+        if (**PMRUSORT) {
+            const auto it = std::find(visibleWorkspaceIDs.begin(), visibleWorkspaceIDs.end(), currentWorkspaceID);
+            if (it != visibleWorkspaceIDs.end() && it != visibleWorkspaceIDs.begin()) {
+                const auto current = *it;
+                visibleWorkspaceIDs.erase(it);
+                visibleWorkspaceIDs.insert(visibleWorkspaceIDs.begin(), current);
+            }
+        }
+
+        gridShape = Hyprexpo::computeDynamicGridShape((int)visibleWorkspaceIDs.size());
+        SIDE_LENGTH = gridShape.cols;
+        images.resize(visibleWorkspaceIDs.size());
+        for (size_t i = 0; i < visibleWorkspaceIDs.size(); ++i)
+            images[i].workspaceID = visibleWorkspaceIDs[i];
+    }
+
     Render::GL::g_pHyprOpenGL->makeEGLCurrent();
 
-    Vector2D tileSize       = pMonitor->m_size / SIDE_LENGTH;
-    Vector2D tileRenderSize = (pMonitor->m_size - Vector2D{GAP_WIDTH * pMonitor->m_scale, GAP_WIDTH * pMonitor->m_scale} * (SIDE_LENGTH - 1)) / SIDE_LENGTH;
+    Vector2D tileSize = pMonitor->m_size / SIDE_LENGTH;
     CBox     monbox{0, 0, tileSize.x * 2, tileSize.y * 2};
 
     if (!ENABLE_LOWRES)
@@ -811,7 +913,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
 
     startedOn->m_visible = false;
 
-    for (size_t i = 0; i < (size_t)(SIDE_LENGTH * SIDE_LENGTH); ++i) {
+    for (size_t i = 0; i < images.size(); ++i) {
         COverview::SWorkspaceImage& image = images[i];
         ensureFramebuffer(image, monbox, framebufferFormatWithAlpha(PMONITOR->m_output->state->state().drmFormat));
 
@@ -857,8 +959,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
             g_pHyprRenderer->renderWorkspace(PMONITOR, PWORKSPACE, Time::steadyNow(), monbox);
         }
 
-        image.box = {(i % SIDE_LENGTH) * tileRenderSize.x + (i % SIDE_LENGTH) * GAP_WIDTH, (i / SIDE_LENGTH) * tileRenderSize.y + (i / SIDE_LENGTH) * GAP_WIDTH, tileRenderSize.x,
-                     tileRenderSize.y};
+        image.box = tileBoxForIndex((int)i, pMonitor->m_size, GAP_WIDTH, 0.0, true);
 
         g_pHyprRenderer->m_renderData.blockScreenShader = true;
         g_pHyprRenderer->endRender();
@@ -883,10 +984,9 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
     // zoom on the current workspace.
     // const auto& TILE = images[std::clamp(currentid, 0, SIDE_LENGTH * SIDE_LENGTH)];
 
-    Animation::mgr()->createAnimation(pMonitor->m_size * pMonitor->m_size / tileSize, size, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
-    Animation::mgr()->createAnimation((-((pMonitor->m_size / (double)SIDE_LENGTH) * Vector2D{currentid % SIDE_LENGTH, currentid / SIDE_LENGTH}) * pMonitor->m_scale) *
-                                             (pMonitor->m_size / tileSize),
-                                         pos, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
+    const auto initSize = zoomSizeForCurrentGrid(pMonitor->m_size);
+    Animation::mgr()->createAnimation(initSize, size, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
+    Animation::mgr()->createAnimation(-(tilePosForID(currentid, initSize, 0.0) * pMonitor->m_scale), pos, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
 
     size->setUpdateCallback(damageMonitor);
     pos->setUpdateCallback(damageMonitor);

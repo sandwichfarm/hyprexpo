@@ -36,11 +36,14 @@ void COverview::redrawID(int id, bool forcelowres) {
     Render::GL::g_pHyprOpenGL->makeEGLCurrent();
     settleWorkspaceMoveAnimations();
 
-    id = std::clamp(id, 0, SIDE_LENGTH * SIDE_LENGTH - 1);
+    if (images.empty()) {
+        blockOverviewRendering = false;
+        return;
+    }
 
-    Vector2D tileSize       = MON->m_size / SIDE_LENGTH;
-    Vector2D tileRenderSize = (MON->m_size - Vector2D{GAP_WIDTH, GAP_WIDTH} * (SIDE_LENGTH - 1)) / SIDE_LENGTH;
-    CBox     monbox{0, 0, tileSize.x * 2, tileSize.y * 2};
+    id = std::clamp(id, 0, (int)images.size() - 1);
+
+    CBox monbox{0, 0, MON->m_pixelSize.x, MON->m_pixelSize.y};
 
     if (!forcelowres && (size->value() != MON->m_size || closing))
         monbox = {{0, 0}, MON->m_pixelSize};
@@ -146,7 +149,7 @@ void COverview::redrawAll(bool forcelowres) {
     if (!MON)
         return;
 
-    for (size_t i = 0; i < (size_t)(SIDE_LENGTH * SIDE_LENGTH); ++i) {
+    for (size_t i = 0; i < images.size(); ++i) {
         redrawID(i, forcelowres);
     }
 }
@@ -170,15 +173,9 @@ void COverview::onDamageReported() {
 
     Vector2D SIZE = size->value();
 
-    Vector2D tileSize       = (SIZE / SIDE_LENGTH);
-    const auto GAPSIZE      = (closing ? (1.0 - size->getPercent()) : size->getPercent()) * GAP_WIDTH;
-    static auto* const* PGAPSO = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gaps_out")->getDataStaticPtr();
-    const float OUTER       = std::max<Hyprlang::INT>(0, **PGAPSO) * (closing ? (1.0 - size->getPercent()) : size->getPercent());
-    Vector2D tileRenderSize = (SIZE - Vector2D{GAPSIZE, GAPSIZE} * (SIDE_LENGTH - 1) - Vector2D{OUTER * 2, OUTER * 2}) / SIDE_LENGTH;
-    // const auto& TILE           = images[std::clamp(openedID, 0, SIDE_LENGTH * SIDE_LENGTH)];
-    CBox texbox = CBox{OUTER + (openedID % SIDE_LENGTH) * tileRenderSize.x + (openedID % SIDE_LENGTH) * GAPSIZE,
-                       OUTER + (openedID / SIDE_LENGTH) * tileRenderSize.y + (openedID / SIDE_LENGTH) * GAPSIZE, tileRenderSize.x, tileRenderSize.y}
-                      .translate(MON->m_position);
+    const auto GAPSIZE = (closing ? (1.0 - size->getPercent()) : size->getPercent()) * GAP_WIDTH;
+    const auto OUTER = currentOuterInset();
+    CBox texbox = tileBoxForIndex(openedID, SIZE, GAPSIZE, OUTER, true).translate(MON->m_position);
 
     damage();
 
@@ -205,15 +202,19 @@ void COverview::close(bool switchToSelection) {
 
     resetSubmapIfNeeded();
 
+    if (images.empty()) {
+        g_pOverview.reset();
+        return;
+    }
+
     const int   ID = closeOnID == -1 ? openedID : closeOnID;
 
-    const int   SAFEID = std::clamp(ID, 0, SIDE_LENGTH * SIDE_LENGTH - 1);
+    const int   SAFEID = std::clamp(ID, 0, (int)images.size() - 1);
     const auto& TILE   = images[SAFEID];
 
-    Vector2D    tileSize = (MON->m_size / SIDE_LENGTH);
-
-    *size = MON->m_size * MON->m_size / tileSize;
-    *pos  = (-((MON->m_size / (double)SIDE_LENGTH) * Vector2D{SAFEID % SIDE_LENGTH, SAFEID / SIDE_LENGTH}) * MON->m_scale) * (MON->m_size / tileSize);
+    const auto targetSize = zoomSizeForCurrentGrid(MON->m_size);
+    *size = targetSize;
+    *pos  = -(tilePosForID(SAFEID, targetSize, 0.0) * MON->m_scale);
 
     closing = true;
 
@@ -267,7 +268,7 @@ void COverview::onWorkspaceChange() {
     else
         startedOn = MON->m_activeWorkspace;
 
-    for (size_t i = 0; i < (size_t)(SIDE_LENGTH * SIDE_LENGTH); ++i) {
+    for (size_t i = 0; i < images.size(); ++i) {
         if (images[i].workspaceID != MON->activeWorkspaceID())
             continue;
 
@@ -297,12 +298,11 @@ bool COverview::shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const 
     return true;
 }
 
+
 void COverview::fullRender() {
     const auto MON = pMonitor.lock();
     if (!MON)
         return;
-
-    const auto GAPSIZE = (closing ? (1.0 - size->getPercent()) : size->getPercent()) * GAP_WIDTH;
 
     if (MON->m_activeWorkspace != startedOn && !closing) {
         // likely user changed.
@@ -311,38 +311,45 @@ void COverview::fullRender() {
 
     Vector2D SIZE = size->value();
 
-    static auto* const* PGAPSO = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gaps_out")->getDataStaticPtr();
-    const float OUTER = std::max<Hyprlang::INT>(0, **PGAPSO) * (closing ? (1.0 - size->getPercent()) : size->getPercent());
-
-    Vector2D tileSize       = (SIZE / SIDE_LENGTH);
-    Vector2D tileRenderSize = (SIZE - Vector2D{GAPSIZE, GAPSIZE} * (SIDE_LENGTH - 1) - Vector2D{OUTER * 2, OUTER * 2}) / SIDE_LENGTH;
+    const auto GAPSIZE = (closing ? (1.0 - size->getPercent()) : size->getPercent()) * GAP_WIDTH;
+    const auto OUTER   = currentOuterInset();
+    const auto SHAPE   = currentGridShape();
 
     clearWithColor(BG_COLOR.stripA());
+    if (wallpaperBg && MON->m_background) {
+        CRegion backgroundDamage{0, 0, INT16_MAX, INT16_MAX};
+        CBox    backgroundBox{{0, 0}, MON->m_transformedSize};
+        Render::GL::g_pHyprOpenGL->renderTextureInternal(MON->m_background, backgroundBox, {.damage = &backgroundDamage, .a = 1.0f});
+        Render::GL::g_pHyprOpenGL->renderRect(backgroundBox, CHyprColor{0x00000066}, {});
+    }
 
-    static auto* const* PTILEROUND = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding")->getDataStaticPtr();
-    static auto* const* PTOUNDPWR  = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_power")->getDataStaticPtr();
+    static auto* const* PTILEROUND  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding")->getDataStaticPtr();
+    static auto* const* PTOUNDPWR   = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_power")->getDataStaticPtr();
     static auto* const* PTILEROUNDF = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_focus")->getDataStaticPtr();
     static auto* const* PTILEROUNDC = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_current")->getDataStaticPtr();
     static auto* const* PTILEROUNDH = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_hover")->getDataStaticPtr();
 
-    const int BASE_ROUND_SCALED   = std::max(0, (int)std::lround((double)**PTILEROUND * MON->m_scale));
-    const int FOCUS_ROUND_SCALED  = **PTILEROUNDF >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDF * MON->m_scale)) : BASE_ROUND_SCALED;
-    const int CURRENT_ROUND_SCALED= **PTILEROUNDC >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDC * MON->m_scale)) : BASE_ROUND_SCALED;
-    const int HOVER_ROUND_SCALED  = **PTILEROUNDH >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDH * MON->m_scale)) : BASE_ROUND_SCALED;
-    const float ROUND_PWR         = **PTOUNDPWR;
-
-    // (shadows moved to feature/shadows branch)
+    const int   BASE_ROUND_SCALED    = std::max(0, (int)std::lround((double)**PTILEROUND * MON->m_scale));
+    const int   FOCUS_ROUND_SCALED   = **PTILEROUNDF >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDF * MON->m_scale)) : BASE_ROUND_SCALED;
+    const int   CURRENT_ROUND_SCALED = **PTILEROUNDC >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDC * MON->m_scale)) : BASE_ROUND_SCALED;
+    const int   HOVER_ROUND_SCALED   = **PTILEROUNDH >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDH * MON->m_scale)) : BASE_ROUND_SCALED;
+    const float ROUND_PWR            = **PTOUNDPWR;
 
     std::vector<CBox> tileBoxes(images.size());
+    const bool        entryAnimationActive = animateEntry && !closing;
+    bool              entryAnimationPending = false;
+    const double      entryElapsed = entryAnimationActive ? std::chrono::duration<double>(std::chrono::steady_clock::now() - createdAt).count() : 0.0;
 
-    for (size_t y = 0; y < (size_t)SIDE_LENGTH; ++y) {
-        for (size_t x = 0; x < (size_t)SIDE_LENGTH; ++x) {
-            const int id = x + y * SIDE_LENGTH;
-            CBox      texbox{OUTER + x * tileRenderSize.x + x * GAPSIZE, OUTER + y * tileRenderSize.y + y * GAPSIZE, tileRenderSize.x, tileRenderSize.y};
+    for (size_t y = 0; y < (size_t)SHAPE.rows; ++y) {
+        for (size_t x = 0; x < (size_t)SHAPE.cols; ++x) {
+            const int id = x + y * SHAPE.cols;
+            if (id < 0 || id >= (int)images.size())
+                continue;
+            CBox texbox = tileBoxForIndex(id, SIZE, GAPSIZE, OUTER, true);
             texbox.scale(MON->m_scale).translate(pos->value());
             texbox.round();
             tileBoxes[id] = texbox;
-            // per-tile rounding override for focus/current/hover (priority: focus > current > hover)
+
             int tileRound = BASE_ROUND_SCALED;
             if ((int)id == kbFocusID)
                 tileRound = FOCUS_ROUND_SCALED;
@@ -351,252 +358,186 @@ void COverview::fullRender() {
             else if ((int)id == hoveredID)
                 tileRound = HOVER_ROUND_SCALED;
 
-            // clamp rounding to tile size
             const int maxCornerPx = std::max(0, (int)std::floor(std::min(texbox.w, texbox.h) / 2.0));
             tileRound = std::min(tileRound, maxCornerPx);
 
-            // no shadow in this branch
+            float alpha = 1.0f;
+            if (entryAnimationActive) {
+                const double delay = (double)id * 0.05;
+                const double raw   = std::clamp((entryElapsed - delay) / 0.2, 0.0, 1.0);
+                alpha              = (float)(raw * raw * (3.0 - 2.0 * raw));
+                if (raw < 1.0)
+                    entryAnimationPending = true;
+            }
 
             CRegion damage{0, 0, INT16_MAX, INT16_MAX};
-            Render::GL::g_pHyprOpenGL->renderTextureInternal(images[id].fb->getTexture(), texbox, {.damage = &damage, .a = 1.0, .round = tileRound, .roundingPower = ROUND_PWR});
+            Render::GL::g_pHyprOpenGL->renderTextureInternal(images[id].fb->getTexture(), texbox, {.damage = &damage, .a = alpha, .round = tileRound, .roundingPower = ROUND_PWR});
         }
     }
 
-    // overlays: numbers and borders
-    static auto* const* PLABELEN   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_enable")->getDataStaticPtr();
-    static auto* const* PLABELSIZE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_font_size")->getDataStaticPtr();
-    static auto  const* PLABELPOS  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_position")->getDataStaticPtr();
-    static auto  const* PLABELMODE = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_text_mode")->getDataStaticPtr();
-    static auto  const* PTOKENMAP  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_token_map")->getDataStaticPtr();
-    static auto* const* PLABELOX   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_offset_x")->getDataStaticPtr();
-    static auto* const* PLABELOY   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_offset_y")->getDataStaticPtr();
-    static auto  const* PLABELSHOW = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_show")->getDataStaticPtr();
-    static auto* const* PLCOLDEF   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_color_default")->getDataStaticPtr();
-    static auto* const* PLCOLHOV   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_color_hover")->getDataStaticPtr();
-    static auto* const* PLCOLFOC   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_color_focus")->getDataStaticPtr();
-    static auto* const* PLCOLCUR   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_color_current")->getDataStaticPtr();
-    static auto* const* PWSNUMCOL  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:workspace_number_color")->getDataStaticPtr();
-    static auto* const* PLSCALEH   = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_scale_hover")->getDataStaticPtr();
-    static auto* const* PLSCALEF   = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_scale_focus")->getDataStaticPtr();
-    static auto* const* PLBGEN     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_enable")->getDataStaticPtr();
-    static auto* const* PLBGCOL    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_color")->getDataStaticPtr();
-    static auto* const* PLBGROUND  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_rounding")->getDataStaticPtr();
-    static auto  const* PLBGSHAPE  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_shape")->getDataStaticPtr();
-    static auto* const* PLBGPAD    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_padding")->getDataStaticPtr();
+    // overlays: labels and borders
+    static auto* const* PLABELEN    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_enable")->getDataStaticPtr();
+    static auto* const* PLABELSIZE  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_font_size")->getDataStaticPtr();
+    static auto const*  PLABELPOS   = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_position")->getDataStaticPtr();
+    static auto const*  PLABELPOSL  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_pos")->getDataStaticPtr();
+    static auto* const* PLABELSIZEL = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_size")->getDataStaticPtr();
+    static auto* const* PACTCOL     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:active_highlight_col")->getDataStaticPtr();
+    static auto* const* PHOVCOL     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:hover_highlight_col")->getDataStaticPtr();
+    static auto const*  PLABELMODE  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_text_mode")->getDataStaticPtr();
+    static auto const*  PTOKENMAP   = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_token_map")->getDataStaticPtr();
+    static auto* const* PLABELOX    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_offset_x")->getDataStaticPtr();
+    static auto* const* PLABELOY    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_offset_y")->getDataStaticPtr();
+    static auto const*  PLABELSHOW  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_show")->getDataStaticPtr();
+    static auto* const* PLCOLDEF    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_color_default")->getDataStaticPtr();
+    static auto* const* PLCOLHOV    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_color_hover")->getDataStaticPtr();
+    static auto* const* PLCOLFOC    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_color_focus")->getDataStaticPtr();
+    static auto* const* PLCOLCUR    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_color_current")->getDataStaticPtr();
+    static auto* const* PWSNUMCOL   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:workspace_number_color")->getDataStaticPtr();
+    static auto* const* PLSCALEH    = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_scale_hover")->getDataStaticPtr();
+    static auto* const* PLSCALEF    = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_scale_focus")->getDataStaticPtr();
+    static auto* const* PLBGEN      = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_enable")->getDataStaticPtr();
+    static auto* const* PLBGCOL     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_color")->getDataStaticPtr();
+    static auto* const* PLBGROUND   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_rounding")->getDataStaticPtr();
+    static auto const*  PLBGSHAPE   = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_bg_shape")->getDataStaticPtr();
+    static auto* const* PLBGPAD     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_padding")->getDataStaticPtr();
 
-    static auto* const* PBWIDTH      = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_width")->getDataStaticPtr();
-    static auto  const* PBCOLCUR     = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_color_current")->getDataStaticPtr();
-    static auto  const* PBCOLFOC     = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_color_focus")->getDataStaticPtr();
-    static auto  const* PBCOLHOV     = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_color_hover")->getDataStaticPtr();
-    // Deprecated configs for backwards compatibility
-    static auto  const* PBGRCUR      = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_grad_current")->getDataStaticPtr();
-    static auto  const* PBGREFOC     = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_grad_focus")->getDataStaticPtr();
-    static auto  const* PBGREHOV     = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_grad_hover")->getDataStaticPtr();
+    static auto* const* PBWIDTH     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_width")->getDataStaticPtr();
+    static auto const*  PBCOLCUR    = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_color_current")->getDataStaticPtr();
+    static auto const*  PBCOLFOC    = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_color_focus")->getDataStaticPtr();
+    static auto const*  PBCOLHOV    = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_color_hover")->getDataStaticPtr();
+    static auto const*  PBGRCUR     = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_grad_current")->getDataStaticPtr();
+    static auto const*  PBGREFOC    = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_grad_focus")->getDataStaticPtr();
+    static auto const*  PBGREHOV    = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:border_grad_hover")->getDataStaticPtr();
 
-    static auto* const* PDRAGPROXYCOL     = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_proxy_color")->getDataStaticPtr();
-    static auto* const* PDRAGPROXYACTCOL  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_proxy_active_color")->getDataStaticPtr();
-    static auto  const* PDRAGPROXYBORDER  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_proxy_border_color")->getDataStaticPtr();
-    static auto* const* PDRAGPROXYBWIDTH  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_proxy_border_width")->getDataStaticPtr();
-    static auto* const* PDRAGPROXYROUND   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_proxy_rounding")->getDataStaticPtr();
-    static auto  const* PDRAGSOURCEBORDER = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_source_border_color")->getDataStaticPtr();
+    static auto* const* PDRAGPROXYCOL    = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_proxy_color")->getDataStaticPtr();
+    static auto* const* PDRAGPROXYACTCOL = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_proxy_active_color")->getDataStaticPtr();
+    static auto const*  PDRAGPROXYBORDER = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_proxy_border_color")->getDataStaticPtr();
+    static auto* const* PDRAGPROXYBWIDTH = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_proxy_border_width")->getDataStaticPtr();
+    static auto* const* PDRAGPROXYROUND  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_proxy_rounding")->getDataStaticPtr();
+    static auto const*  PDRAGSOURCEBORDER = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_source_border_color")->getDataStaticPtr();
     static auto* const* PDRAGSOURCEBWIDTH = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:drag_drop_source_border_width")->getDataStaticPtr();
 
     static auto* const* PSELECTEN   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_enable")->getDataStaticPtr();
-    static auto  const* PSELECTMAP  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_token_map")->getDataStaticPtr();
-    static auto  const* PSELECTPOS  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_position")->getDataStaticPtr();
+    static auto const*  PSELECTMAP  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_token_map")->getDataStaticPtr();
+    static auto const*  PSELECTPOS  = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_position")->getDataStaticPtr();
     static auto* const* PSELECTOX   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_offset_x")->getDataStaticPtr();
     static auto* const* PSELECTOY   = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_offset_y")->getDataStaticPtr();
     static auto* const* PSELECTCOL  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_color")->getDataStaticPtr();
 
-    // draw labels
-    if (**PLABELEN || **PSELECTEN || showWorkspaceNumbers) {
-        // use the tracked hoveredID (cleared during closing)
-        const int labelHoveredID = closing ? -1 : hoveredID;
+    auto normalizeAnchor = [](std::string anchor) {
+        std::replace(anchor.begin(), anchor.end(), '_', '-');
+        return anchor;
+    };
 
-        auto shouldShow = [&](int id) -> bool {
-            if (showWorkspaceNumbers)
-                return true;
-            if (std::string{*PLABELSHOW} == "never")
-                return false;
-            if (std::string{*PLABELSHOW} == "always")
-                return true;
-            const bool isHover  = id == labelHoveredID;
-            const bool isFocus  = id == kbFocusID;
-            const bool isCurr   = id == openedID;
-            const std::string mode{*PLABELSHOW};
-            if (mode == "hover")
-                return isHover;
-            if (mode == "focus")
-                return isFocus;
-            if (mode == "hover+focus")
-                return isHover || isFocus;
-            if (mode == "current+focus")
-                return isCurr || isFocus;
-            return true;
-        };
+    auto resolveWorkspaceName = [&](size_t id) -> std::string {
+        if (id >= images.size())
+            return {};
 
-        auto resolveState = [&](int id) -> int {
-            // precedence: focus > current > hover > default
-            if (id == kbFocusID)
-                return 2; // focus
-            if (id == openedID)
-                return 3; // current
-            if (id == labelHoveredID)
-                return 1; // hover
-            return 0;     // default
-        };
+        const auto& image = images[id];
+        if (image.pWorkspace && !image.pWorkspace->m_name.empty())
+            return image.pWorkspace->m_name;
 
-        auto placeBox = [&](const CBox& tile, const Vector2D& size, const std::string& anchor, int offsetX, int offsetY) -> CBox {
-            double x = tile.x, y = tile.y;
-            if (anchor == "top-left") {
-                x += offsetX; y += offsetY;
-            } else if (anchor == "top-right") {
-                x += tile.w - size.x - offsetX; y += offsetY;
-            } else if (anchor == "bottom-left") {
-                x += offsetX; y += tile.h - size.y - offsetY;
-            } else if (anchor == "bottom-right") {
-                x += tile.w - size.x - offsetX; y += tile.h - size.y - offsetY;
-            } else { // center
-                x += (tile.w - size.x) / 2.0; y += (tile.h - size.y) / 2.0;
+        for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
+            if (!workspace || workspace->m_id != image.workspaceID)
+                continue;
+
+            if (!workspace->m_name.empty())
+                return workspace->m_name;
+            break;
+        }
+
+        return std::to_string(image.workspaceID);
+    };
+
+    auto renderLabel = [&](SP<Render::ITexture>& tex, Vector2D& sz, const std::string& label, const CHyprColor& col, float scaleMul, const CBox& tile, const std::string& anchor,
+                           int offsetX, int offsetY, int fontSize) {
+        if (label.empty())
+            return;
+
+        const int baseF = std::max(8, fontSize);
+        if (!tex || tex->m_texID == 0) {
+            const int fsz = std::max(8, (int)std::round(baseF * scaleMul));
+            Vector2D  buf{std::max(32, fsz * std::max(2, (int)label.size())), std::max(24, fsz + 8)};
+            sz  = buf;
+            tex = renderNumberTexture(label, col, buf, MON->m_scale, fsz);
+        }
+
+        if (!tex || tex->m_texID == 0)
+            return;
+
+        static auto* const* PLPIXELSNAP = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_pixel_snap")->getDataStaticPtr();
+
+        auto placeBox = [&](const CBox& tileBox, const Vector2D& size, const std::string& anchorName, int offsetX2, int offsetY2) -> CBox {
+            double x = tileBox.x, y = tileBox.y;
+            if (anchorName == "top-left") {
+                x += offsetX2;
+                y += offsetY2;
+            } else if (anchorName == "top-right") {
+                x += tileBox.w - size.x - offsetX2;
+                y += offsetY2;
+            } else if (anchorName == "bottom-left") {
+                x += offsetX2;
+                y += tileBox.h - size.y - offsetY2;
+            } else if (anchorName == "bottom-right") {
+                x += tileBox.w - size.x - offsetX2;
+                y += tileBox.h - size.y - offsetY2;
+            } else {
+                x += (tileBox.w - size.x) / 2.0;
+                y += (tileBox.h - size.y) / 2.0;
             }
             return CBox{x, y, (double)size.x, (double)size.y};
         };
 
-        auto renderLabel = [&](SP<Render::ITexture>& tex, Vector2D& sz, const std::string& label, const CHyprColor& col, float scaleMul, const CBox& tile, const std::string& anchor,
-                               int offsetX, int offsetY) {
-            if (label.empty())
-                return;
-
-            const int baseF = std::max(8, (int)**PLABELSIZE);
-            if (!tex || tex->m_texID == 0) {
-                const int fsz = std::max(8, (int)std::round(baseF * scaleMul));
-                Vector2D  buf{std::max(32, fsz * 2), std::max(24, fsz + 8)};
-                sz  = buf;
-                tex = renderNumberTexture(label, col, buf, MON->m_scale, fsz);
+        auto drawWithBG = [&]() {
+            const int pad = **PLBGPAD;
+            Vector2D  bgSize = {sz.x + pad * 2, sz.y + pad * 2};
+            const std::string shape{*PLBGSHAPE};
+            int roundPx = **PLBGROUND;
+            if (shape == "circle" || shape == "square") {
+                const double side = std::max(bgSize.x, bgSize.y);
+                bgSize            = {side, side};
+                roundPx           = (shape == "circle") ? std::lround(side / 2.0) : 0;
             }
-
-            if (!tex || tex->m_texID == 0)
-                return;
-
-            static auto* const* PLPIXELSNAP = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:label_pixel_snap")->getDataStaticPtr();
-
-            auto drawWithBG = [&]() {
-                const int pad = **PLBGPAD;
-                Vector2D  bgSize = {sz.x + pad * 2, sz.y + pad * 2};
-                const std::string shape{*PLBGSHAPE};
-                int roundPx = **PLBGROUND;
-                if (shape == "circle" || shape == "square") {
-                    const double side = std::max(bgSize.x, bgSize.y);
-                    bgSize            = {side, side};
-                    roundPx           = (shape == "circle") ? std::lround(side / 2.0) : 0;
-                }
-                CBox bg = placeBox(tile, bgSize, anchor, offsetX, offsetY);
-                CBox lb{bg.x + (bg.w - sz.x) / 2.0, bg.y + (bg.h - sz.y) / 2.0, (double)sz.x, (double)sz.y};
-                if (**PLPIXELSNAP) {
-                    bg.round();
-                    lb.round();
-                }
-                Render::GL::g_pHyprOpenGL->renderRect(bg, CHyprColor{(uint64_t)**PLBGCOL}, {.round = roundPx});
-                Render::GL::g_pHyprOpenGL->renderTexture(tex, lb, {.a = 1.0});
-            };
-
-            auto drawNoBG = [&]() {
-                CBox lb = placeBox(tile, sz, anchor, offsetX, offsetY);
-                if (**PLPIXELSNAP)
-                    lb.round();
-                Render::GL::g_pHyprOpenGL->renderTexture(tex, lb, {.a = 1.0});
-            };
-
-            if (**PLBGEN)
-                drawWithBG();
-            else
-                drawNoBG();
+            CBox bg = placeBox(tile, bgSize, anchor, offsetX, offsetY);
+            CBox lb{bg.x + (bg.w - sz.x) / 2.0, bg.y + (bg.h - sz.y) / 2.0, (double)sz.x, (double)sz.y};
+            if (**PLPIXELSNAP) {
+                bg.round();
+                lb.round();
+            }
+            Render::GL::g_pHyprOpenGL->renderRect(bg, CHyprColor{(uint64_t)**PLBGCOL}, {.round = roundPx});
+            Render::GL::g_pHyprOpenGL->renderTexture(tex, lb, {.a = 1.0});
         };
 
-        std::vector<std::string> labelTokens;
-        if (!std::string{*PTOKENMAP}.empty())
-            labelTokens = splitCommaList(std::string{*PTOKENMAP});
+        auto drawNoBG = [&]() {
+            CBox lb = placeBox(tile, sz, anchor, offsetX, offsetY);
+            if (**PLPIXELSNAP)
+                lb.round();
+            Render::GL::g_pHyprOpenGL->renderTexture(tex, lb, {.a = 1.0});
+        };
 
-        std::vector<std::string> selectionTokens;
-        if (!std::string{*PSELECTMAP}.empty())
-            selectionTokens = splitCommaList(std::string{*PSELECTMAP});
+        if (**PLBGEN)
+            drawWithBG();
+        else
+            drawNoBG();
+    };
 
-        int tokenCounter = 0;
-        for (size_t y = 0; y < (size_t)SIDE_LENGTH; ++y) {
-            for (size_t x = 0; x < (size_t)SIDE_LENGTH; ++x) {
-                const int id = x + y * SIDE_LENGTH;
-                if (images[id].workspaceID == WORKSPACE_INVALID)
-                    continue;
-
-                // compute tile box again for label placement
-                CBox tile{OUTER + x * tileRenderSize.x + x * GAPSIZE, OUTER + y * tileRenderSize.y + y * GAPSIZE, tileRenderSize.x, tileRenderSize.y};
-                tile.scale(MON->m_scale).translate(pos->value());
-                tile.round();
-
-                if ((**PLABELEN || showWorkspaceNumbers) && shouldShow(id)) {
-                    std::string label;
-                    const std::string mode = showWorkspaceNumbers ? std::string{"id"} : std::string{*PLABELMODE};
-                    if (mode == "token") {
-                        if (tokenCounter < (int)labelTokens.size() && !labelTokens[tokenCounter].empty())
-                            label = labelTokens[tokenCounter];
-                        else
-                            label = fallbackTokenForVisibleIndex(tokenCounter);
-                    } else if (mode == "index") {
-                        label = std::to_string(tokenCounter + 1);
-                    } else {
-                        label = std::to_string(images[id].workspaceID);
-                    }
-
-                    const int st = resolveState(id);
-                    if (!label.empty()) {
-                        if (showWorkspaceNumbers)
-                            renderLabel(images[id].labelTexDefault, images[id].labelSizeDefault, label, CHyprColor{(uint64_t)**PWSNUMCOL}, 1.0f, tile, std::string{*PLABELPOS}, **PLABELOX, **PLABELOY);
-                        else if (st == 1)
-                            renderLabel(images[id].labelTexHover, images[id].labelSizeHover, label, CHyprColor{(uint64_t)**PLCOLHOV}, **PLSCALEH, tile, std::string{*PLABELPOS}, **PLABELOX, **PLABELOY);
-                        else if (st == 2)
-                            renderLabel(images[id].labelTexFocus, images[id].labelSizeFocus, label, CHyprColor{(uint64_t)**PLCOLFOC}, **PLSCALEF, tile, std::string{*PLABELPOS}, **PLABELOX, **PLABELOY);
-                        else if (st == 3)
-                            renderLabel(images[id].labelTexCurrent, images[id].labelSizeCurrent, label, CHyprColor{(uint64_t)**PLCOLCUR}, 1.0f, tile, std::string{*PLABELPOS}, **PLABELOX, **PLABELOY);
-                        else
-                            renderLabel(images[id].labelTexDefault, images[id].labelSizeDefault, label, CHyprColor{(uint64_t)**PLCOLDEF}, 1.0f, tile, std::string{*PLABELPOS}, **PLABELOX, **PLABELOY);
-                    }
-                }
-
-                if (**PSELECTEN && tokenCounter < (int)selectionTokens.size() && !selectionTokens[tokenCounter].empty())
-                    renderLabel(images[id].selectionLabelTex, images[id].selectionLabelSize, selectionTokens[tokenCounter], CHyprColor{(uint64_t)**PSELECTCOL}, 1.0f, tile,
-                                std::string{*PSELECTPOS}, **PSELECTOX, **PSELECTOY);
-
-                tokenCounter++;
-            }
-        }
-    }
-
-    // draw borders for hover, current and focus (priority order: focus > current > hover)
-
-    // pass rounding based on state
-    const int RND_CUR = CURRENT_ROUND_SCALED;
-    const int RND_FOC = FOCUS_ROUND_SCALED;
-    const int RND_HOV = HOVER_ROUND_SCALED;
-
-    // Helper to parse border config (supports rgb/hex/gradient, with deprecated fallback)
     auto drawBorderForID = [&](int id, const std::string& borderSpec, const std::string& deprecatedGradSpec, int roundScaled, int borderWidthOverride = -1) {
-        if (id < 0)
+        if (!isTileValid(id) || id < 0 || id >= (int)tileBoxes.size())
             return;
         if (borderWidthOverride == 0)
             return;
-        const int ix = id % SIDE_LENGTH;
-        const int iy = id / SIDE_LENGTH;
-        CBox       box{OUTER + ix * tileRenderSize.x + ix * GAPSIZE, OUTER + iy * tileRenderSize.y + iy * GAPSIZE, tileRenderSize.x, tileRenderSize.y};
-        box.scale(MON->m_scale).translate(pos->value());
-        box.round();
-        const int BWIDTH = std::max(1, borderWidthOverride > 0 ? borderWidthOverride : (int)**PBWIDTH);
 
-        // Determine which spec to use (prefer new format, fallback to deprecated)
-        std::string effectiveSpec = borderSpec.empty() ? deprecatedGradSpec : borderSpec;
+        const CBox& box = tileBoxes[id];
+        if (box.w <= 0.0 || box.h <= 0.0)
+            return;
 
-        // Auto-detect format: gradient vs solid color
+        const int BWIDTH = borderWidthOverride > 0 ? borderWidthOverride : (int)**PBWIDTH;
+        if (BWIDTH <= 0)
+            return;
+
+        const std::string effectiveSpec = Hyprexpo::resolveBorderSpec(borderSpec, deprecatedGradSpec);
+
         if (isGradientBorderSpec(effectiveSpec)) {
-            // Render as gradient border (hyprland style)
             const auto spec = parseGradientSpec(effectiveSpec);
             if (spec.valid) {
                 Config::CGradientValueData grad;
@@ -622,7 +563,7 @@ void COverview::fullRender() {
         if (borderWidth <= 0)
             return;
 
-        std::string effectiveSpec = borderSpec.empty() ? fallbackSpec : borderSpec;
+        const std::string effectiveSpec = borderSpec.empty() ? fallbackSpec : borderSpec;
         if (effectiveSpec.empty())
             return;
 
@@ -632,47 +573,142 @@ void COverview::fullRender() {
                 return;
 
             Config::CGradientValueData grad;
-            grad.m_colors.clear();
-            grad.m_colors.push_back(spec.c1);
-            grad.m_colors.push_back(spec.c2);
-            grad.m_angle = spec.angleDeg * (float)M_PI / 180.f;
+            grad.m_colors = {spec.c1, spec.c2};
+            grad.m_angle  = spec.angleDeg * (float)M_PI / 180.f;
             grad.updateColorsOk();
             Render::GL::g_pHyprOpenGL->renderBorder(proxy, grad, {.round = round, .roundingPower = ROUND_PWR, .borderSize = borderWidth});
             return;
         }
 
         Hyprexpo::SColorRGBA parsedColor;
-        if (Hyprexpo::parseSolidColorSpec(effectiveSpec, parsedColor)) {
-            Config::CGradientValueData grad{CHyprColor{parsedColor.r, parsedColor.g, parsedColor.b, parsedColor.a}};
-            grad.updateColorsOk();
-            Render::GL::g_pHyprOpenGL->renderBorder(proxy, grad, {.round = round, .roundingPower = ROUND_PWR, .borderSize = borderWidth});
-        } else
+        if (!Hyprexpo::parseSolidColorSpec(effectiveSpec, parsedColor)) {
             Log::logger->log(Log::ERR, "[hyprexpo] invalid drag_drop_proxy_border_color config: {}", effectiveSpec);
+            return;
+        }
+
+        Config::CGradientValueData grad{CHyprColor{parsedColor.r, parsedColor.g, parsedColor.b, parsedColor.a}};
+        grad.updateColorsOk();
+        Render::GL::g_pHyprOpenGL->renderBorder(proxy, grad, {.round = round, .roundingPower = ROUND_PWR, .borderSize = borderWidth});
     };
 
-    // Draw borders in order: hover (lowest), then current, then focus (highest priority)
+    std::vector<std::string> selectionTokens;
+    if (!std::string{*PSELECTMAP}.empty())
+        selectionTokens = splitCommaList(std::string{*PSELECTMAP});
+
+    if (**PLABELEN || **PSELECTEN || showWorkspaceNumbers) {
+        const int labelHoveredID = closing ? -1 : hoveredID;
+        const std::string modernAnchor = Hyprexpo::trimString(std::string{*PLABELPOS});
+        const std::string labelAnchor  = normalizeAnchor(modernAnchor.empty() ? std::string{*PLABELPOSL} : modernAnchor);
+        const int labelFontSize = **PLABELSIZE > 0 ? **PLABELSIZE : std::max(8, (int)**PLABELSIZEL / 2);
+
+        auto resolveState = [&](int id) -> int {
+            if (id == kbFocusID)
+                return 2;
+            if (id == openedID)
+                return 3;
+            if (id == labelHoveredID)
+                return 1;
+            return 0;
+        };
+
+        std::vector<std::string> labelTokens;
+        if (!std::string{*PTOKENMAP}.empty())
+            labelTokens = splitCommaList(std::string{*PTOKENMAP});
+
+        int tokenCounter = 0;
+        for (size_t id = 0; id < images.size(); ++id) {
+            const auto& image = images[id];
+            const auto& tile  = tileBoxes[id];
+
+            if (image.workspaceID == WORKSPACE_INVALID || tile.w <= 0.0 || tile.h <= 0.0)
+                continue;
+
+            const bool labelEnabled = **PLABELEN || showWorkspaceNumbers;
+            const std::string labelShow = showWorkspaceNumbers ? "always" : std::string{*PLABELSHOW};
+            if (Hyprexpo::shouldShowWorkspaceLabel(labelEnabled, labelShow, (int)id == labelHoveredID, (int)id == kbFocusID, (int)id == openedID)) {
+                std::string label;
+                const std::string mode = showWorkspaceNumbers ? std::string{"id"} : std::string{*PLABELMODE};
+                if (dynamicGrid && showWorkspaceNames) {
+                    label = resolveWorkspaceName(id);
+                } else if (mode == "token") {
+                    if (tokenCounter < (int)labelTokens.size() && !labelTokens[tokenCounter].empty())
+                        label = labelTokens[tokenCounter];
+                    else
+                        label = fallbackTokenForVisibleIndex(tokenCounter);
+                } else if (mode == "index") {
+                    label = std::to_string(tokenCounter + 1);
+                } else {
+                    label = std::to_string(images[id].workspaceID);
+                }
+
+                const int st = resolveState((int)id);
+                if (!label.empty()) {
+                    if (showWorkspaceNumbers)
+                        renderLabel(images[id].labelTexDefault, images[id].labelSizeDefault, label, CHyprColor{(uint64_t)**PWSNUMCOL}, 1.0f, tile, labelAnchor, **PLABELOX, **PLABELOY,
+                                    labelFontSize);
+                    else if (st == 1)
+                        renderLabel(images[id].labelTexHover, images[id].labelSizeHover, label, CHyprColor{(uint64_t)**PLCOLHOV}, **PLSCALEH, tile, labelAnchor, **PLABELOX,
+                                    **PLABELOY, labelFontSize);
+                    else if (st == 2)
+                        renderLabel(images[id].labelTexFocus, images[id].labelSizeFocus, label, CHyprColor{(uint64_t)**PLCOLFOC}, **PLSCALEF, tile, labelAnchor, **PLABELOX,
+                                    **PLABELOY, labelFontSize);
+                    else if (st == 3)
+                        renderLabel(images[id].labelTexCurrent, images[id].labelSizeCurrent, label, CHyprColor{(uint64_t)**PLCOLCUR}, 1.0f, tile, labelAnchor, **PLABELOX,
+                                    **PLABELOY, labelFontSize);
+                    else
+                        renderLabel(images[id].labelTexDefault, images[id].labelSizeDefault, label, CHyprColor{(uint64_t)**PLCOLDEF}, 1.0f, tile, labelAnchor, **PLABELOX,
+                                    **PLABELOY, labelFontSize);
+                }
+            }
+
+            if (**PSELECTEN && tokenCounter < (int)selectionTokens.size() && !selectionTokens[tokenCounter].empty())
+                renderLabel(images[id].selectionLabelTex, images[id].selectionLabelSize, selectionTokens[tokenCounter], CHyprColor{(uint64_t)**PSELECTCOL}, 1.0f, tile,
+                            std::string{*PSELECTPOS}, **PSELECTOX, **PSELECTOY, **PLABELSIZE);
+
+            ++tokenCounter;
+        }
+    }
+
+    const int RND_CUR = CURRENT_ROUND_SCALED;
+    const int RND_FOC = FOCUS_ROUND_SCALED;
+    const int RND_HOV = HOVER_ROUND_SCALED;
+
+    auto legacyColorSpec = [](uint64_t color) {
+        constexpr char HEX[] = "0123456789abcdef";
+        std::string    spec  = "0x00000000";
+        for (int index = 0; index < 8; ++index)
+            spec[9 - index] = HEX[(color >> (index * 4)) & 0xF];
+        return spec;
+    };
+
+    const std::string currentLegacySpec = dynamicGrid ? legacyColorSpec((uint64_t)**PACTCOL) : std::string{};
+    const std::string hoverLegacySpec   = dynamicGrid ? legacyColorSpec((uint64_t)**PHOVCOL) : std::string{};
+    const std::string currentFallback   = Hyprexpo::resolveBorderSpec(std::string{*PBGRCUR}, currentLegacySpec);
+    const std::string hoverFallback     = Hyprexpo::resolveBorderSpec(std::string{*PBGREHOV}, hoverLegacySpec);
+
     if (hoveredID != -1 && hoveredID != openedID && hoveredID != kbFocusID)
-        drawBorderForID(hoveredID, std::string{*PBCOLHOV}, std::string{*PBGREHOV}, RND_HOV);
-    drawBorderForID(openedID, std::string{*PBCOLCUR}, std::string{*PBGRCUR}, RND_CUR);
+        drawBorderForID(hoveredID, std::string{*PBCOLHOV}, hoverFallback, RND_HOV);
+    drawBorderForID(openedID, std::string{*PBCOLCUR}, currentFallback, RND_CUR);
     if (kbFocusID != -1)
         drawBorderForID(kbFocusID, std::string{*PBCOLFOC}, std::string{*PBGREFOC}, RND_FOC);
+
     if (dragMoved && dragSourceID != -1) {
         const std::string sourceBorder = std::string{*PDRAGSOURCEBORDER}.empty() ? std::string{*PBCOLFOC} : std::string{*PDRAGSOURCEBORDER};
         const int         sourceWidth  = **PDRAGSOURCEBWIDTH >= 0 ? **PDRAGSOURCEBWIDTH : (int)**PBWIDTH;
         drawBorderForID(dragSourceID, sourceBorder, std::string{*PBGREFOC}, RND_FOC, sourceWidth);
     }
 
-    dropIntent = {};
+    dropIntent         = {};
     dropIntentTargetID = -1;
 
     if (dragWindow && isTileValid(dragSourceID)) {
         const auto windowBox = dragWindow->getWindowMainSurfaceBox();
         if (windowBox.w > 0 && windowBox.h > 0) {
-            const CBox&  sourceBox = tileBoxes[dragSourceID];
-            const double scaleX    = sourceBox.w / MON->m_size.x;
-            const double scaleY    = sourceBox.h / MON->m_size.y;
-            const double minW      = std::min(sourceBox.w, 24.0 * MON->m_scale);
-            const double minH      = std::min(sourceBox.h, 24.0 * MON->m_scale);
+            const CBox& sourceBox = tileBoxes[dragSourceID];
+            const double scaleX   = sourceBox.w / MON->m_size.x;
+            const double scaleY   = sourceBox.h / MON->m_size.y;
+            const double minW     = std::min(sourceBox.w, 24.0 * MON->m_scale);
+            const double minH     = std::min(sourceBox.h, 24.0 * MON->m_scale);
 
             CBox proxy{
                 lastMousePosLocal.x * MON->m_scale - dragGrabOffset.x * scaleX,
@@ -684,17 +720,11 @@ void COverview::fullRender() {
 
             const int maxProxyRound = std::max(0, (int)std::floor(std::min(proxy.w, proxy.h) / 2.0));
             const int autoRound     = std::min(RND_FOC, maxProxyRound);
-            const int round         = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * MON->m_scale)), maxProxyRound) : autoRound;
+            const int round        = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * MON->m_scale)), maxProxyRound) : autoRound;
 
             if (dragMoved && hoveredID != -1 && hoveredID != dragSourceID && isTileValid(hoveredID)) {
-                const int tx = hoveredID % SIDE_LENGTH;
-                const int ty = hoveredID / SIDE_LENGTH;
-                const Hyprexpo::SRect targetTileLocal{
-                    OUTER + tx * tileRenderSize.x + tx * GAPSIZE,
-                    OUTER + ty * tileRenderSize.y + ty * GAPSIZE,
-                    tileRenderSize.x,
-                    tileRenderSize.y,
-                };
+                const auto targetTileBox = tileBoxForIndex(hoveredID, SIZE, GAPSIZE, OUTER, true);
+                const Hyprexpo::SRect targetTileLocal{targetTileBox.x, targetTileBox.y, targetTileBox.w, targetTileBox.h};
                 dropIntent = Hyprexpo::computeDropIntentGeometry({
                     .targetValid     = true,
                     .pointerLocal    = {lastMousePosLocal.x, lastMousePosLocal.y},
@@ -717,8 +747,7 @@ void COverview::fullRender() {
                 targetProxy.round();
 
                 const int targetMaxRound = std::max(0, (int)std::floor(std::min(targetProxy.w, targetProxy.h) / 2.0));
-                const int targetRound    = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * MON->m_scale)), targetMaxRound) :
-                                                                   std::min(RND_FOC, targetMaxRound);
+                const int targetRound    = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * MON->m_scale)), targetMaxRound) : std::min(RND_FOC, targetMaxRound);
                 Render::GL::g_pHyprOpenGL->renderRect(targetProxy, CHyprColor{(uint64_t)**PDRAGPROXYACTCOL}, {.round = targetRound, .roundingPower = ROUND_PWR});
 
                 const int   borderWidth   = **PDRAGPROXYBWIDTH >= 0 ? **PDRAGPROXYBWIDTH : std::max(2, (int)**PBWIDTH + 1);
@@ -735,4 +764,7 @@ void COverview::fullRender() {
             drawProxyBorder(proxy, round, borderWidth, effectiveSpec, std::string{*PBGREFOC});
         }
     }
+
+    if (entryAnimationPending)
+        damage();
 }
