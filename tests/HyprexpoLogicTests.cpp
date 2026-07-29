@@ -212,6 +212,30 @@ int main() {
     expect(near(drop.targetWorkspacePoint.x, 0) && near(drop.targetWorkspacePoint.y, 0), "drop intent clamps outside pointer to workspace edge");
     expect(near(drop.targetProxyLocal.x, 0) && near(drop.targetProxyLocal.y, 0), "drop intent clamps outside pointer proxy to tile edge");
 
+    // Regression: a window at least as large as the target tile makes proxyW/proxyH clamp to
+    // exactly tile.w/tile.h, so `tile.x + tile.w - proxyW` -- algebraically just tile.x -- is
+    // catastrophic cancellation and can round an ULP below tile.x. Feeding that to clamp() as the
+    // upper bound is UB and aborts under libstdc++ assertions, killing the compositor mid-render.
+    //
+    // 0.1 and 1200.5 are chosen because (0.1 + 1200.5) - 1200.5 < 0.1 in IEEE-754. Whether the
+    // cancellation rounds down at all depends on the magnitude of the tile origin, which is why
+    // dropping onto a tile in one grid row could crash while an adjacent tile was fine. Without
+    // the fix this call does not return -- it aborts the test binary.
+    SDropIntentInput tileFillingDropInput{
+        .targetValid     = true,
+        .pointerLocal    = {600, 600},
+        .targetTileLocal = {0.1, 0.1, 1200.5, 1200.5},
+        .workspaceSize   = {1200, 1200},
+        .windowSize      = {2400, 2400}, // larger than the workspace, so the proxy fills the tile
+        .grabOffset      = {0, 0},
+    };
+    const auto tileFillingDrop = computeDropIntentGeometry(tileFillingDropInput);
+    expect(tileFillingDrop.valid, "drop intent stays valid when the window fills the tile");
+    expect(near(tileFillingDrop.targetProxyLocal.w, tileFillingDropInput.targetTileLocal.w) && near(tileFillingDrop.targetProxyLocal.h, tileFillingDropInput.targetTileLocal.h),
+           "a tile-filling proxy is capped to the tile size");
+    expect(tileFillingDrop.targetProxyLocal.x >= tileFillingDropInput.targetTileLocal.x && tileFillingDrop.targetProxyLocal.y >= tileFillingDropInput.targetTileLocal.y,
+           "a tile-filling proxy never starts outside the tile");
+
     dropInput.targetValid = false;
     expect(!computeDropIntentGeometry(dropInput).valid, "drop intent rejects invalid target");
     dropInput.targetValid   = true;
