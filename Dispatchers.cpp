@@ -510,10 +510,6 @@ void disableExpoGestureSync() {
 }
 
 void syncExpoGestureFromConfig() {
-    // g_unloading is only set by resetDispatcherRuntime(), which PLUGIN_EXIT runs *after* its
-    // Config::mgr()->reload(). That reload fires config.reloaded, so without the separate flag
-    // this would re-register a CExpoGesture during teardown and hand Hyprland an object whose
-    // vtable dies with the dlclose()d library.
     if (g_unloading || g_gestureSyncDisabled)
         return;
 
