@@ -4,6 +4,7 @@
 
 #include "ExpoGesture.hpp"
 #include "HyprexpoConfig.hpp"
+#include "HyprlandConfigCompat.hpp"
 #include "Overview.hpp"
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
@@ -513,15 +514,13 @@ void syncExpoGestureFromConfig() {
     if (g_unloading || g_gestureSyncDisabled)
         return;
 
-    static auto* const* PFINGERS = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gesture_fingers")->getDataStaticPtr();
-    static auto const*  PDIR     = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gesture_direction")->getDataStaticPtr();
+    const int         FINGERS = (int)CompatHyprlandAPI::intValue("plugin:hyprexpo:gesture_fingers");
+    const std::string DIR     = CompatHyprlandAPI::stringValue("plugin:hyprexpo:gesture_direction");
 
-    const int FINGERS = (int)**PFINGERS;
-    if (FINGERS <= 0) // opt-in; 0 leaves trackpad handling entirely to Hyprland/Lua
+    if (FINGERS <= 0)
         return;
 
-    const auto RESULT = registerExpoGesture(FINGERS, std::string{*PDIR}, "expo", "", 1.F, false);
-    if (!RESULT.success)
+    if (const auto RESULT = registerExpoGesture(FINGERS, DIR, "expo", "", 1.F, false); !RESULT.success)
         Log::logger->log(Log::ERR, "[hyprexpo] gesture_fingers/gesture_direction: {}", RESULT.error);
 }
 
