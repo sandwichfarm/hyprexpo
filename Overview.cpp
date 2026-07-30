@@ -220,11 +220,7 @@ Config::INTEGER intValue(const std::string& name) {
 
 Config::STRING stringValue(const std::string& name) {
     const auto VALUE = Config::mgr()->getConfigValue(name);
-    if (!VALUE.dataptr || !VALUE.type || *VALUE.type != typeid(Config::STRING))
-        return stringDefault(name);
-
-    auto* const* ptr = reinterpret_cast<Config::STRING* const*>(VALUE.dataptr);
-    return ptr && *ptr ? **ptr : stringDefault(name);
+    return Hyprexpo::decodeConfigString(VALUE.dataptr, VALUE.type && *VALUE.type == typeid(Config::STRING), stringDefault(name));
 }
 }
 

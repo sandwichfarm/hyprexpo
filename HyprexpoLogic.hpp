@@ -105,6 +105,8 @@ SDropIntentGeometry      computeDropIntentGeometry(const SDropIntentInput& input
 
 SGestureSyncDecision     evaluateGestureSync(const SGestureConfig& config);
 
+std::string              decodeConfigString(const void* dataptr, bool underlyingIsStdString, const std::string& fallback);
+
 std::string              fallbackTokenForVisibleIndex(int visibleIndex);
 int                      fallbackTokenToVisibleIndex(const std::string& token);
 

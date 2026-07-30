@@ -209,6 +209,22 @@ SGestureSyncDecision evaluateGestureSync(const SGestureConfig& config) {
     return {.registerGesture = true, .error = ""};
 }
 
+// Hyprland hands a config value back as `<type>* const*`. Plugin string options arrive as
+// const char*, not std::string, so treating a non-std::string reply as a type mismatch silently
+// substitutes the default for every string option.
+std::string decodeConfigString(const void* dataptr, bool underlyingIsStdString, const std::string& fallback) {
+    if (!dataptr)
+        return fallback;
+
+    if (underlyingIsStdString) {
+        auto* const* ptr = reinterpret_cast<std::string* const*>(dataptr);
+        return ptr && *ptr ? **ptr : fallback;
+    }
+
+    auto* const* ptr = reinterpret_cast<const char* const*>(dataptr);
+    return ptr && *ptr ? std::string{*ptr} : fallback;
+}
+
 std::string fallbackTokenForVisibleIndex(int visibleIndex) {
     if (visibleIndex < 0)
         return "";

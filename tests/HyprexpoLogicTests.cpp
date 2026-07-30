@@ -242,6 +242,22 @@ int main() {
     dropInput.windowSize.w = 0;
     expect(!computeDropIntentGeometry(dropInput).valid, "drop intent rejects invalid window size");
 
+    // Regression: Hyprland reports plugin string options as const char*, not std::string, so the
+    // reply's type does not match typeid(Config::STRING). Treating that as a mismatch and falling
+    // back silently substituted the default for every string option, which looks exactly like the
+    // user never set the value.
+    const char*       rawConfigString = "vertical";
+    const void*       rawReply        = &rawConfigString;
+    expect(decodeConfigString(rawReply, false, "up") == "vertical", "a const char* config reply is decoded, not treated as a type mismatch");
+
+    std::string       stdConfigString = "horizontal";
+    std::string*      stdConfigPtr    = &stdConfigString;
+    expect(decodeConfigString(&stdConfigPtr, true, "up") == "horizontal", "a std::string config reply is still decoded");
+
+    const char*       nullConfigString = nullptr;
+    expect(decodeConfigString(&nullConfigString, false, "up") == "up", "a null inner pointer falls back to the default");
+    expect(decodeConfigString(nullptr, false, "up") == "up", "an absent config value falls back to the default");
+
     const auto gestureDisabled = evaluateGestureSync({.fingers = 0, .direction = "up", .directionValid = true});
     expect(!gestureDisabled.registerGesture, "gesture_fingers = 0 registers nothing");
     expect(gestureDisabled.error.empty(), "gesture_fingers = 0 is opt-out, not a misconfiguration");
