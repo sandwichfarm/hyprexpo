@@ -75,6 +75,16 @@ int main() {
     expect(mainSource.find("_ZN8CMonitor9addDamageERKN9Hyprutils4Math4CBoxE") == std::string::npos,
            "damage hook no longer uses the pre-0.56 monitor symbol");
 
+    const auto configSource = readFile("PluginConfig.cpp");
+    expect(configSource.find("plugin:hyprexpo:drag_drop_enable") != std::string::npos,
+           "drag/drop enable configuration is registered");
+    expect(source.find("plugin:hyprexpo:drag_drop_enable") != std::string::npos,
+           "drag/drop enable configuration has a compatibility default");
+    expect(source.find("if (**PDRAGDROPENABLE)\n                beginWindowDrag();") != std::string::npos,
+           "drag/drop enable configuration gates drag start");
+    expect(source.find("if (**PDRAGDROPENABLE && finishWindowDrag())") != std::string::npos,
+           "drag/drop enable configuration gates drag completion");
+
     const auto dispatchersSource = readFile("Dispatchers.cpp");
     expect(!dispatchersSource.empty(), "Dispatchers.cpp can be read from repo root");
     const auto expoDispatcher = extractFunction(dispatchersSource, "static SDispatchResult onExpoDispatcher(std::string arg) {");

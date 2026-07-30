@@ -38,6 +38,7 @@ inline constexpr int         GESTURE_DISTANCE_DEFAULT        = 200;
 inline constexpr const char* CANCEL_KEY_DEFAULT              = "escape";
 inline constexpr int         SHOW_CURSOR_DEFAULT             = 1;
 inline constexpr int         SHOW_PINNED_WINDOWS_DEFAULT     = 0;
+inline constexpr int         DRAG_DROP_ENABLE_DEFAULT        = 1;
 inline constexpr int         KEYNAV_ENABLE_DEFAULT           = 1;
 inline constexpr const char* NUMBER_KEY_MODE_DEFAULT         = "workspace";
 inline constexpr int         KEYNAV_WRAP_H_DEFAULT           = 1;

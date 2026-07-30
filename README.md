@@ -124,6 +124,7 @@ plugin {
         cancel_key = escape
         show_cursor = 1
         show_pinned_windows = 0
+        drag_drop_enable = 0 # Disable moving windows by dragging workspace previews.
     }
 }
 ```
@@ -142,10 +143,13 @@ hl.config({
             gesture_distance = 200,
             cancel_key = "escape",
             show_cursor = 1,
+            drag_drop_enable = 0, -- Disable moving windows by dragging workspace previews.
         },
     },
 })
 ```
+
+`drag_drop_enable` defaults to `1`. Set it to `0` to keep workspace clicks from moving windows when the pointer shifts during a click.
 
 Add a dispatcher binding:
 

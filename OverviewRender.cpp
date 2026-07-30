@@ -531,7 +531,10 @@ void COverview::fullRender() {
         if (box.w <= 0.0 || box.h <= 0.0)
             return;
 
-        const int BWIDTH = std::max(1, borderWidthOverride > 0 ? borderWidthOverride : (int)**PBWIDTH);
+        const int BWIDTH = borderWidthOverride > 0 ? borderWidthOverride : (int)**PBWIDTH;
+        if (BWIDTH <= 0)
+            return;
+
         const std::string effectiveSpec = Hyprexpo::resolveBorderSpec(borderSpec, deprecatedGradSpec);
 
         if (isGradientBorderSpec(effectiveSpec)) {
