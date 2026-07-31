@@ -32,9 +32,9 @@
 #include <string>
 #include <string_view>
 
-static bool g_unloading         = false;
-static bool g_gestureSyncDisabled = false;
-static bool renderingOverview   = false;
+static bool g_unloading                   = false;
+static bool g_gestureRegistrationDisabled = false;
+static bool renderingOverview             = false;
 static SP<Config::Values::CStringValue> g_pCancelKeyConfig;
 
 static SDispatchResult onExpoDispatcher(std::string arg);
@@ -478,7 +478,12 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
 }
 
 static SDispatchResult registerExpoGesture(int fingerCount, const std::string& directionName, const std::string& action, const std::string& mods, float deltaScale, bool disableInhibit) {
-    if (g_unloading)
+    // Every registration path funnels through here: config sync, the hyprexpo:gesture dispatcher and
+    // the hl.plugin.hyprexpo.gesture() Lua helper. PLUGIN_EXIT reloads the config while the .so is
+    // still mapped, and a Lua config re-runs its gesture() call during that reload, so the fence has
+    // to sit here rather than only in the config-sync path -- otherwise the fresh CExpoGesture
+    // outlives dlclose and clearGestures() destroys it through an unmapped vtable.
+    if (g_unloading || g_gestureRegistrationDisabled)
         return {};
 
     if (fingerCount <= 1 || fingerCount >= 10)
@@ -508,8 +513,8 @@ static SDispatchResult registerExpoGesture(int fingerCount, const std::string& d
     return {};
 }
 
-void disableExpoGestureSync() {
-    g_gestureSyncDisabled = true;
+void disableExpoGestureRegistration() {
+    g_gestureRegistrationDisabled = true;
 }
 
 static void reportGestureConfigError(const std::string& error) {
@@ -518,7 +523,7 @@ static void reportGestureConfigError(const std::string& error) {
 }
 
 void syncExpoGestureFromConfig() {
-    if (g_unloading || g_gestureSyncDisabled)
+    if (g_unloading || g_gestureRegistrationDisabled)
         return;
 
     const int         FINGERS = (int)CompatHyprlandAPI::intValue("plugin:hyprexpo:gesture_fingers");
