@@ -124,7 +124,7 @@ plugin {
 
 `gesture_fingers = 0` (the default) registers nothing, leaving trackpad handling entirely to Hyprland and Lua. Use a `gesture_direction` that does not collide with an existing Hyprland `gesture =` binding for the same finger count.
 
-An unknown `gesture_direction` is rejected while the config is parsed, so it shows up in `hyprctl configerrors`. A `gesture_fingers` value that is out of range is reported as a notification and leaves the gesture unregistered rather than failing silently.
+Bad values are rejected when the gesture is registered, not while the config is parsed. An unknown `gesture_direction`, or a `gesture_fingers` value that is neither `0` nor in `2`-`9`, raises a notification and leaves the gesture unregistered rather than failing silently. Under the hyprlang backend these do not reach `hyprctl configerrors`: plugins have no API for adding entries there, and hyprlang does not run the validators attached to plugin config values.
 
 ## Tile Appearance
 
