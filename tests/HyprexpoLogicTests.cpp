@@ -242,10 +242,6 @@ int main() {
     dropInput.windowSize.w = 0;
     expect(!computeDropIntentGeometry(dropInput).valid, "drop intent rejects invalid window size");
 
-    // Regression: Hyprland reports plugin string options as const char*, not std::string, so the
-    // reply's type does not match typeid(Config::STRING). Treating that as a mismatch and falling
-    // back silently substituted the default for every string option, which looks exactly like the
-    // user never set the value.
     const char*       rawConfigString = "vertical";
     const void*       rawReply        = &rawConfigString;
     expect(decodeConfigString(rawReply, false, "up") == "vertical", "a const char* config reply is decoded, not treated as a type mismatch");
@@ -265,8 +261,6 @@ int main() {
     const auto gestureEnabled = evaluateGestureSync({.fingers = 3, .direction = "vertical", .directionValid = true});
     expect(gestureEnabled.registerGesture && gestureEnabled.error.empty(), "a valid finger count and direction registers the gesture");
 
-    // 1 is the interesting one: it is in range for the declared min/max but too few fingers for a
-    // gesture, so it can only be caught here.
     for (const int fingers : {-1, 1, 10}) {
         const auto rejected = evaluateGestureSync({.fingers = fingers, .direction = "up", .directionValid = true});
         expect(!rejected.registerGesture, "gesture_fingers " + std::to_string(fingers) + " registers nothing");

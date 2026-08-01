@@ -28,8 +28,7 @@ std::string extractFunction(const std::string& source, const std::string& signat
         if (open == std::string::npos)
             return {};
 
-        // Skip forward declarations, whose statement terminates before any brace opens. Without this
-        // a signature that is declared before it is defined would extract an unrelated later body.
+        // Ignore forward declarations.
         const auto semicolon = source.find(';', start);
         if (semicolon != std::string::npos && semicolon < open)
             continue;
@@ -121,8 +120,6 @@ int main() {
     expect(!gestureSync.empty(), "syncExpoGestureFromConfig exists");
     expect(gestureSync.find("g_unloading || g_gestureRegistrationDisabled") != std::string::npos, "gesture sync bails out while the plugin is unloading");
 
-    // The Lua hl.plugin.hyprexpo.gesture() helper reaches registerExpoGesture directly, never through
-    // syncExpoGestureFromConfig, so fencing only the config-sync path leaves the Lua unload path open.
     const auto gestureRegister = extractFunction(dispatchersSource, "static SDispatchResult registerExpoGesture(");
     expect(!gestureRegister.empty(), "registerExpoGesture definition exists");
     expect(gestureRegister.find("g_unloading || g_gestureRegistrationDisabled") != std::string::npos,

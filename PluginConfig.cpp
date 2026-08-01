@@ -18,10 +18,7 @@ static void addConfigValue(SP<Config::Values::IValue> value) {
     HyprlandAPI::addConfigValueV2(PHANDLE, value);
 }
 
-// Parse-time rejection, kept for backends that run validators attached to plugin config values.
-// hyprlang does not, so there a typo never reaches hyprctl configerrors and syncExpoGestureFromConfig
-// is what rejects it at registration time. Plugin values are only ever parsed after the plugin is
-// loaded, so the trackpad manager always exists by then.
+// Hyprlang skips plugin validators; runtime sync validates again.
 static std::expected<void, std::string> validateGestureDirection(const Config::STRING& value) {
     if (!g_pTrackpadGestures || g_pTrackpadGestures->dirForString(value) != TRACKPAD_GESTURE_DIR_NONE)
         return {};

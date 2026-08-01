@@ -22,8 +22,6 @@ struct SConfigValueCompat {
 
 SConfigValueCompat* getConfigValue(HANDLE handle, const std::string& name);
 
-// Backend-independent reads. Both fall back to the compiled-in default when the config manager
-// has no value of the expected type, so callers never dereference a null or mistyped pointer.
 Config::INTEGER intValue(const std::string& name);
 Config::STRING  stringValue(const std::string& name);
 }

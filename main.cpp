@@ -137,8 +137,6 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    // Fence first: the reload below re-evaluates the config, and a Lua config calls back into
-    // hl.plugin.hyprexpo.gesture() while this .so is still mapped but on its way out.
     disableExpoGestureRegistration();
 
     g_pOverview.reset();

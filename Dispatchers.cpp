@@ -478,11 +478,7 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
 }
 
 static SDispatchResult registerExpoGesture(int fingerCount, const std::string& directionName, const std::string& action, const std::string& mods, float deltaScale, bool disableInhibit) {
-    // Every registration path funnels through here: config sync, the hyprexpo:gesture dispatcher and
-    // the hl.plugin.hyprexpo.gesture() Lua helper. PLUGIN_EXIT reloads the config while the .so is
-    // still mapped, and a Lua config re-runs its gesture() call during that reload, so the fence has
-    // to sit here rather than only in the config-sync path -- otherwise the fresh CExpoGesture
-    // outlives dlclose and clearGestures() destroys it through an unmapped vtable.
+    // PLUGIN_EXIT reloads Lua config before dlclose, so block every registration path.
     if (g_unloading || g_gestureRegistrationDisabled)
         return {};
 

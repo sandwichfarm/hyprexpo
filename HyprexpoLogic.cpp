@@ -209,9 +209,7 @@ SGestureSyncDecision evaluateGestureSync(const SGestureConfig& config) {
     return {.registerGesture = true, .error = ""};
 }
 
-// Hyprland hands a config value back as `<type>* const*`. Plugin string options arrive as
-// const char*, not std::string, so treating a non-std::string reply as a type mismatch silently
-// substitutes the default for every string option.
+// Hyprland 0.56 exposes plugin strings as const char*.
 std::string decodeConfigString(const void* dataptr, bool underlyingIsStdString, const std::string& fallback) {
     if (!dataptr)
         return fallback;
