@@ -595,8 +595,8 @@ void COverview::fullRender() {
     if (!std::string{*PSELECTMAP}.empty())
         selectionTokens = splitCommaList(std::string{*PSELECTMAP});
 
-    if (**PLABELEN || **PSELECTEN || showWorkspaceNumbers) {
-        const int labelHoveredID = closing ? -1 : hoveredID;
+    if (!closing && (**PLABELEN || **PSELECTEN || showWorkspaceNumbers)) {
+        const int labelHoveredID = hoveredID;
         const std::string modernAnchor = Hyprexpo::trimString(std::string{*PLABELPOS});
         const std::string labelAnchor  = normalizeAnchor(modernAnchor.empty() ? std::string{*PLABELPOSL} : modernAnchor);
         const int labelFontSize = **PLABELSIZE > 0 ? **PLABELSIZE : std::max(8, (int)**PLABELSIZEL / 2);

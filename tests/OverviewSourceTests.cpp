@@ -170,6 +170,8 @@ int main() {
     expect(!fullRender.empty(), "overview fullRender function exists");
     expect(fullRender.find("Hyprexpo::shouldShowWorkspaceLabel(") != std::string::npos,
            "runtime label rendering uses modern label_enable and label_show policy in every grid mode");
+    expect(fullRender.find("if (!closing && (**PLABELEN || **PSELECTEN || showWorkspaceNumbers))") != std::string::npos,
+           "workspace and selection labels stop rendering as soon as overview close begins");
     expect(fullRender.find("Hyprexpo::resolveBorderSpec(") != std::string::npos,
            "runtime border rendering uses modern-first border resolution with legacy fallback");
 
