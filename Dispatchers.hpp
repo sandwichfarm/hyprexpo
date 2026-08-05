@@ -7,6 +7,7 @@
 #include <hyprland/src/devices/IKeyboard.hpp>
 
 SP<Config::Values::CStringValue> createCancelKeyConfig();
+SP<Config::Values::CStringValue> createNumberKeyModeConfig();
 void                             resetDispatcherRuntime();
 void                             registerHyprexpoDispatchers();
 void                             syncExpoGestureFromConfig();

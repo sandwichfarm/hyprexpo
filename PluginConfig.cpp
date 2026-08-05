@@ -63,7 +63,7 @@ void registerHyprexpoConfigValues() {
 
     // keyboard navigation + styling
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:keynav_enable", "key navigation enable", HyprexpoConfig::KEYNAV_ENABLE_DEFAULT));
-    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:number_key_mode", "raw number-key handling: workspace, index, or passthrough", HyprexpoConfig::NUMBER_KEY_MODE_DEFAULT));
+    addConfigValue(createNumberKeyModeConfig());
     // Border configuration - supports both solid colors and gradients
     // Solid: rgb(rrggbb) or 0xAARRGGBB
     // Gradient: rgba(rrggbbaa) rgba(rrggbbaa) 45deg

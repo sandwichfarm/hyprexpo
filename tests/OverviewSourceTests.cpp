@@ -102,8 +102,16 @@ int main() {
 
     const auto rawNumberSelection = extractFunction(dispatchersSource, "bool shouldSelectWorkspaceFromKey(const IKeyboard::SKeyEvent& event) {");
     expect(!rawNumberSelection.empty(), "raw number-key selection function exists");
-    expect(rawNumberSelection.find("plugin:hyprexpo:number_key_mode") != std::string::npos,
-           "raw number-key handling reads the dedicated mode");
+    expect(rawNumberSelection.find("g_pNumberKeyModeConfig") != std::string::npos,
+           "raw number-key handling reads the dedicated retained mode");
+    expect(rawNumberSelection.find("g_pNumberKeyModeConfig->value()") != std::string::npos,
+           "raw number-key handling reads the retained V2 string value");
+    expect(rawNumberSelection.find("HyprlandAPI::getConfigValue") == std::string::npos,
+           "raw number-key handling does not dereference the deprecated config API");
+    expect(configSource.find("addConfigValue(createNumberKeyModeConfig())") != std::string::npos,
+           "number-key mode registration retains the V2 config value");
+    expect(dispatchersSource.find("g_pNumberKeyModeConfig.reset()") != std::string::npos,
+           "number-key mode releases its retained V2 config value during teardown");
     const auto passthroughMode = rawNumberSelection.find("ENumberKeyMode::Passthrough");
     const auto indexMode       = rawNumberSelection.find("ENumberKeyMode::Index", passthroughMode);
     const auto workspaceMode   = rawNumberSelection.find("return changeToSingleDigitWorkspace(arg).success;", indexMode);
