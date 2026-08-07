@@ -31,6 +31,18 @@ plugin {
 }
 ```
 
+## Active workspace beyond the grid
+
+`first <workspace>` anchors the grid to a fixed workspace and counts upward, so
+the configured `columns` normally bound how many workspaces are visible. When
+the currently active workspace sits past the last tile (for example `first 1`
+with `columns = 3` shows workspaces 1–9, but the active workspace is 10), the
+overview temporarily grows the grid so the active workspace stays visible and
+the open/close animation focuses on it instead of the anchor tile. The grid only
+grows — never below the configured `columns` — and is capped at the maximum of 7
+columns. This applies to plain sequential grids (not `skip_empty` or
+`max_workspace`, which keep their explicit bounds).
+
 ## Troubleshooting Monitor Names
 
 If a per-monitor entry does not apply, check the monitor name reported by Hyprland and use that exact name in the comma-separated list.
