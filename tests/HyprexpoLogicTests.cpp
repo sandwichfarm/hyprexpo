@@ -161,8 +161,6 @@ int main() {
     expect(clampGridColumns(3) == 3, "columns keep valid value");
     expect(clampGridColumns(99) == 7, "columns clamp upper bound");
 
-    // issue #91: a "first"-anchored grid must grow so an active workspace beyond
-    // the last tile stays visible instead of falling back to the anchor tile.
     expect(gridColumnsToIncludeWorkspace(3, 1, 9, 7) == 3, "first-anchor grid keeps columns when active workspace fits");
     expect(gridColumnsToIncludeWorkspace(3, 1, 10, 7) == 4, "first-anchor grid grows to include an active workspace just past the grid");
     expect(gridColumnsToIncludeWorkspace(3, 1, 16, 7) == 4, "first-anchor grid grows to exactly fill the last tile");

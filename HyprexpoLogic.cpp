@@ -148,18 +148,10 @@ int clampGridColumns(int columns) {
     return std::clamp(columns, HyprexpoConfig::COLUMNS_MIN, HyprexpoConfig::COLUMNS_MAX);
 }
 
-// For a "first"-anchored square overview grid whose tiles start at
-// firstWorkspaceID and count upward, return the grid side length (columns)
-// needed so the active workspace is visible. The grid only grows past the
-// configured columns; it never shrinks below them and never exceeds
-// maxColumns. When even maxColumns cannot reach the active workspace the
-// result is clamped to maxColumns (best effort).
 int gridColumnsToIncludeWorkspace(int configuredColumns, int firstWorkspaceID, int activeWorkspaceID, int maxColumns) {
     const int cap  = std::max(HyprexpoConfig::COLUMNS_MIN, maxColumns);
     int       cols = std::clamp(configuredColumns, HyprexpoConfig::COLUMNS_MIN, cap);
 
-    // Active workspace is at or before the anchor, so the existing grid already
-    // starts on (or after) it; nothing to grow.
     if (activeWorkspaceID <= firstWorkspaceID)
         return cols;
 

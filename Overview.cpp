@@ -772,14 +772,6 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
     const int64_t maxWorkspace = std::max<Hyprlang::INT>(0, **PMAXWS);
     std::string   selector     = skipEmpty ? "m" : "r";
 
-    // With a "first"-anchored method the grid starts at a fixed workspace and
-    // counts upward, so a currently-active workspace beyond the last tile is
-    // not shown at all. When that happens the overview would treat the anchor
-    // tile as active (zooming to the wrong workspace on open and close). Grow
-    // the grid so the active workspace stays visible. This intentionally
-    // overrides the configured columns for this instance, but only upward and
-    // only when the sequential tile IDs line up with workspace IDs (i.e. not
-    // skip_empty and not a max_workspace cap). See issue #91.
     if (!methodCenter && !skipEmpty && maxWorkspace <= 0 && startedOn) {
         SIDE_LENGTH = Hyprexpo::gridColumnsToIncludeWorkspace(SIDE_LENGTH, methodStartID, (int)startedOn->m_id, HyprexpoConfig::COLUMNS_MAX);
         gridShape   = {SIDE_LENGTH, SIDE_LENGTH};
