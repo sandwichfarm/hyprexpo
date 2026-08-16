@@ -12,6 +12,39 @@ hl.plugin.hyprexpo.kb_selectn(1)
 hl.plugin.hyprexpo.kb_select("1")
 ```
 
+## Loading a Local Build
+
+If you load a locally built `hyprexpo.so` directly from a Lua config, declare
+its path on every config pass:
+
+```lua
+local plugin_path = "/absolute/path/to/hyprexpo.so"
+
+-- This declares the desired plugin; it does not load the library immediately.
+hl.plugin.load(plugin_path)
+
+local hyprexpo_loaded = false
+for _, plugin in ipairs(hl.get_loaded_plugins()) do
+    if plugin.name == "hyprexpo" then
+        hyprexpo_loaded = true
+        break
+    end
+end
+
+if hyprexpo_loaded then
+    -- Put hl.config(), bindings, and immediate hl.plugin.hyprexpo calls here.
+end
+```
+
+`hl.plugin.load()` is declarative. Hyprland loads the plugin after the first
+config pass and reloads the config so its options and Lua functions are
+available. Do not wrap `hl.plugin.load()` itself in the loaded-plugin check.
+Omitting the path on the second pass tells Hyprland that the config no longer
+wants the plugin, which can cause a repeating load/reload/unload cycle.
+
+This is only needed for a local build loaded from the Lua config. `hyprpm`
+manages its enabled plugin separately.
+
 ## Plugin Configuration
 
 Configure HyprExpo options with `hl.config()` and a nested `plugin.hyprexpo`
