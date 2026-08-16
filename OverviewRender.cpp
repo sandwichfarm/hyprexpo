@@ -597,9 +597,13 @@ void COverview::fullRender() {
 
     if (!closing && (**PLABELEN || **PSELECTEN || showWorkspaceNumbers)) {
         const int labelHoveredID = hoveredID;
-        const std::string modernAnchor = Hyprexpo::trimString(std::string{*PLABELPOS});
-        const std::string labelAnchor  = normalizeAnchor(modernAnchor.empty() ? std::string{*PLABELPOSL} : modernAnchor);
-        const int labelFontSize = **PLABELSIZE > 0 ? **PLABELSIZE : std::max(8, (int)**PLABELSIZEL / 2);
+        const bool modernPositionSet = CompatHyprlandAPI::configValueSetByUser("plugin:hyprexpo:label_position");
+        const bool legacyPositionSet = CompatHyprlandAPI::configValueSetByUser("plugin:hyprexpo:label_pos");
+        const bool modernSizeSet     = CompatHyprlandAPI::configValueSetByUser("plugin:hyprexpo:label_font_size");
+        const bool legacySizeSet     = CompatHyprlandAPI::configValueSetByUser("plugin:hyprexpo:label_size");
+        const std::string labelAnchor = normalizeAnchor(
+            Hyprexpo::resolveLabelPosition(std::string{*PLABELPOS}, modernPositionSet, std::string{*PLABELPOSL}, legacyPositionSet));
+        const int labelFontSize = Hyprexpo::resolveLabelFontSize(**PLABELSIZE, modernSizeSet, **PLABELSIZEL, legacySizeSet);
 
         auto resolveState = [&](int id) -> int {
             if (id == kbFocusID)

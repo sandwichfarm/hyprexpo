@@ -174,6 +174,12 @@ int main() {
            "workspace and selection labels stop rendering as soon as overview close begins");
     expect(fullRender.find("Hyprexpo::resolveBorderSpec(") != std::string::npos,
            "runtime border rendering uses modern-first border resolution with legacy fallback");
+    expect(fullRender.find("Hyprexpo::resolveLabelPosition(") != std::string::npos && fullRender.find("Hyprexpo::resolveLabelFontSize(") != std::string::npos,
+           "runtime label rendering resolves explicit modern and legacy option precedence");
+    expect(fullRender.find("CompatHyprlandAPI::configValueSetByUser(") != std::string::npos,
+           "runtime label compatibility checks whether each option was explicitly configured");
+    expect(source.find("Config::mgr()->getConfigValue(name).setByUser") != std::string::npos,
+           "config compatibility exposes explicit-setting metadata for both config providers");
 
     expect(dispatchersSource.find("HyprlandAPI::getConfigValue") == std::string::npos,
            "gesture config avoids the legacy hyprlang getter, which is null under CONFIG_LUA");

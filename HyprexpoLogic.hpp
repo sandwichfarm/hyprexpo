@@ -125,6 +125,8 @@ SGradientSpec            parseGradientSpec(const std::string& value);
 bool                     isGradientBorderSpec(const std::string& value);
 bool                     shouldShowWorkspaceLabel(bool labelEnabled, const std::string& labelShow, bool isHovered, bool isFocused, bool isCurrent);
 std::string              resolveBorderSpec(const std::string& modernSpec, const std::string& legacySpec);
+std::string              resolveLabelPosition(const std::string& modernValue, bool modernSetByUser, const std::string& legacyValue, bool legacySetByUser);
+int                      resolveLabelFontSize(int modernValue, bool modernSetByUser, int legacyValue, bool legacySetByUser);
 
 SWorkspaceMethodSpec     parseWorkspaceMethodSpec(const std::string& method);
 SWorkspaceMethodSpec     resolveWorkspaceMethodForMonitor(const std::string& config, const std::string& monitorName);

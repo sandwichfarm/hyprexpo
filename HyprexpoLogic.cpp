@@ -422,6 +422,17 @@ std::string resolveBorderSpec(const std::string& modernSpec, const std::string& 
     return modern.empty() ? trimString(legacySpec) : modern;
 }
 
+std::string resolveLabelPosition(const std::string& modernValue, bool modernSetByUser, const std::string& legacyValue, bool legacySetByUser) {
+    if (modernSetByUser || !legacySetByUser)
+        return trimString(modernValue);
+    return trimString(legacyValue);
+}
+
+int resolveLabelFontSize(int modernValue, bool modernSetByUser, int legacyValue, bool legacySetByUser) {
+    const int selected = modernSetByUser || !legacySetByUser ? modernValue : legacyValue / 2;
+    return std::max(8, selected);
+}
+
 static std::vector<std::string> splitWhitespace(const std::string& value) {
     std::vector<std::string> tokens;
     size_t                   cursor = 0;

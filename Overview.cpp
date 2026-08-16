@@ -210,6 +210,10 @@ SConfigValueCompat* getConfigValue(HANDLE, const std::string& name) {
     return &compat;
 }
 
+bool configValueSetByUser(const std::string& name) {
+    return Config::mgr()->getConfigValue(name).setByUser;
+}
+
 Config::INTEGER intValue(const std::string& name) {
     const auto VALUE = Config::mgr()->getConfigValue(name);
     if (!VALUE.dataptr || !VALUE.type || *VALUE.type != typeid(Config::INTEGER))

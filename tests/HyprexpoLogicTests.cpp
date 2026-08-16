@@ -198,6 +198,15 @@ int main() {
     expect(resolveBorderSpec("rgb(010203)", "0xffaabbcc") == "rgb(010203)", "modern border spec takes precedence over legacy color");
     expect(resolveBorderSpec("", "0xffaabbcc") == "0xffaabbcc", "legacy border color is used only when the modern spec is empty");
 
+    expect(resolveLabelPosition("center", false, "top_right", false) == "center", "modern position default wins when neither key is explicit");
+    expect(resolveLabelPosition("center", false, " top_right ", true) == "top_right", "explicit legacy position overrides an implicit modern default");
+    expect(resolveLabelPosition(" bottom-left ", true, "top_right", true) == "bottom-left", "explicit modern position wins when both keys are explicit");
+
+    expect(resolveLabelFontSize(16, false, 72, false) == 16, "modern size default wins when neither key is explicit");
+    expect(resolveLabelFontSize(16, false, 72, true) == 36, "explicit legacy badge size converts to the historical font size");
+    expect(resolveLabelFontSize(24, true, 72, true) == 24, "explicit modern font size wins when both keys are explicit");
+    expect(resolveLabelFontSize(0, true, 72, true) == 8, "explicit modern font size is clamped instead of falling back to legacy");
+
     expect(tileIndexFromPoint(0, 0, 300, 300, 3) == 0, "legacy tile index top-left");
     expect(tileIndexFromPoint(299, 299, 300, 300, 3) == 8, "legacy tile index bottom-right inside");
     expect(tileIndexFromPoint(300, 300, 300, 300, 3) == 8, "legacy tile index clamps monitor edge");
