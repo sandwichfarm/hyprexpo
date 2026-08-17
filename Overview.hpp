@@ -126,6 +126,7 @@ class COverview {
     int                          kbFocusID = -1;
     int                          hoveredID = -1;
     bool                         submapActive = false;
+    std::string                  previousSubmap = "";
 
     Vector2D                     dragStartLocal = Vector2D{};
     int                          dragSourceID   = -1;

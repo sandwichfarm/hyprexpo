@@ -8,6 +8,7 @@
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/pointer/cursor/CursorShapeOverrideController.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
+#include <hyprland/src/managers/KeybindManager.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <algorithm>
@@ -654,6 +655,12 @@ void COverview::onSwipeEnd() {
 void COverview::enterSubmapIfEnabled() {
     static auto* const* PKEYNAV = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_enable")->getDataStaticPtr();
     if (**PKEYNAV && !submapActive) {
+        // remember whatever submap was active so we can restore it exactly on close, instead
+        // of always dropping back to Hyprland's bare default submap. Configs that nest their
+        // entire keybind set inside a named submap (a common pattern for e.g. a "disable all
+        // keybinds" toggle) would otherwise get silently kicked out of it every time the
+        // overview closes.
+        previousSubmap = g_pKeybindManager->getCurrentSubmap().name;
         // switch to a dedicated submap for hyprexpo navigation
         (void)Config::Actions::setSubmap("hyprexpo");
         submapActive = true;
@@ -662,7 +669,7 @@ void COverview::enterSubmapIfEnabled() {
 
 void COverview::resetSubmapIfNeeded() {
     if (submapActive) {
-        (void)Config::Actions::setSubmap("reset");
+        (void)Config::Actions::setSubmap(previousSubmap);
         submapActive = false;
     }
 }
