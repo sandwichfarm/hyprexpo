@@ -12,10 +12,10 @@
 #include <hyprland/src/debug/log/Logger.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/desktop/state/GlobalWindowController.hpp>
-#include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/helpers/Color.hpp>
 #include <hyprland/src/output/Monitor.hpp>
-#include <hyprland/src/managers/KeybindManager.hpp>
+#include <hyprland/src/keybinds/Resolver.hpp>
 #include <hyprland/src/managers/SeatManager.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/managers/input/trackpad/GestureTypes.hpp>
@@ -137,7 +137,7 @@ static PHLWINDOW windowToBringFromWorkspace(const PHLWORKSPACE& workspace) {
     const auto& windows = Desktop::windowState()->windows();
     for (auto it = windows.rbegin(); it != windows.rend(); ++it) {
         const auto& window = *it;
-        if (!window || window->m_workspace != workspace || !window->m_isMapped || window->isHidden())
+        if (!window || window->m_workspace != workspace || !window->mapped() || window->isHidden())
             continue;
 
         return window;
@@ -509,9 +509,9 @@ static SDispatchResult registerExpoGesture(int fingerCount, const std::string& d
     if (direction == TRACKPAD_GESTURE_DIR_NONE)
         return {.success = false, .error = std::format("invalid direction '{}'", directionName)};
 
-    uint32_t modMask = 0;
+    Input::ModifierMask modMask = Input::HL_MODIFIER_NONE;
     if (!mods.empty())
-        modMask = g_pKeybindManager->stringToModMask(mods);
+        modMask = Keybinds::modMaskFromString(mods);
 
     deltaScale = std::clamp(deltaScale, 0.1F, 10.F);
 
