@@ -74,12 +74,13 @@ void expectLastOrder(const std::string& source, const std::string& first, const 
 
 int main() {
     const auto source = readFile("Overview.cpp");
+    const auto overviewHeader = readFile("Overview.hpp");
     expect(!source.empty(), "Overview.cpp can be read from repo root");
 
     const auto function = extractFunction(source, "void removeOverview(");
     expect(!function.empty(), "removeOverview function exists");
 
-    const auto lockPos     = function.find("const auto MON = g_pOverview->pMonitor.lock();");
+    const auto lockPos     = function.find("const auto MON = g_pOverview->monitor();");
     const auto resetPos    = function.find("g_pOverview.reset();");
     const auto damagePos   = function.find("g_pHyprRenderer->damageMonitor(MON);");
     const auto schedulePos = function.find("MON->scheduleFrame();");
@@ -323,12 +324,13 @@ int main() {
                               "virtual bool selectVisibleIndex(", "virtual bool moveWindowBetweenVisibleIndices(", "virtual bool blocksOverviewRendering()",
                               "virtual bool blocksDamageReporting()", "virtual bool isSwiping()", "virtual PHLMONITOR monitor()", "virtual uint64_t sessionGeneration()"})
         expectContains(sessionHeader, token, "session interface covers caller surface " + std::string{token});
+    expectContains(sessionHeader, "virtual void onConfigReload()", "session interface refreshes caches through the polymorphic boundary");
     expectContains(sessionHeader, "std::unique_ptr<IOverviewSession> g_pOverview", "one polymorphic owner stores the active session");
     expectContains(sessionHeader, "createOverviewSession", "session factory is declared beside the polymorphic owner");
-    expectContains(source, "class COverview final : public IOverviewSession", "existing grid overview implements the common interface without mode branches");
-    expectAbsent(source, "inline std::unique_ptr<COverview> g_pOverview", "grid header no longer owns a concrete global session");
+    expectContains(overviewHeader, "class COverview final : public IOverviewSession", "existing grid overview implements the common interface without mode branches");
+    expectAbsent(overviewHeader, "inline std::unique_ptr<COverview> g_pOverview", "grid header no longer owns a concrete global session");
 
-    for (const auto& token : {"snapshotWorkspace(startedOn)", "CScrollingOverview", "COverview", "std::make_unique<CScrollingOverview>", "std::make_unique<COverview>"})
+    for (const auto& token : {"workspaceUsesScrollingLayout(startedOn)", "snapshotWorkspace(startedOn)", "CScrollingOverview", "COverview", "std::make_unique<CScrollingOverview>", "std::make_unique<COverview>"})
         expectContains(sessionSource, token, "factory implements guarded selection token " + std::string{token});
     expectOrder(sessionSource, "snapshotWorkspace(startedOn)", "std::make_unique<CScrollingOverview>", "factory snapshots live native state before selecting scrolling");
     expectOrder(sessionSource, "std::make_unique<CScrollingOverview>", "std::make_unique<COverview>", "factory retains grid fallback after scrolling construction failure");
@@ -357,6 +359,8 @@ int main() {
     expectOrder(scrollingSource, "releaseCacheEntry", "captureWindowPreview(", "stale cache ownership is released before replacement capture");
     expectContains(scrollingSource, "scrollingThumbnailBudgetMultiplier", "scrolling renderer reads the bounded monitor-relative config");
     expectContains(scrollingSource, "captureWorkspacePreview(", "mixed-layout rows reuse the sole workspace capture boundary");
+    expectContains(scrollingSource, "m_blockOverviewRendering = true", "mixed-layout capture forces the original grid render path");
+    expectContains(mainSource, "g_pOverview->onConfigReload()", "config reload invalidates the active session without a concrete downcast");
     expectAbsent(scrollingSource, "g_pHyprRenderer->renderWorkspace(", "scrolling renderer does not duplicate grid/mixed workspace capture");
 
     for (const auto& token : {"input.mouse.move", "input.mouse.button", "input.mouse.axis", "input.touch.down", "input.touch.motion", "input.touch.up", "input.touch.cancel",

@@ -218,7 +218,7 @@ void COverview::onWorkspaceChange() {
 }
 
 void COverview::render() {
-    g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewPassElement>());
+    g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewPassElement>(m_sessionGeneration));
 }
 
 bool COverview::shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const {

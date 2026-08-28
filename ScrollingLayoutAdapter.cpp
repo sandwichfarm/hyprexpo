@@ -252,4 +252,23 @@ SSnapshotResult snapshotWorkspace(const PHLWORKSPACE& workspace) {
     }
 }
 
+bool workspaceUsesScrollingLayout(const PHLWORKSPACE& workspace) {
+    try {
+        if (!workspace || workspace->inert() || !workspace->m_space)
+            return false;
+        const auto algorithmOwner = workspace->m_space->algorithm();
+        if (!algorithmOwner)
+            return false;
+        const auto& tiledOwner = algorithmOwner->tiledAlgo();
+        if (!tiledOwner)
+            return false;
+        auto* const tiled = tiledOwner.get();
+        if (Layout::Supplementary::algoMatcher()->getNameForTiledAlgo(tiled) != "scrolling")
+            return false;
+        return dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>(tiled) != nullptr;
+    } catch (...) {
+        return false;
+    }
+}
+
 }

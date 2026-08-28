@@ -614,7 +614,7 @@ void removeOverview(WP<Hyprutils::Animation::CBaseAnimatedVariable> thisptr) {
     if (!g_pOverview)
         return;
 
-    const auto MON = g_pOverview->pMonitor.lock();
+    const auto MON = g_pOverview->monitor();
     g_pOverview.reset();
 
     if (!MON)
@@ -730,7 +730,7 @@ COverview::~COverview() {
     resetSubmapIfNeeded();
 }
 
-COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn_), swipe(swipe_) {
+COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_, uint64_t sessionGeneration) : startedOn(startedOn_), m_sessionGeneration(sessionGeneration), swipe(swipe_) {
     const auto PMONITOR = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
     pMonitor            = PMONITOR;
 

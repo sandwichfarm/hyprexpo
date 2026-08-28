@@ -1,6 +1,8 @@
 #include "OverviewCapture.hpp"
 
 #include "OverviewInternal.hpp"
+#include "HyprlandConfigCompat.hpp"
+#include "HyprexpoConfig.hpp"
 
 #define private   public
 #define protected public
@@ -15,10 +17,17 @@
 #include <algorithm>
 #include <cmath>
 #include <exception>
+#include <atomic>
+#include <mutex>
+#include <optional>
 
 namespace Hyprexpo::Capture {
 
 namespace {
+
+std::atomic<uint64_t> g_budgetGeneration = 1;
+std::mutex            g_budgetLogMutex;
+uint64_t              g_lastLoggedBudgetGeneration = 0;
 
 class CRendererStateGuard {
   public:
@@ -125,6 +134,29 @@ bool ensureFramebuffer(SP<Render::IFramebuffer>& framebuffer, const CBox& box, u
     return framebuffer->alloc(box.w, box.h, drmFormat);
 }
 
+}
+
+int scrollingThumbnailBudgetMultiplier() {
+    const int raw = static_cast<int>(CompatHyprlandAPI::intValue("plugin:hyprexpo:scrolling_thumbnail_budget"));
+    const int clamped = std::clamp(raw, HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN, HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MAX);
+    if (raw != clamped) {
+        std::scoped_lock lock{g_budgetLogMutex};
+        const auto generation = g_budgetGeneration.load(std::memory_order_relaxed);
+        if (g_lastLoggedBudgetGeneration != generation) {
+            Log::logger->log(Log::ERR, "[hyprexpo] scrolling_thumbnail_budget {} is outside {}..{}; clamping to {}", raw, HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN,
+                             HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MAX, clamped);
+            g_lastLoggedBudgetGeneration = generation;
+        }
+    }
+    return clamped;
+}
+
+uint64_t scrollingThumbnailBudgetGeneration() {
+    return g_budgetGeneration.load(std::memory_order_relaxed);
+}
+
+void notifyOverviewCaptureConfigReload() {
+    g_budgetGeneration.fetch_add(1, std::memory_order_relaxed);
 }
 
 bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render::IFramebuffer>& framebuffer) {

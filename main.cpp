@@ -9,7 +9,8 @@
 
 #include "Dispatchers.hpp"
 #include "globals.hpp"
-#include "Overview.hpp"
+#include "IOverviewSession.hpp"
+#include "OverviewCapture.hpp"
 #include "PluginConfig.hpp"
 #include <stdexcept>
 #include <string>
@@ -27,7 +28,7 @@ typedef void (*origAddDamageA)(void*, const CBox&);
 typedef void (*origAddDamageB)(void*, const pixman_region32_t*);
 
 static void hkRenderWorkspace(void* thisptr, PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& now, const CBox& geometry) {
-    if (!g_pOverview || isRenderingOverview() || g_pOverview->blockOverviewRendering || !g_pOverview->shouldRenderOverviewForMonitor(pMonitor))
+    if (!g_pOverview || isRenderingOverview() || g_pOverview->blocksOverviewRendering() || !g_pOverview->shouldRenderOverviewForMonitor(pMonitor))
         ((origRenderWorkspace)(g_pRenderWorkspaceHook->m_original))(thisptr, pMonitor, pWorkspace, now, geometry);
     else
         g_pOverview->render();
@@ -37,7 +38,7 @@ static void hkAddDamageA(void* thisptr, const CBox& box) {
     const auto PMONITOR   = (Monitor::CMonitor*)thisptr;
     const auto PMONITORSP = PMONITOR ? PMONITOR->m_self.lock() : PHLMONITOR{};
 
-    if (!g_pOverview || !PMONITORSP || !g_pOverview->shouldRenderOverviewForMonitor(PMONITORSP) || g_pOverview->blockDamageReporting) {
+    if (!g_pOverview || !PMONITORSP || !g_pOverview->shouldRenderOverviewForMonitor(PMONITORSP) || g_pOverview->blocksDamageReporting()) {
         ((origAddDamageA)g_pAddDamageHookA->m_original)(thisptr, box);
         return;
     }
@@ -49,7 +50,7 @@ static void hkAddDamageB(void* thisptr, const pixman_region32_t* rg) {
     const auto PMONITOR   = (Monitor::CMonitor*)thisptr;
     const auto PMONITORSP = PMONITOR ? PMONITOR->m_self.lock() : PHLMONITOR{};
 
-    if (!g_pOverview || !PMONITORSP || !g_pOverview->shouldRenderOverviewForMonitor(PMONITORSP) || g_pOverview->blockDamageReporting) {
+    if (!g_pOverview || !PMONITORSP || !g_pOverview->shouldRenderOverviewForMonitor(PMONITORSP) || g_pOverview->blocksDamageReporting()) {
         ((origAddDamageB)g_pAddDamageHookB->m_original)(thisptr, rg);
         return;
     }
@@ -125,7 +126,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             info.cancelled = true;
     });
 
-    static auto PCFG = Event::bus()->m_events.config.reloaded.listen([]() { syncExpoGestureFromConfig(); });
+    static auto PCFG = Event::bus()->m_events.config.reloaded.listen([]() {
+        Hyprexpo::Capture::notifyOverviewCaptureConfigReload();
+        if (g_pOverview)
+            g_pOverview->onConfigReload();
+        syncExpoGestureFromConfig();
+    });
 
     registerHyprexpoDispatchers();
 

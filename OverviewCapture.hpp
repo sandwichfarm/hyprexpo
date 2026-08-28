@@ -31,4 +31,8 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render:
 
 SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& target, const PHLWINDOWREF& window, const PHLMONITORREF& monitor, const Vector2D& pixelSize);
 
+int      scrollingThumbnailBudgetMultiplier();
+uint64_t scrollingThumbnailBudgetGeneration();
+void     notifyOverviewCaptureConfigReload();
+
 }

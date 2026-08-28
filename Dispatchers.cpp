@@ -6,7 +6,7 @@
 #include "HyprexpoConfig.hpp"
 #include "HyprexpoLogic.hpp"
 #include "HyprlandConfigCompat.hpp"
-#include "Overview.hpp"
+#include "IOverviewSession.hpp"
 #include "ScrollingDiagnostics.hpp"
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
@@ -253,7 +253,7 @@ static std::string workspaceArgForKeyEvent(const IKeyboard::SKeyEvent& event) {
 }
 
 bool shouldSelectWorkspaceFromKey(const IKeyboard::SKeyEvent& event) {
-    if (g_pOverview && g_pOverview->m_isSwiping)
+    if (g_pOverview && g_pOverview->isSwiping())
         return false;
 
     const auto arg = workspaceArgForKeyEvent(event);
@@ -436,7 +436,7 @@ static int luaGesture(lua_State* L) {
 static SDispatchResult onExpoDispatcher(std::string arg) {
     arg = lowerString(trimString(arg));
 
-    if (g_pOverview && g_pOverview->m_isSwiping)
+    if (g_pOverview && g_pOverview->isSwiping())
         return {.success = false, .error = "already swiping"};
 
     if (isSingleDigitWorkspaceArg(arg))
@@ -468,7 +468,7 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
             if (!PMONITOR)
                 return {};
             renderingOverview = true;
-            g_pOverview       = std::make_unique<COverview>(PMONITOR->m_activeWorkspace);
+            g_pOverview       = createOverviewSession(PMONITOR->m_activeWorkspace);
             renderingOverview = false;
         }
         return {};
@@ -494,7 +494,7 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
         return {};
 
     renderingOverview = true;
-    g_pOverview       = std::make_unique<COverview>(PMONITOR->m_activeWorkspace);
+    g_pOverview       = createOverviewSession(PMONITOR->m_activeWorkspace);
     renderingOverview = false;
     return {};
 }

@@ -1,11 +1,10 @@
 #pragma once
 #include <hyprland/src/render/pass/PassElement.hpp>
-
-class COverview;
+#include <cstdint>
 
 class COverviewPassElement : public IPassElement {
   public:
-    COverviewPassElement();
+    explicit COverviewPassElement(uint64_t sessionGeneration);
     virtual ~COverviewPassElement() = default;
 
     virtual std::vector<UP<IPassElement>> draw();
@@ -18,4 +17,7 @@ class COverviewPassElement : public IPassElement {
     virtual const char*                   passName() {
         return "COverviewPassElement";
     }
+
+  private:
+    uint64_t m_sessionGeneration = 0;
 };

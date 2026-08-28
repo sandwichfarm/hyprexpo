@@ -1,6 +1,6 @@
 #include "ExpoGesture.hpp"
 
-#include "Overview.hpp"
+#include "IOverviewSession.hpp"
 
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
@@ -18,7 +18,7 @@ void CExpoGesture::begin(const ITrackpadGesture::STrackpadGestureBegin& e) {
         return;
 
     if (!g_pOverview)
-        g_pOverview = std::make_unique<COverview>(monitor->m_activeWorkspace, true);
+        g_pOverview = createOverviewSession(monitor->m_activeWorkspace, true);
     else if (!g_pOverview->closeCommitted()) {
         g_pOverview->selectHoveredWorkspace();
         g_pOverview->setClosing(true);

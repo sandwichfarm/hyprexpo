@@ -3,6 +3,7 @@
 #define WLR_USE_UNSTABLE
 
 #include "globals.hpp"
+#include "IOverviewSession.hpp"
 #include "HyprexpoLogic.hpp"
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
@@ -18,44 +19,63 @@
 // hyprland's fault, but cba to fix.
 constexpr bool ENABLE_LOWRES = false;
 
-class COverview {
+class COverview final : public IOverviewSession {
   public:
-    COverview(PHLWORKSPACE startedOn_, bool swipe = false);
-    ~COverview();
+    COverview(PHLWORKSPACE startedOn_, bool swipe = false, uint64_t sessionGeneration = 0);
+    ~COverview() override;
 
-    void render();
-    void damage();
-    void onDamageReported();
-    void onPreRender();
+    void render() override;
+    void damage() override;
+    void onDamageReported() override;
+    void onPreRender() override;
+    void onConfigReload() override {
+        onDamageReported();
+    }
 
-    void setClosing(bool closing);
+    void setClosing(bool closing) override;
     // True once close() has armed the teardown animation. Further gestures must
     // be ignored until the overview is destroyed, otherwise a second swipe
     // rewinds the in-flight close animation (the close "replays" from ~80%).
-    bool closeCommitted() const {
+    bool closeCommitted() const override {
         return m_closeCommitted;
     }
-    bool shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const;
-    void onWindowMoveToWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace);
+    bool shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const override;
+    void onWindowMoveToWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace) override;
 
-    void resetSwipe();
-    void onSwipeUpdate(double delta);
-    void onSwipeEnd();
+    void resetSwipe() override;
+    void onSwipeUpdate(double delta) override;
+    void onSwipeEnd() override;
 
     // close without a selection
-    void          close(bool switchToSelection = true);
-    void          selectHoveredWorkspace();
+    void          close(bool switchToSelection = true) override;
+    void          selectHoveredWorkspace() override;
 
     // keyboard navigation interface
-    void          onKbMoveFocus(const std::string& dir);
-    void          onKbConfirm();
-    void          onKbSelectNumber(int num);
-    void          onKbSelectToken(int visibleIdx);
-    bool          selectVisibleToken(const std::string& token);
-    int64_t       selectedWorkspaceID() const;
-    bool          selectWorkspaceByID(int64_t workspaceID);
-    bool          selectVisibleIndex(size_t index);
-    bool          moveWindowBetweenVisibleIndices(size_t sourceIndex, size_t targetIndex, const PHLWINDOW& window = nullptr);
+    void          onKbMoveFocus(const std::string& dir) override;
+    void          onKbConfirm() override;
+    void          onKbSelectNumber(int num) override;
+    void          onKbSelectToken(int visibleIdx) override;
+    bool          selectVisibleToken(const std::string& token) override;
+    int64_t       selectedWorkspaceID() const override;
+    bool          selectWorkspaceByID(int64_t workspaceID) override;
+    bool          selectVisibleIndex(size_t index) override;
+    bool          moveWindowBetweenVisibleIndices(size_t sourceIndex, size_t targetIndex, const PHLWINDOW& window = nullptr) override;
+
+    bool blocksOverviewRendering() const override {
+        return blockOverviewRendering;
+    }
+    bool blocksDamageReporting() const override {
+        return blockDamageReporting;
+    }
+    bool isSwiping() const override {
+        return m_isSwiping;
+    }
+    PHLMONITOR monitor() const override {
+        return pMonitor.lock();
+    }
+    uint64_t sessionGeneration() const override {
+        return m_sessionGeneration;
+    }
 
     bool          blockOverviewRendering = false;
     bool          blockDamageReporting   = false;
@@ -85,7 +105,7 @@ class COverview {
     void       redrawID(int id, bool forcelowres = false);
     void       redrawAll(bool forcelowres = false);
     void       onWorkspaceChange();
-    void       fullRender();
+    void       fullRender() override;
     Hyprexpo::SGridShape currentGridShape() const;
     double     currentOuterInset() const;
     Hyprexpo::STileLayout tileLayoutForIndex(int id, const Vector2D& totalSize, double gap, double outerInset = 0.0, bool centerPartialRows = true) const;
@@ -149,6 +169,7 @@ class COverview {
 
     bool                         closing = false;
     bool                         m_closeCommitted = false;
+    uint64_t                     m_sessionGeneration = 0;
     bool                         externalWorkspaceMoveDuringClose = false;
 
     CHyprSignalListener          mouseMoveHook;
@@ -167,5 +188,3 @@ class COverview {
 
     friend class COverviewPassElement;
 };
-
-inline std::unique_ptr<COverview> g_pOverview;

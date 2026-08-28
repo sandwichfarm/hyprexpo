@@ -1,13 +1,11 @@
 #include "OverviewPassElement.hpp"
 #include <hyprland/src/render/OpenGL.hpp>
-#include "Overview.hpp"
+#include "IOverviewSession.hpp"
 
-COverviewPassElement::COverviewPassElement() {
-    ;
-}
+COverviewPassElement::COverviewPassElement(uint64_t sessionGeneration) : m_sessionGeneration(sessionGeneration) {}
 
 std::vector<UP<IPassElement>> COverviewPassElement::draw() {
-    if (!g_pOverview)
+    if (!g_pOverview || g_pOverview->sessionGeneration() != m_sessionGeneration)
         return {};
 
     g_pOverview->fullRender();
@@ -23,10 +21,10 @@ bool COverviewPassElement::needsPrecomputeBlur() {
 }
 
 std::optional<CBox> COverviewPassElement::boundingBox() {
-    if (!g_pOverview)
+    if (!g_pOverview || g_pOverview->sessionGeneration() != m_sessionGeneration)
         return std::nullopt;
 
-    const auto MON = g_pOverview->pMonitor.lock();
+    const auto MON = g_pOverview->monitor();
     if (!MON)
         return std::nullopt;
 
@@ -34,10 +32,10 @@ std::optional<CBox> COverviewPassElement::boundingBox() {
 }
 
 CRegion COverviewPassElement::opaqueRegion() {
-    if (!g_pOverview)
+    if (!g_pOverview || g_pOverview->sessionGeneration() != m_sessionGeneration)
         return CRegion{};
 
-    const auto MON = g_pOverview->pMonitor.lock();
+    const auto MON = g_pOverview->monitor();
     if (!MON)
         return CRegion{};
 
