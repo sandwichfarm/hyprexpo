@@ -26,11 +26,16 @@ CLIENT_PIDS=()
 declare -A CLIENT_FIFOS=()
 
 usage() {
-    echo "usage: $0 --non-interactive --gpu-present-recovery" >&2
+    echo "usage: $0 {--recovery-evidence-guard|--normalization-self-test|--non-interactive --normalized-content-recovery}" >&2
     exit 2
 }
 
-[[ "${1:-}" == "--non-interactive" && "${2:-}" == "--gpu-present-recovery" && $# -eq 2 ]] || usage
+case "${1:-}:${2:-}:$#" in
+    --recovery-evidence-guard::1) MODE="recovery-evidence-guard" ;;
+    --normalization-self-test::1) MODE="normalization-self-test" ;;
+    --non-interactive:--normalized-content-recovery:2) MODE="normalized-content-recovery" ;;
+    *) usage ;;
+esac
 cd "$REPO_ROOT"
 
 full_guard() {
@@ -44,12 +49,105 @@ full_guard() {
         test "$(sha256sum "$ARTIFACT_ROOT/260828-w7w-00-SPIKE-RESULT.md" | cut -d' ' -f1)" = db9d1004a5a3537c3684a2ec9662b2a1dc67fa1668d1c0765974a4a400f45791
         test "$(sha256sum "$ARTIFACT_ROOT/260828-w7w-00-SUMMARY.md" | cut -d' ' -f1)" = 4d5ba80d7bfcfd834b64bffcab6a74c0b3d678ba43f26aa264f59f035fe8fca3
         test "$(sha256sum "$ARTIFACT_ROOT/260828-w7w-00-RECOVERY.md" | cut -d' ' -f1)" = f3511a276287317de2a44234fa12b406f943f0f7157c5f161673e00f258213dc
+        test "$(sha256sum "$ARTIFACT_ROOT/260828-w7w-00R-RESULT.md" | cut -d' ' -f1)" = 6bae761a3d6afcdb1a1241ceab648aa9733ad81f79d994ee82cb81a2cc7eab7f
+        test "$(sha256sum "$ARTIFACT_ROOT/260828-w7w-00R-SUMMARY.md" | cut -d' ' -f1)" = 36bd164cd2f39eefa6b9c37169d316de527b4c8a1cb06f063cbb75aa369faaf3
         git merge-base --is-ancestor a890a0d e9c5acc
         git merge-base --is-ancestor e9c5acc 5d56b13
-        git merge-base --is-ancestor 5d56b13 HEAD
+        git merge-base --is-ancestor 5d56b13 9735c75
+        git merge-base --is-ancestor 9735c75 3bc2e22
+        git merge-base --is-ancestor 3bc2e22 f32168a
+        git merge-base --is-ancestor f32168a HEAD
         grep -q '^status: FAIL$' "$ARTIFACT_ROOT/260828-w7w-00-SPIKE-RESULT.md"
+        grep -q '^status: FAIL$' "$ARTIFACT_ROOT/260828-w7w-00R-RESULT.md"
         printf 'result=PASS\n'
     } >> "${GUARD_LOG:-/dev/null}" 2>&1
+}
+
+normalization_self_test() {
+    local fixtures="$EVIDENCE_DIR/normalization-fixtures"
+    mkdir -p "$fixtures"
+    python - "$fixtures" <<'PY'
+import json, pathlib, sys
+
+root = pathlib.Path(sys.argv[1])
+width, height = 649, 100
+
+def ppm(path, pixels, maximum=255, extra=b''):
+    path.write_bytes(f'P6\n{width} {height}\n{maximum}\n'.encode() + pixels + extra)
+
+def ready(path, generation, color, capture_height=height, include_marker=True):
+    record = {'sessionGeneration': generation, 'capture': {'width': width, 'height': capture_height}}
+    if include_marker:
+        record['marker'] = {'color': color, 'box': {'x': 12, 'y': 12, 'w': 28, 'h': 28}}
+    path.write_text(json.dumps(record))
+
+base = bytearray(width * height * 3)
+for y in range(height):
+    for x in range(width):
+        offset = (y * width + x) * 3
+        base[offset:offset + 3] = bytes(((x * 3 + y) % 251, (x + y * 5) % 253, (x * 7 + y * 11) % 249))
+
+equal_a, equal_b, changed = bytearray(base), bytearray(base), bytearray(base)
+for y in range(60, 62):
+    for x in range(634, 649):
+        offset = (y * width + x) * 3
+        equal_a[offset:offset + 3] = b'\x00\x00\x00'
+        equal_b[offset:offset + 3] = b'\xff\x19\x19'
+        changed[offset:offset + 3] = b'\xff\x19\x19'
+changed[(80 * width + 100) * 3] ^= 0xff
+ppm(root / 'equal-a.ppm', equal_a)
+ppm(root / 'equal-b.ppm', equal_b)
+ppm(root / 'changed.ppm', changed)
+ppm(root / 'truncated.ppm', equal_a[:-1])
+ppm(root / 'extra.ppm', equal_a, extra=b'x')
+ppm(root / 'unsupported-max.ppm', equal_a, maximum=254)
+ppm(root / 'short.ppm', equal_a[:width * 61 * 3])
+ready(root / 'ready-a.json', 3, '#c1d086')
+ready(root / 'ready-b.json', 4, '#95cab7')
+ready(root / 'ready-short.json', 5, '#aabbcc', capture_height=61)
+ready(root / 'ready-missing-marker.json', 6, '#000000', include_marker=False)
+
+for name, color in (('full-a.ppm', (193, 208, 134)), ('full-b.ppm', (149, 202, 183))):
+    pixels = bytearray(width * height * 3)
+    for y in range(12, 40):
+        for x in range(12, 40):
+            pixels[(y * width + x) * 3:(y * width + x + 1) * 3] = bytes(color)
+    ppm(root / name, pixels)
+PY
+
+    normalized_ppm_compare "$fixtures/equal-a.ppm" "$fixtures/ready-a.json" "$fixtures/equal-b.ppm" "$fixtures/ready-b.json" "$fixtures/equal.json"
+    jq -e '.left.normalizedTargetSha == .right.normalizedTargetSha and .outsideMaskAE == 0 and .outsideMaskRMSE == 0 and .outsidePixelsPreserved == true and .mask == {xMin:634,xMax:648,yMin:60,yMax:61,canonical:[0,0,0]}' "$fixtures/equal.json" >/dev/null
+    normalized_ppm_compare "$fixtures/equal-a.ppm" "$fixtures/ready-a.json" "$fixtures/changed.ppm" "$fixtures/ready-b.json" "$fixtures/changed.json"
+    jq -e '.left.normalizedTargetSha != .right.normalizedTargetSha and .outsideMaskAE == 1 and .outsideMaskRMSE > 0 and .outsideMaskBounds == {x:100,y:80,w:1,h:1}' "$fixtures/changed.json" >/dev/null
+    assert_raw_marker "$fixtures/full-a.ppm" "$fixtures/ready-a.json"
+    if assert_raw_marker "$fixtures/full-a.ppm" "$fixtures/ready-b.json" 2>/dev/null; then
+        echo "marker mismatch passed raw correlation" >&2
+        return 1
+    fi
+    for case in truncated extra unsupported-max; do
+        if normalized_ppm_compare "$fixtures/$case.ppm" "$fixtures/ready-a.json" "$fixtures/equal-b.ppm" "$fixtures/ready-b.json" "$fixtures/$case.json" 2>/dev/null; then
+            echo "$case PPM passed normalization" >&2
+            return 1
+        fi
+    done
+    if normalized_ppm_compare "$fixtures/short.ppm" "$fixtures/ready-short.json" "$fixtures/short.ppm" "$fixtures/ready-short.json" "$fixtures/short.json" 2>/dev/null; then
+        echo "out-of-bounds marker mask passed normalization" >&2
+        return 1
+    fi
+    if normalized_ppm_compare "$fixtures/equal-a.ppm" "$fixtures/ready-missing-marker.json" "$fixtures/equal-b.ppm" "$fixtures/ready-b.json" "$fixtures/missing-marker.json" 2>/dev/null; then
+        echo "missing marker metadata passed normalization" >&2
+        return 1
+    fi
+
+    local historical="/tmp/hyprexpo-scroll-probe-recovery-20260828T223018Z-275258"
+    if [[ -f "$historical/offscreen-b1-tight.ppm" && -f "$historical/offscreen-b2-tight.ppm" ]]; then
+        normalized_ppm_compare "$historical/offscreen-b1-tight.ppm" "$historical/offscreen-b1-ready.json" \
+            "$historical/offscreen-b2-tight.ppm" "$historical/offscreen-b2-ready.json" "$fixtures/historical.json"
+        jq -e '.left.contentCropSha | startswith("9224ca1f")' "$fixtures/historical.json" >/dev/null
+        jq -e '.right.contentCropSha | startswith("9224ca1f")' "$fixtures/historical.json" >/dev/null
+        jq -e '.outsideMaskAE == 0 and .outsideMaskRMSE == 0' "$fixtures/historical.json" >/dev/null
+    fi
+    echo "Normalization self-test passed"
 }
 
 # A changed pinned artifact is an integrity stop, not a new empirical result.
@@ -57,6 +155,16 @@ mkdir -p "$EVIDENCE_DIR"
 if ! full_guard initial; then
     echo "[scrolling-probe] GUARD_MISMATCH before launch; 00R result was not rewritten" >&2
     exit 1
+fi
+
+if [[ "$MODE" == "recovery-evidence-guard" ]]; then
+    cat "$GUARD_LOG"
+    exit 0
+fi
+
+if [[ "$MODE" == "normalization-self-test" ]]; then
+    normalization_self_test
+    exit 0
 fi
 
 write_fail() {
