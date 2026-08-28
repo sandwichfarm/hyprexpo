@@ -1,6 +1,7 @@
 #include "../HyprexpoLogic.hpp"
 #include "../HyprexpoConfig.hpp"
 #include "../ScrollingOverviewLogic.hpp"
+#include "../ScrollingInputState.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -284,6 +285,163 @@ void checkScrollingDropIntents() {
     expect(adjustDestinationColumnIndex(4, 1, true) == 1, "destination index is stable when source follows destination");
 }
 
+void checkScrollingInputCoordinates() {
+    using namespace Hyprexpo;
+    using namespace Hyprexpo::Scrolling;
+
+    const SMonitorGeometry monitor{
+        .position = {-1920.0, 120.0},
+        .logicalSize = {1280.0, 720.0},
+        .pixelSize = {1920.0, 1080.0},
+        .scale = 1.5,
+        .transform = EOutputTransform::Normal,
+    };
+    const auto local = monitorLocalPoint({-1280.0, 480.0}, monitor);
+    expect(local && near(local->x, 640.0) && near(local->y, 360.0), "global pointer converts once to monitor-local logical coordinates at fractional scale");
+    expect(!monitorLocalPoint({-640.0, 480.0}, monitor), "monitor right edge is outside the half-open logical box");
+    expect(!monitorLocalPoint({-1920.0, 840.0}, monitor), "monitor bottom edge is outside the half-open logical box");
+
+    const auto touchNormal = touchToGlobalLogical({0.25, 0.75}, monitor);
+    expect(touchNormal && near(touchNormal->x, -1600.0) && near(touchNormal->y, 660.0), "normal touch coordinates use logical monitor geometry rather than pixels");
+
+    auto transformed = monitor;
+    transformed.position = {100.0, -900.0};
+    transformed.logicalSize = {600.0, 1000.0};
+    transformed.pixelSize = {1200.0, 2000.0};
+    transformed.scale = 2.0;
+    transformed.transform = EOutputTransform::Rotate90;
+    const auto touchRotated = touchToGlobalLogical({0.2, 0.3}, transformed);
+    expect(touchRotated && near(touchRotated->x, 520.0) && near(touchRotated->y, -700.0), "rotated touch coordinates map through the output transform exactly once");
+    transformed.transform = EOutputTransform::Flipped270;
+    const auto touchFlipped = touchToGlobalLogical({0.2, 0.3}, transformed);
+    expect(touchFlipped && near(touchFlipped->x, 520.0) && near(touchFlipped->y, -700.0), "flipped rotated touch mapping follows the calibrated transform matrix");
+    expect(!touchToGlobalLogical({1.01, 0.5}, transformed), "touch coordinates outside normalized bounds are rejected");
+}
+
+void checkScrollingMouseInputState() {
+    using namespace Hyprexpo;
+    using namespace Hyprexpo::Scrolling;
+
+    const auto scene = scrollingScene();
+    const SMonitorGeometry monitor{.position = {100.0, -50.0}, .logicalSize = {1000.0, 500.0}, .pixelSize = {1500.0, 750.0}, .scale = 1.5};
+    SInputContext context{.scene = &scene, .monitor = monitor, .pan = 0.0, .viewportHeight = 500.0, .dragThreshold = 12.0};
+    SInputState state;
+    const auto& target = scene.targets[1];
+    const SPoint targetGlobal{monitor.position.x + target.box.x + target.box.w / 2.0, monitor.position.y + target.box.y + target.box.h / 2.0};
+
+    auto result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = targetGlobal}, context);
+    expect(!result.effects.consume && result.effects.hoverChanged && result.state.hover.targetToken == target.token, "idle mouse hover changes exact target without consuming cursor motion");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {monitor.position.x - 1.0, monitor.position.y}}, context);
+    expect(!result.effects.consume && result.effects.clearHover && result.state.hover.kind == EHitKind::Outside, "outside hover clears and passes through");
+    state = result.state;
+
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context);
+    expect(result.effects.consume && result.state.mode == EInputMode::MousePressPending && result.state.pressed.targetToken == target.token,
+           "primary mouse down owns one exact target");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 6.0, targetGlobal.y + 6.0}}, context);
+    expect(result.effects.consume && result.state.mode == EInputMode::MousePressPending && !result.effects.beginDrag, "under-threshold mouse motion stays click-pending");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {targetGlobal.x + 6.0, targetGlobal.y + 6.0}, .button = 0x111, .pressed = false}, context);
+    expect(result.effects.consume && result.effects.selection && result.effects.selection->targetToken == target.token && result.effects.resetOwnership,
+           "under-threshold primary release selects exactly the pressed target once");
+    state = result.state;
+    expect(state.mode == EInputMode::Idle, "click release returns input ownership to idle");
+
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x110, .pressed = true}, context);
+    expect(!result.effects.consume && result.state.mode == EInputMode::Idle, "non-primary mouse button passes through");
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {monitor.position.x - 2.0, monitor.position.y}, .button = 0x111, .pressed = true}, context);
+    expect(!result.effects.consume && result.state.mode == EInputMode::Idle, "outside primary mouse button passes through");
+
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context);
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 13.0, targetGlobal.y}}, context);
+    expect(result.effects.consume && result.effects.beginDrag && result.state.mode == EInputMode::WindowDrag && result.effects.dropIntent.has_value(),
+           "threshold crossing begins exactly one window drag and resolves an intent");
+    state = result.state;
+    const auto mixed = scene.workspaces[2];
+    const SPoint mixedGlobal{monitor.position.x + 500.0, monitor.position.y + mixed.box.y + 20.0};
+    result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = mixedGlobal}, context);
+    expect(result.effects.consume && result.effects.updateDrag && !result.effects.beginDrag && result.effects.dropIntent && result.effects.dropIntent->kind == EDropKind::MixedFallback,
+           "owned drag motion updates one mixed-workspace pure intent");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = mixedGlobal, .button = 0x111, .pressed = false}, context);
+    expect(result.effects.consume && result.effects.finishDrag && result.effects.dropIntent && result.effects.dropIntent->kind == EDropKind::MixedFallback,
+           "drag release emits one finish effect and does not mutate topology");
+
+    state = transitionInput({}, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context).state;
+    state = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 20.0, targetGlobal.y}}, context).state;
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {monitor.position.x - 10.0, monitor.position.y}, .button = 0x111, .pressed = false}, context);
+    expect(result.effects.consume && result.effects.cancelDrag && !result.effects.finishDrag, "outside drag release cancels without a drop");
+
+    result = transitionInput({}, {.kind = EInputKind::MouseAxis, .globalLogicalPoint = targetGlobal, .axisDelta = 300.0}, context);
+    expect(result.effects.consume && near(result.effects.panDelta, 300.0), "idle mouse axis over the scene emits clamped pan and consumes");
+    result = transitionInput({}, {.kind = EInputKind::MouseAxis, .globalLogicalPoint = {monitor.position.x - 1.0, monitor.position.y}, .axisDelta = 10.0}, context);
+    expect(!result.effects.consume && near(result.effects.panDelta, 0.0), "outside mouse axis passes through");
+    state = transitionInput({}, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context).state;
+    result = transitionInput(state, {.kind = EInputKind::MouseAxis, .globalLogicalPoint = targetGlobal, .axisDelta = 50.0}, context);
+    expect(result.effects.consume && near(result.effects.panDelta, 0.0), "axis during owned press is consumed without simultaneous pan");
+}
+
+void checkScrollingTouchAndResetState() {
+    using namespace Hyprexpo;
+    using namespace Hyprexpo::Scrolling;
+
+    const auto scene = scrollingScene();
+    const SMonitorGeometry monitor{.logicalSize = {1000.0, 500.0}, .pixelSize = {1000.0, 500.0}, .scale = 1.0};
+    SInputContext context{.scene = &scene, .monitor = monitor, .pan = 0.0, .viewportHeight = 500.0, .dragThreshold = 12.0};
+    const auto& target = scene.targets.front();
+    const SPoint targetPoint{target.box.x + target.box.w / 2.0, target.box.y + target.box.h / 2.0};
+    const SPoint background{900.0, 320.0};
+
+    auto result = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = background, .touchId = 7}, context);
+    expect(result.effects.consume && result.state.mode == EInputMode::CanvasPan && result.state.owningTouchId == 7, "touch background down owns canvas pan");
+    auto state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = {900.0, 200.0}, .touchId = 7}, context);
+    expect(result.effects.consume && near(result.effects.panDelta, 120.0) && !result.effects.beginDrag, "matching touch background motion pans without dragging");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::TouchUp, .touchId = 7}, context);
+    expect(result.effects.consume && result.effects.resetOwnership && !result.effects.selection, "touch canvas up ends without selection");
+
+    result = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 9}, context);
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = {targetPoint.x + 4.0, targetPoint.y}, .touchId = 9}, context);
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::TouchUp, .touchId = 9}, context);
+    expect(result.effects.consume && result.effects.selection && result.effects.selection->targetToken == target.token, "touch target tap selects exact pressed window");
+
+    state = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 11}, context).state;
+    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .touchId = 12}, context);
+    expect(!result.effects.consume && result.state.mode == EInputMode::TouchPressPending, "mismatched touch cancel passes through without releasing ownership");
+    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .touchId = 11}, context);
+    expect(result.effects.consume && result.effects.cancelDrag && result.effects.resetOwnership && result.state.mode == EInputMode::Idle,
+           "matching touch cancel clears pending ownership deterministically");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetPoint, .button = 0x111, .pressed = true}, context);
+    expect(result.effects.consume && result.state.mode == EInputMode::MousePressPending, "mouse immediately reacquires after touch cancellation");
+
+    state = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 13}, context).state;
+    state = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = {targetPoint.x + 20.0, targetPoint.y}, .touchId = 13}, context).state;
+    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .touchId = 13}, context);
+    expect(result.effects.consume && result.effects.cancelDrag && result.state.mode == EInputMode::Idle, "touch cancel tears down an active drag");
+
+    state = transitionInput({}, {.kind = EInputKind::MouseMove, .globalLogicalPoint = targetPoint}, context).state;
+    auto reset = resetInput(state, EResetReason::Refresh);
+    expect(reset.effects.resetOwnership && reset.effects.clearHover && reset.state.mode == EInputMode::Idle && reset.state.hover.kind == EHitKind::Outside,
+           "refresh reset clears hover and ownership");
+    auto repeated = resetInput(reset.state, EResetReason::Teardown);
+    expect(repeated.effects.resetOwnership && repeated.state.mode == EInputMode::Idle, "repeated teardown reset remains idempotent");
+
+    auto staleScene = scene;
+    staleScene.targets.erase(staleScene.targets.begin());
+    context.scene = &staleScene;
+    state = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 15}, SInputContext{.scene = &scene, .monitor = monitor, .pan = 0.0, .viewportHeight = 500.0, .dragThreshold = 12.0}).state;
+    result = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = targetPoint, .touchId = 15}, context);
+    expect(result.effects.consume && result.effects.cancelDrag && result.effects.resetOwnership && result.state.mode == EInputMode::Idle,
+           "stale pressed target resets owned input instead of dereferencing it");
+}
+
 void checkScrollingCaptureBudget() {
     using namespace Hyprexpo::Scrolling;
 
@@ -495,6 +653,9 @@ int main() {
     checkScrollingSceneAndInputMath();
     checkScrollingDropIntents();
     checkScrollingCaptureBudget();
+    checkScrollingInputCoordinates();
+    checkScrollingMouseInputState();
+    checkScrollingTouchAndResetState();
 
     if (failures != 0)
         return 1;
