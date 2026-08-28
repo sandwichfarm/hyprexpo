@@ -96,6 +96,8 @@ int main() {
     expect(!gestureHeader.empty(), "ExpoGesture.hpp can be read from repo root");
     const auto gestureSource = readFile("ExpoGesture.cpp");
     expect(!gestureSource.empty(), "ExpoGesture.cpp can be read from repo root");
+    const auto overviewHeader = readFile("Overview.hpp");
+    expect(!overviewHeader.empty(), "Overview.hpp can be read from repo root");
     const auto expoDispatcher = extractFunction(dispatchersSource, "static SDispatchResult onExpoDispatcher(std::string arg) {");
     expect(!expoDispatcher.empty(), "expo dispatcher function exists");
 
@@ -224,10 +226,18 @@ int main() {
                                                                                                                   gestureBegin.substr(cancelBeginStart, monitorQueryStart - cancelBeginStart);
     expect(cancelBeginBlock.find("!g_pOverview || g_pOverview->closeCommitted()") != std::string::npos,
            "cancel begin is inert without a mutable overview");
-    expect(cancelBeginBlock.find("g_pOverview->setClosing(true)") != std::string::npos,
-           "cancel begin starts interactive closing for an open overview");
+    expect(cancelBeginBlock.find("g_pOverview->beginCancelSwipe()") != std::string::npos,
+           "cancel begin delegates target reset and interactive closing to the overview");
     expect(cancelBeginBlock.find("selectHoveredWorkspace") == std::string::npos && cancelBeginBlock.find("make_unique<COverview>") == std::string::npos,
            "cancel begin neither selects a hovered workspace nor creates an overview");
+    expect(overviewHeader.find("void beginCancelSwipe();") != std::string::npos,
+           "overview exposes an owned cancel-begin transition");
+    const auto cancelSwipeBegin = extractFunction(interactionSource, "void COverview::beginCancelSwipe(");
+    expect(!cancelSwipeBegin.empty(), "overview cancel-begin transition exists");
+    const auto resetCancelTarget = cancelSwipeBegin.find("closeOnID = openedID");
+    const auto startCancelClose  = cancelSwipeBegin.find("closing = true", resetCancelTarget);
+    expect(resetCancelTarget != std::string::npos && startCancelClose != std::string::npos && resetCancelTarget < startCancelClose,
+           "cancel begin replaces any aborted expo target with the opening workspace before closing");
     const auto expoBeginBlock = monitorQueryStart == std::string::npos ? std::string{} : gestureBegin.substr(monitorQueryStart);
     expect(expoBeginBlock.find("std::make_unique<COverview>(monitor->m_activeWorkspace, true)") != std::string::npos &&
                expoBeginBlock.find("g_pOverview->selectHoveredWorkspace()") != std::string::npos &&
