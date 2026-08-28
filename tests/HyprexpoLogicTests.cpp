@@ -176,7 +176,7 @@ int main() {
     expect(centeredWorkspaceBacktrack(9, 11, 11, 19) == 0, "center-current supports a shifted range at its low workspace");
     expect(centeredWorkspaceBacktrack(9, 15, 11, 19) == 4, "center-current supports a shifted range at its middle workspace");
     expect(centeredWorkspaceBacktrack(9, 19, 11, 19) == 8, "center-current supports a shifted range at its high workspace");
-    expect(centeredWorkspaceBacktrack(9, 5, std::nullopt, std::nullopt) == 4, "center-current without bounds keeps the ordinary center target");
+    expect(centeredWorkspaceBacktrack(9, 5, std::nullopt, std::nullopt) == 3, "skip-empty 3x3 traversal preserves its three predecessor queries");
     expect(centeredWorkspaceBacktrack(0, 5, 1, 9) == 0, "center-current handles an empty tile set");
     expect(centeredWorkspaceBacktrack(9, 5, 9, 1) == 4, "center-current ignores reversed bounds safely");
     expect(centeredWorkspaceBacktrack(9, std::numeric_limits<int64_t>::max(), std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max()) == 8,
