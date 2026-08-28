@@ -92,6 +92,10 @@ int main() {
 
     const auto dispatchersSource = readFile("Dispatchers.cpp");
     expect(!dispatchersSource.empty(), "Dispatchers.cpp can be read from repo root");
+    const auto gestureHeader = readFile("ExpoGesture.hpp");
+    expect(!gestureHeader.empty(), "ExpoGesture.hpp can be read from repo root");
+    const auto gestureSource = readFile("ExpoGesture.cpp");
+    expect(!gestureSource.empty(), "ExpoGesture.cpp can be read from repo root");
     const auto expoDispatcher = extractFunction(dispatchersSource, "static SDispatchResult onExpoDispatcher(std::string arg) {");
     expect(!expoDispatcher.empty(), "expo dispatcher function exists");
 
@@ -187,11 +191,78 @@ int main() {
     const auto gestureSync = extractFunction(dispatchersSource, "void syncExpoGestureFromConfig(");
     expect(!gestureSync.empty(), "syncExpoGestureFromConfig exists");
     expect(gestureSync.find("g_unloading || g_gestureRegistrationDisabled") != std::string::npos, "gesture sync bails out while the plugin is unloading");
+    expect(gestureSync.find("registerExpoGesture(FINGERS, DIR, \"expo\"") != std::string::npos,
+           "plain config synchronization remains expo-only");
 
     const auto gestureRegister = extractFunction(dispatchersSource, "static SDispatchResult registerExpoGesture(");
     expect(!gestureRegister.empty(), "registerExpoGesture definition exists");
     expect(gestureRegister.find("g_unloading || g_gestureRegistrationDisabled") != std::string::npos,
            "every gesture registration path, including the Lua helper, is fenced during unload");
+    expect(gestureRegister.find("action == \"expo\"") != std::string::npos &&
+               gestureRegister.find("makeUnique<CExpoGesture>(EExpoGestureAction::Expo)") != std::string::npos,
+           "Lua expo registration constructs an explicit expo gesture");
+    expect(gestureRegister.find("action == \"cancel\"") != std::string::npos &&
+               gestureRegister.find("makeUnique<CExpoGesture>(EExpoGestureAction::Cancel)") != std::string::npos,
+           "Lua cancel registration constructs an explicit cancel gesture");
+    expect(gestureRegister.find("expected expo|cancel|unset") != std::string::npos,
+           "invalid Lua gesture actions report the complete accepted set");
+
+    expect(gestureHeader.find("enum class EExpoGestureAction") != std::string::npos,
+           "gesture action modes use an explicit enum");
+    expect(gestureHeader.find("CExpoGesture(EExpoGestureAction action)") != std::string::npos,
+           "gesture construction requires an explicit action");
+    expect(gestureHeader.find("\n    CExpoGesture()") == std::string::npos,
+           "gesture construction cannot silently default an action");
+    expect(gestureHeader.find("const EExpoGestureAction m_action") != std::string::npos,
+           "each gesture retains an immutable action mode");
+
+    const auto gestureBegin = extractFunction(gestureSource, "void CExpoGesture::begin(");
+    expect(!gestureBegin.empty(), "gesture begin function exists");
+    const auto cancelBeginStart = gestureBegin.find("if (m_action == EExpoGestureAction::Cancel)");
+    const auto monitorQueryStart = gestureBegin.find("const auto monitor", cancelBeginStart);
+    const auto cancelBeginBlock = cancelBeginStart == std::string::npos || monitorQueryStart == std::string::npos ? std::string{} :
+                                                                                                                  gestureBegin.substr(cancelBeginStart, monitorQueryStart - cancelBeginStart);
+    expect(cancelBeginBlock.find("!g_pOverview || g_pOverview->closeCommitted()") != std::string::npos,
+           "cancel begin is inert without a mutable overview");
+    expect(cancelBeginBlock.find("g_pOverview->setClosing(true)") != std::string::npos,
+           "cancel begin starts interactive closing for an open overview");
+    expect(cancelBeginBlock.find("selectHoveredWorkspace") == std::string::npos && cancelBeginBlock.find("make_unique<COverview>") == std::string::npos,
+           "cancel begin neither selects a hovered workspace nor creates an overview");
+    const auto expoBeginBlock = monitorQueryStart == std::string::npos ? std::string{} : gestureBegin.substr(monitorQueryStart);
+    expect(expoBeginBlock.find("std::make_unique<COverview>(monitor->m_activeWorkspace, true)") != std::string::npos &&
+               expoBeginBlock.find("g_pOverview->selectHoveredWorkspace()") != std::string::npos &&
+               expoBeginBlock.find("g_pOverview->setClosing(true)") != std::string::npos,
+           "expo begin retains open and hovered-selection close behavior");
+
+    const auto gestureEnd = extractFunction(gestureSource, "void CExpoGesture::end(");
+    expect(!gestureEnd.empty(), "gesture end function exists");
+    expect(gestureEnd.find("g_pOverview->setClosing(false)") != std::string::npos,
+           "gesture end clears transient closing before threshold evaluation");
+    expect(gestureEnd.find("g_pOverview->onSwipeEnd(m_action == EExpoGestureAction::Expo)") != std::string::npos,
+           "gesture completion selects only for the expo action");
+    expect(gestureEnd.find("if (g_pOverview)\n        g_pOverview->resetSwipe()") != std::string::npos,
+           "gesture completion retains the post-close reset guard");
+
+    const auto swipeEnd = extractFunction(interactionSource, "void COverview::onSwipeEnd(");
+    expect(!swipeEnd.empty(), "overview swipe-end function exists");
+    expect(swipeEnd.find("void COverview::onSwipeEnd(bool switchToSelection)") != std::string::npos,
+           "overview swipe completion accepts the selection decision");
+    const auto degenerateSpanStart = swipeEnd.find("if (std::abs(span.x) <= 1e-6)");
+    const auto thresholdStart = swipeEnd.find("if (PERC > 0.5)", degenerateSpanStart);
+    const auto incompleteStart = swipeEnd.find("*size = MON->m_size", thresholdStart);
+    const auto degenerateSpanBlock = degenerateSpanStart == std::string::npos || thresholdStart == std::string::npos ? std::string{} :
+                                                                                                                       swipeEnd.substr(degenerateSpanStart, thresholdStart - degenerateSpanStart);
+    const auto thresholdBlock = thresholdStart == std::string::npos || incompleteStart == std::string::npos ? std::string{} :
+                                                                                                               swipeEnd.substr(thresholdStart, incompleteStart - thresholdStart);
+    const auto incompleteBlock = incompleteStart == std::string::npos ? std::string{} : swipeEnd.substr(incompleteStart);
+    expect(degenerateSpanBlock.find("close(switchToSelection)") != std::string::npos &&
+               thresholdBlock.find("close(switchToSelection)") != std::string::npos,
+           "completed swipe paths forward the action-specific selection choice");
+    expect(incompleteBlock.find("*pos  = {0, 0}") != std::string::npos &&
+               incompleteBlock.find("swipeWasCommenced = true") != std::string::npos &&
+               incompleteBlock.find("m_isSwiping       = false") != std::string::npos &&
+               incompleteBlock.find("close(") == std::string::npos,
+           "incomplete swipe still resets animation state and leaves the overview open");
 
     const auto exitFunction = extractFunction(mainSource, "APICALL EXPORT void PLUGIN_EXIT(");
     expect(!exitFunction.empty(), "PLUGIN_EXIT exists");
