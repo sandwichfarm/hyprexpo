@@ -22,8 +22,8 @@ LINK_DEPS = pangocairo xkbcommon $(LUA_PKG_CONFIG)
 INCLUDES = $(shell pkg-config --cflags $(PKG_CONFIG_DEPS))
 LIBS = $(shell pkg-config --libs $(LINK_DEPS))
 
-SRC = main.cpp Dispatchers.cpp PluginConfig.cpp Overview.cpp OverviewInteraction.cpp OverviewRender.cpp ExpoGesture.cpp OverviewPassElement.cpp HyprexpoLogic.cpp ScrollingOverviewLogic.cpp ScrollingLayoutAdapter.cpp ScrollingDiagnostics.cpp
-HEADERS = globals.hpp Dispatchers.hpp PluginConfig.hpp HyprlandConfigCompat.hpp Overview.hpp OverviewInternal.hpp ExpoGesture.hpp OverviewPassElement.hpp HyprexpoConfig.hpp HyprexpoLogic.hpp ScrollingOverviewLogic.hpp ScrollingLayoutAdapter.hpp ScrollingDiagnostics.hpp
+SRC = main.cpp Dispatchers.cpp PluginConfig.cpp Overview.cpp OverviewInteraction.cpp OverviewRender.cpp OverviewCapture.cpp ExpoGesture.cpp OverviewPassElement.cpp HyprexpoLogic.cpp ScrollingOverviewLogic.cpp ScrollingLayoutAdapter.cpp ScrollingDiagnostics.cpp
+HEADERS = globals.hpp Dispatchers.hpp PluginConfig.hpp HyprlandConfigCompat.hpp Overview.hpp OverviewInternal.hpp OverviewCapture.hpp ExpoGesture.hpp OverviewPassElement.hpp HyprexpoConfig.hpp HyprexpoLogic.hpp ScrollingOverviewLogic.hpp ScrollingLayoutAdapter.hpp ScrollingDiagnostics.hpp
 TARGET = hyprexpo.so
 TEST_TARGET = HyprexpoLogicTests
 SOURCE_TEST_TARGET = OverviewSourceTests

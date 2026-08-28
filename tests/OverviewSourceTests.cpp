@@ -64,6 +64,12 @@ void expectOrder(const std::string& source, const std::string& first, const std:
     expect(firstPosition != std::string::npos && secondPosition != std::string::npos && firstPosition < secondPosition, label);
 }
 
+void expectLastOrder(const std::string& source, const std::string& first, const std::string& second, const std::string& label) {
+    const auto firstPosition  = source.find(first);
+    const auto secondPosition = source.rfind(second);
+    expect(firstPosition != std::string::npos && secondPosition != std::string::npos && firstPosition < secondPosition, label);
+}
+
 }
 
 int main() {
@@ -265,14 +271,15 @@ int main() {
     const auto workspaceCapture = extractFunction(captureSource, "bool captureWorkspacePreview(");
     expect(!workspaceCapture.empty(), "shared workspace capture implementation exists");
     for (const auto& token : {"beginRender(", "clearWithColor(", "applyExclusiveWorkspacePreviewState(", "applyWorkspaceWindowGoalState(", "CPinnedWindowPreviewGuard",
-                              "renderWorkspace(", "restoreWorkspaceWindowGoalState(", "restoreWorkspacePreviewStates(", "restoreActiveWorkspaceAfterPreview(", "endRender()"})
+                              "renderWorkspace(", "restoreWorkspaceWindowGoalState(", "restoreWorkspacePreviewStates(", "restoreActiveWorkspaceAfterPreview(", "rendererState.finish()"})
         expectContains(workspaceCapture, token, "shared workspace capture preserves grid operation " + std::string{token});
     expectOrder(workspaceCapture, "beginRender(", "clearWithColor(", "workspace capture begins before clearing");
     expectOrder(workspaceCapture, "clearWithColor(", "applyExclusiveWorkspacePreviewState(", "workspace capture clears before temporary workspace state");
     expectOrder(workspaceCapture, "applyWorkspaceWindowGoalState(", "renderWorkspace(", "workspace goal state is applied before rendering");
-    expectOrder(workspaceCapture, "renderWorkspace(", "restoreWorkspaceWindowGoalState(", "workspace goal state is restored after rendering");
-    expectOrder(workspaceCapture, "restoreWorkspacePreviewStates(", "restoreActiveWorkspaceAfterPreview(", "workspace preview state restores before active workspace");
-    expectOrder(workspaceCapture, "restoreActiveWorkspaceAfterPreview(", "endRender()", "workspace capture ends only after workspace restoration");
+    expectLastOrder(workspaceCapture, "renderWorkspace(", "restoreWorkspaceWindowGoalState(", "workspace goal state is restored after rendering");
+    expectLastOrder(workspaceCapture, "renderWorkspace(", "restoreWorkspacePreviewStates(", "workspace preview state restores after rendering");
+    expectLastOrder(workspaceCapture, "renderWorkspace(", "restoreActiveWorkspaceAfterPreview(", "active workspace restores after rendering");
+    expectLastOrder(workspaceCapture, "restoreActiveWorkspaceAfterPreview(", "rendererState.finish()", "workspace capture ends only after workspace restoration");
     expectContains(overviewConstructor, "captureWorkspacePreview(", "initial grid capture uses the shared workspace helper");
     const auto redrawID = extractFunction(renderSource, "void COverview::redrawID(");
     expectContains(redrawID, "captureWorkspacePreview(", "grid redraw uses the shared workspace helper");
@@ -282,11 +289,11 @@ int main() {
     const auto windowCapture = extractFunction(captureSource, "SWindowCaptureResult captureWindowPreview(");
     expect(!windowCapture.empty(), "tight scrolling-target capture implementation exists");
     for (const auto& token : {"createFB(", "beginFullFakeRender(", "m_bBlockSurfaceFeedback = true", "m_bRenderingSnapshot = true", "startRenderPass()", "renderWindow(",
-                              "Render::RENDER_PASS_ALL, true, true", "blockScreenShader = true", "endRender()", "getTexture()", ".completed = true"})
+                              "Render::RENDER_PASS_ALL, true, true", "blockScreenShader = true", "rendererState.finish()", "getTexture()", "result.completed"})
         expectContains(windowCapture, token, "tight target capture uses approved GPU operation " + std::string{token});
     expectOrder(windowCapture, "beginFullFakeRender(", "renderWindow(", "target capture begins fake rendering before the window draw");
-    expectOrder(windowCapture, "renderWindow(", "endRender()", "target capture balances the renderer after drawing");
-    expectOrder(windowCapture, "endRender()", ".completed = true", "target capture publishes only after balanced completion");
+    expectOrder(windowCapture, "renderWindow(", "rendererState.finish()", "target capture balances the renderer after drawing");
+    expectOrder(windowCapture, "rendererState.finish()", "result.completed", "target capture publishes only after balanced completion");
     for (const auto& token : {"glReadPixels(", "readPixels(", "std::ofstream", ".ppm", "sha256", "SHA256"})
         expectAbsent(captureSource, token, "production capture forbids plugin-side pixel evidence path " + std::string{token});
 
