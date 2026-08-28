@@ -164,6 +164,30 @@ int main() {
     expect(overviewConstructor.find("for (int64_t id = minID; id <= maxID; ++id)") == std::string::npos,
            "dynamic workspace enumeration has no unbounded min-to-max fill loop");
 
+    const auto centerBranchStart = overviewConstructor.find("} else if (methodCenter) {");
+    const auto centerBranchEnd   = overviewConstructor.find("\n    } else {", centerBranchStart);
+    const auto centerBranch      = centerBranchStart == std::string::npos || centerBranchEnd == std::string::npos ? std::string{} :
+                                                                                                                    overviewConstructor.substr(centerBranchStart, centerBranchEnd - centerBranchStart);
+    expect(!centerBranch.empty(), "center-current traversal branch exists");
+
+    const auto boundsGatePos = centerBranch.find("if (!skipEmpty)");
+    const auto boundsScanPos = centerBranch.find("State::workspaceState()->workspacesCopy()");
+    const auto helperPos     = centerBranch.find("Hyprexpo::centeredWorkspaceBacktrack(");
+    expect(boundsGatePos != std::string::npos && boundsScanPos != std::string::npos && boundsGatePos < boundsScanPos,
+           "regular workspace bounds are collected only for consecutive traversal");
+    expect(boundsScanPos != std::string::npos && centerBranch.find("!workspace", boundsScanPos) != std::string::npos,
+           "center-current bounds ignore null workspace entries");
+    expect(boundsScanPos != std::string::npos && centerBranch.find("workspace->m_isSpecialWorkspace", boundsScanPos) != std::string::npos,
+           "center-current bounds exclude special workspaces");
+    expect(boundsScanPos != std::string::npos && centerBranch.find("workspace->m_monitor != PMONITOR", boundsScanPos) != std::string::npos,
+           "center-current bounds exclude workspaces owned by other monitors");
+    expect(helperPos != std::string::npos && boundsScanPos != std::string::npos && boundsScanPos < helperPos,
+           "center-current traversal uses the pure backtrack helper after collecting bounds");
+    expect(centerBranch.find("for (size_t i = 1; i <= backtrackTarget; ++i)") != std::string::npos,
+           "center-current lower scan includes the full helper target");
+    expect(centerBranch.find("if (currentID >= firstID)") != std::string::npos && centerBranch.find("if (i > 0 && currentID <= firstID)") != std::string::npos,
+           "skip-empty center traversal retains lower and forward wrap guards");
+
     const auto renderSource = readFile("OverviewRender.cpp");
     expect(!renderSource.empty(), "OverviewRender.cpp can be read from repo root");
     const auto fullRender = extractFunction(renderSource, "void COverview::fullRender(");
