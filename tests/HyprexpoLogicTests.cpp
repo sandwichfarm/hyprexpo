@@ -1,5 +1,6 @@
 #include "../HyprexpoLogic.hpp"
 #include "../HyprexpoConfig.hpp"
+#include "../ScrollingOverviewLogic.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -147,6 +148,161 @@ void checkGeometryForMonitor(const Hyprexpo::SSize& total) {
             expect(near(layouts[0].box.y, (total.h - tile.h) / 2.0), "count 2 row is vertically centered");
         }
     }
+}
+
+Hyprexpo::Scrolling::STapeSpec scrollingTape(Hyprexpo::Scrolling::EDirection direction) {
+    using namespace Hyprexpo::Scrolling;
+    return {
+        .direction = direction,
+        .columns = {
+            {.token = 10, .extent = 300.0, .targets = {{.token = 101, .proportion = 1.0}}},
+            {.token = 20, .extent = 200.0, .targets = {{.token = 201, .proportion = 1.0}, {.token = 202, .proportion = 3.0}}},
+            {.token = 30, .extent = 400.0, .targets = {{.token = 301, .proportion = 1.0}}},
+        },
+    };
+}
+
+Hyprexpo::Scrolling::SScene scrollingScene() {
+    using namespace Hyprexpo::Scrolling;
+    return buildScene(
+        {
+            {.workspaceID = 1, .kind = EWorkspaceKind::Scrolling, .tape = scrollingTape(EDirection::Right)},
+            {.workspaceID = 2, .kind = EWorkspaceKind::Empty, .tape = {}},
+            {.workspaceID = 3, .kind = EWorkspaceKind::Mixed, .tape = {}},
+        },
+        2,
+        {.viewportWidth = 1000.0, .viewportHeight = 500.0, .rowHeight = 300.0, .rowGap = 40.0, .columnGap = 10.0, .terminalWorkspaceID = 4});
+}
+
+void checkScrollingTapeDirections() {
+    using namespace Hyprexpo::Scrolling;
+
+    for (const auto direction : {EDirection::Right, EDirection::Left, EDirection::Down, EDirection::Up}) {
+        const auto layout = layoutTape(scrollingTape(direction), {25.0, 50.0}, 600.0, 10.0);
+        expect(layout.valid, "scrolling tape accepts complete positive topology");
+        expect(layout.targets.size() == 4, "scrolling tape retains every offscreen target");
+        expect(layout.targets[0].token == 101 && layout.targets[1].token == 201 && layout.targets[2].token == 202 && layout.targets[3].token == 301,
+               "scrolling tape output preserves native target identity/order");
+        expect(layout.targets[1].nativeColumnIndex == 1 && layout.targets[2].nativeRowIndex == 1,
+               "scrolling tape retains native column/row indices");
+
+        for (size_t i = 0; i < layout.targets.size(); ++i) {
+            const auto& box = layout.targets[i].box;
+            expect(box.w > 0.0 && box.h > 0.0 && std::isfinite(box.x) && std::isfinite(box.y), "scrolling target boxes are finite and positive");
+            for (size_t j = i + 1; j < layout.targets.size(); ++j) {
+                const auto& other = layout.targets[j].box;
+                const bool overlap = box.x < other.x + other.w && box.x + box.w > other.x && box.y < other.y + other.h && box.y + box.h > other.y;
+                expect(!overlap, "scrolling target boxes never overlap");
+            }
+        }
+
+        const auto& firstColumn = layout.targets[0].box;
+        const auto& lastColumn  = layout.targets[3].box;
+        if (direction == EDirection::Right)
+            expect(firstColumn.x < lastColumn.x, "right direction places native order left-to-right");
+        else if (direction == EDirection::Left)
+            expect(firstColumn.x > lastColumn.x, "left direction reverses presentation without reversing identity order");
+        else if (direction == EDirection::Down)
+            expect(firstColumn.y < lastColumn.y, "down direction places native order top-to-bottom");
+        else
+            expect(firstColumn.y > lastColumn.y, "up direction reverses presentation without reversing identity order");
+
+        const auto& upper = layout.targets[1].box;
+        const auto& lower = layout.targets[2].box;
+        const double firstShare = direction == EDirection::Right || direction == EDirection::Left ? upper.h / (upper.h + lower.h) : upper.w / (upper.w + lower.w);
+        expect(near(firstShare, 0.25), "target row proportions are preserved on the cross axis");
+    }
+
+    auto invalid = scrollingTape(EDirection::Right);
+    invalid.columns[0].extent = std::numeric_limits<double>::infinity();
+    expect(!layoutTape(invalid, {}, 600.0, 10.0).valid, "scrolling tape rejects non-finite column extent");
+    invalid = scrollingTape(EDirection::Right);
+    invalid.columns[1].targets[0].proportion = 0.0;
+    expect(!layoutTape(invalid, {}, 600.0, 10.0).valid, "scrolling tape rejects non-positive target proportion");
+}
+
+void checkScrollingSceneAndInputMath() {
+    using namespace Hyprexpo::Scrolling;
+
+    const auto scene = scrollingScene();
+    expect(scene.valid && scene.workspaces.size() == 4, "scene includes scrolling, empty, mixed, and terminal rows");
+    expect(scene.targets.size() == 4, "scene retains the full native tape");
+
+    const double initial = initialPan(scene, 2, 500.0);
+    expect(near(initial, 240.0), "active workspace row is initially centered");
+    expect(near(panBy(scene, initial, -10000.0, 500.0), 0.0), "mouse-axis pan clamps at the first row");
+    expect(near(panBy(scene, initial, 10000.0, 500.0), scene.contentHeight - 500.0), "touch pan clamps at the terminal row");
+
+    const auto& target = scene.targets.front();
+    const auto targetHit = hitTest(scene, {target.box.x + target.box.w / 2.0, target.box.y + target.box.h / 2.0 - initial}, initial);
+    expect(targetHit.kind == EHitKind::Target && targetHit.targetToken == target.token, "hit test returns the exact target");
+    const auto emptyHit = hitTest(scene, {500.0, scene.workspaces[1].box.y + 20.0 - initial}, initial);
+    expect(emptyHit.kind == EHitKind::EmptyWorkspace && emptyHit.workspaceID == 2, "hit test returns an ordinary empty row");
+    const auto mixedHit = hitTest(scene, {500.0, scene.workspaces[2].box.y + 20.0 - initial}, initial);
+    expect(mixedHit.kind == EHitKind::MixedWorkspace && mixedHit.workspaceID == 3, "hit test returns an ordinary mixed row");
+    const auto terminalHit = hitTest(scene, {500.0, scene.workspaces[3].box.y + 20.0 - initial}, initial);
+    expect(terminalHit.kind == EHitKind::TerminalWorkspace && terminalHit.workspaceID == 4, "hit test returns the terminal next-empty row");
+    expect(hitTest(scene, {-1.0, 20.0}, initial).kind == EHitKind::Outside, "hit test rejects points outside all rows");
+
+    const SFocusRef first{.kind = EHitKind::Target, .workspaceID = 1, .targetToken = 101};
+    const auto right = moveFocus(scene, first, EFocusDirection::Right);
+    expect(right.kind == EHitKind::Target && right.targetToken == 201, "spatial focus moves deterministically across columns");
+    const auto down = moveFocus(scene, first, EFocusDirection::Down);
+    expect(down.kind == EHitKind::EmptyWorkspace && down.workspaceID == 2, "spatial focus moves deterministically across rows");
+    expect(moveFocus(scene, first, EFocusDirection::Left).targetToken == 101, "spatial focus stays put when no candidate exists");
+}
+
+void checkScrollingDropIntents() {
+    using namespace Hyprexpo::Scrolling;
+
+    const auto scene = scrollingScene();
+    const auto& target = scene.targets[1];
+    const SDropSource source{.workspaceID = 1, .columnIndex = 1, .rowIndex = 0, .sourceColumnWillDisappear = false};
+
+    auto intent = resolveDrop(scene, source, {target.box.x + target.box.w / 2.0, target.box.y + target.box.h * 0.9}, 0.0);
+    expect(intent.kind == EDropKind::ExistingColumn && intent.placement == EColumnPlacement::Existing && intent.rowIndex == 1,
+           "drop center resolves same-column row reorder");
+
+    intent = resolveDrop(scene, {.workspaceID = 1, .columnIndex = 0, .rowIndex = 0}, {target.box.x + 1.0, target.box.y + target.box.h / 2.0}, 0.0);
+    expect(intent.kind == EDropKind::NewColumnBefore && intent.placement == EColumnPlacement::Before, "primary start edge creates a column before");
+    intent = resolveDrop(scene, {.workspaceID = 1, .columnIndex = 0, .rowIndex = 0}, {target.box.x + target.box.w - 1.0, target.box.y + target.box.h / 2.0}, 0.0);
+    expect(intent.kind == EDropKind::NewColumnAfter && intent.placement == EColumnPlacement::After, "primary end edge creates a column after");
+
+    const auto emptyY = scene.workspaces[1].box.y + 20.0;
+    intent = resolveDrop(scene, source, {500.0, emptyY}, 0.0);
+    expect(intent.kind == EDropKind::CrossWorkspace && intent.workspaceID == 2, "empty scrolling destination resolves cross-workspace drop");
+    intent = resolveDrop(scene, source, {500.0, scene.workspaces[2].box.y + 20.0}, 0.0);
+    expect(intent.kind == EDropKind::MixedFallback && intent.workspaceID == 3, "mixed destination resolves fallback drop");
+    intent = resolveDrop(scene, source, {500.0, scene.workspaces[3].box.y + 20.0}, 0.0);
+    expect(intent.kind == EDropKind::TerminalWorkspace && intent.workspaceID == 4, "terminal row resolves next-empty workspace drop");
+    expect(resolveDrop(scene, source, {-1.0, -1.0}, 0.0).kind == EDropKind::Invalid, "outside release is invalid/no-op");
+
+    intent = resolveDrop(scene, source, {target.box.x + target.box.w / 2.0, target.box.y + target.box.h * 0.25}, 0.0);
+    expect(intent.kind == EDropKind::NoOp, "same-column same-row release is an explicit no-op");
+    expect(adjustDestinationColumnIndex(1, 4, true) == 3, "destination index adjusts after an earlier source column disappears");
+    expect(adjustDestinationColumnIndex(4, 1, true) == 1, "destination index is stable when source follows destination");
+}
+
+void checkScrollingCaptureBudget() {
+    using namespace Hyprexpo::Scrolling;
+
+    const std::vector<SCaptureRequest> requests{{.token = 1, .width = 3840, .height = 2160}, {.token = 2, .width = 1920, .height = 1080}};
+    const auto defaults = planCaptureBudget(1920, 1080, 4, requests);
+    expect(defaults.valid && defaults.multiplier == 4, "capture budget keeps the default multiplier");
+    expect(defaults.budgetPixels == 4ULL * 1920ULL * 1080ULL, "capture budget is multiplier times monitor pixels");
+    expect(defaults.allocations[0].width == 1920 && defaults.allocations[0].height == 1080, "each target is capped independently to monitor pixels");
+    expect(near(defaults.scale, 1.0), "capture budget keeps full scale when capped requests fit");
+
+    const auto constrained = planCaptureBudget(100, 100, 1, {{.token = 1, .width = 100, .height = 100}, {.token = 2, .width = 100, .height = 100}});
+    expect(near(constrained.scale, std::sqrt(0.5)), "capture budget applies one shared square-root scale");
+    expect(constrained.allocations[0].width == constrained.allocations[1].width, "shared scale produces equal dimensions for equal requests");
+
+    expect(planCaptureBudget(100, 100, -9, {}).multiplier == 1, "capture multiplier clamps to one");
+    expect(planCaptureBudget(100, 100, 99, {}).multiplier == 16, "capture multiplier clamps to sixteen");
+    const auto tiny = planCaptureBudget(100, 100, 1, {{.token = 9, .width = 15, .height = 100}});
+    expect(!tiny.allocations[0].capture && tiny.allocations[0].width == 0 && tiny.allocations[0].height == 0,
+           "scaled dimensions below sixteen use a non-textured fallback");
+    expect(!planCaptureBudget(0, 100, 4, requests).valid, "capture budget rejects invalid monitor dimensions");
 }
 
 }
@@ -334,6 +490,10 @@ int main() {
     checkGeometryForMonitor(makeSize(1600, 900));
     checkGeometryForMonitor(makeSize(900, 1600));
     checkGeometryForMonitor(makeSize(2560, 1080));
+    checkScrollingTapeDirections();
+    checkScrollingSceneAndInputMath();
+    checkScrollingDropIntents();
+    checkScrollingCaptureBudget();
 
     if (failures != 0)
         return 1;

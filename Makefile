@@ -22,8 +22,8 @@ LINK_DEPS = pangocairo xkbcommon $(LUA_PKG_CONFIG)
 INCLUDES = $(shell pkg-config --cflags $(PKG_CONFIG_DEPS))
 LIBS = $(shell pkg-config --libs $(LINK_DEPS))
 
-SRC = main.cpp Dispatchers.cpp PluginConfig.cpp Overview.cpp OverviewInteraction.cpp OverviewRender.cpp ExpoGesture.cpp OverviewPassElement.cpp HyprexpoLogic.cpp
-HEADERS = globals.hpp Dispatchers.hpp PluginConfig.hpp HyprlandConfigCompat.hpp Overview.hpp OverviewInternal.hpp ExpoGesture.hpp OverviewPassElement.hpp HyprexpoConfig.hpp HyprexpoLogic.hpp
+SRC = main.cpp Dispatchers.cpp PluginConfig.cpp Overview.cpp OverviewInteraction.cpp OverviewRender.cpp ExpoGesture.cpp OverviewPassElement.cpp HyprexpoLogic.cpp ScrollingOverviewLogic.cpp
+HEADERS = globals.hpp Dispatchers.hpp PluginConfig.hpp HyprlandConfigCompat.hpp Overview.hpp OverviewInternal.hpp ExpoGesture.hpp OverviewPassElement.hpp HyprexpoConfig.hpp HyprexpoLogic.hpp ScrollingOverviewLogic.hpp
 TARGET = hyprexpo.so
 TEST_TARGET = HyprexpoLogicTests
 SOURCE_TEST_TARGET = OverviewSourceTests
@@ -72,8 +72,8 @@ test: $(TEST_TARGET) $(SOURCE_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(SOURCE_TEST_TARGET)
 
-$(TEST_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp HyprexpoConfig.hpp tests/HyprexpoLogicTests.cpp
-	$(CXX) -std=c++2b -Wall -Wextra -Werror HyprexpoLogic.cpp tests/HyprexpoLogicTests.cpp -o $@
+$(TEST_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp HyprexpoConfig.hpp ScrollingOverviewLogic.cpp ScrollingOverviewLogic.hpp tests/HyprexpoLogicTests.cpp
+	$(CXX) -std=c++2b -Wall -Wextra -Werror HyprexpoLogic.cpp ScrollingOverviewLogic.cpp tests/HyprexpoLogicTests.cpp -o $@
 
 $(SOURCE_TEST_TARGET): tests/OverviewSourceTests.cpp Overview.cpp OverviewRender.cpp Dispatchers.cpp main.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror tests/OverviewSourceTests.cpp -o $@
