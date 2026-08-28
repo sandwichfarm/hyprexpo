@@ -12,6 +12,8 @@
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
+#include <hyprland/src/render/pass/RectPassElement.hpp>
+#include <hyprland/src/render/pass/TexPassElement.hpp>
 #define protected public
 #include <hyprland/src/render/Renderer.hpp>
 #undef protected
@@ -19,32 +21,30 @@
 #include <hyprland/src/debug/log/Logger.hpp>
 
 #include <algorithm>
-#include <array>
-#include <bit>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <exception>
-#include <fstream>
 #include <iomanip>
-#include <limits>
 #include <locale>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace {
 
 constexpr std::string_view EXPECTED_VERSION = "0.56.1";
 constexpr std::string_view EXPECTED_HASH    = "5c9377c15f85c50648f35ca5a213754f95b93ca0";
-constexpr std::string_view DISPATCHER       = "hyprexpo-scroll-probe:inspect";
-constexpr std::string_view PATH_PREFIX      = "/tmp/hyprexpo-scroll-probe-";
+constexpr std::string_view PRESENT_DISPATCHER = "hyprexpo-scroll-probe:inspect";
+constexpr std::string_view ACK_DISPATCHER     = "hyprexpo-scroll-probe:ack";
 
-HANDLE   g_handle            = nullptr;
-uint64_t g_sessionGeneration = 0;
+HANDLE         g_handle              = nullptr;
+uint64_t       g_sessionGeneration   = 0;
+CFunctionHook* g_pRenderWorkspaceHook = nullptr;
+using origRenderWorkspace = void (*)(void*, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp&, const CBox&);
 
 std::string jsonEscape(const std::string_view value) {
     std::ostringstream escaped;
@@ -116,125 +116,13 @@ std::string directionName(const Layout::Tiled::eScrollDirection direction) {
     return "unknown";
 }
 
-class CSha256 {
-  public:
-    void update(const uint8_t* data, const size_t size) {
-        for (size_t i = 0; i < size; ++i) {
-            m_block[m_blockSize++] = data[i];
-            m_totalBits += 8;
-            if (m_blockSize == m_block.size()) {
-                transform();
-                m_blockSize = 0;
-            }
-        }
-    }
-
-    std::string finish() {
-        const auto originalBits = m_totalBits;
-        m_block[m_blockSize++]  = 0x80;
-        if (m_blockSize > 56) {
-            while (m_blockSize < m_block.size())
-                m_block[m_blockSize++] = 0;
-            transform();
-            m_blockSize = 0;
-        }
-        while (m_blockSize < 56)
-            m_block[m_blockSize++] = 0;
-        for (int shift = 56; shift >= 0; shift -= 8)
-            m_block[m_blockSize++] = static_cast<uint8_t>(originalBits >> shift);
-        transform();
-
-        std::ostringstream output;
-        output << std::hex << std::setfill('0');
-        for (const auto word : m_state)
-            output << std::setw(8) << word;
-        return output.str();
-    }
-
-  private:
-    static constexpr std::array<uint32_t, 64> K = {
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-    };
-
-    static uint32_t rotateRight(const uint32_t value, const int amount) {
-        return std::rotr(value, amount);
-    }
-
-    void transform() {
-        std::array<uint32_t, 64> words{};
-        for (size_t i = 0; i < 16; ++i) {
-            const auto offset = i * 4;
-            words[i] = (static_cast<uint32_t>(m_block[offset]) << 24) | (static_cast<uint32_t>(m_block[offset + 1]) << 16) |
-                (static_cast<uint32_t>(m_block[offset + 2]) << 8) | static_cast<uint32_t>(m_block[offset + 3]);
-        }
-        for (size_t i = 16; i < words.size(); ++i) {
-            const auto s0 = rotateRight(words[i - 15], 7) ^ rotateRight(words[i - 15], 18) ^ (words[i - 15] >> 3);
-            const auto s1 = rotateRight(words[i - 2], 17) ^ rotateRight(words[i - 2], 19) ^ (words[i - 2] >> 10);
-            words[i]      = words[i - 16] + s0 + words[i - 7] + s1;
-        }
-
-        auto a = m_state[0];
-        auto b = m_state[1];
-        auto c = m_state[2];
-        auto d = m_state[3];
-        auto e = m_state[4];
-        auto f = m_state[5];
-        auto g = m_state[6];
-        auto h = m_state[7];
-        for (size_t i = 0; i < words.size(); ++i) {
-            const auto sigma1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
-            const auto choice = (e & f) ^ (~e & g);
-            const auto temp1  = h + sigma1 + choice + K[i] + words[i];
-            const auto sigma0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
-            const auto majority = (a & b) ^ (a & c) ^ (b & c);
-            const auto temp2    = sigma0 + majority;
-            h                   = g;
-            g                   = f;
-            f                   = e;
-            e                   = d + temp1;
-            d                   = c;
-            c                   = b;
-            b                   = a;
-            a                   = temp1 + temp2;
-        }
-        m_state[0] += a;
-        m_state[1] += b;
-        m_state[2] += c;
-        m_state[3] += d;
-        m_state[4] += e;
-        m_state[5] += f;
-        m_state[6] += g;
-        m_state[7] += h;
-    }
-
-    std::array<uint32_t, 8> m_state = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
-    std::array<uint8_t, 64> m_block{};
-    size_t                  m_blockSize = 0;
-    uint64_t                m_totalBits = 0;
-};
-
-std::string sha256(const std::vector<uint8_t>& bytes) {
-    CSha256 hash;
-    hash.update(bytes.data(), bytes.size());
-    return hash.finish();
-}
-
 struct SCaptureEvidence {
-    int         width                  = 0;
-    int         height                 = 0;
-    size_t      nontransparentPixels   = 0;
-    CBox        nonBackgroundBounds    = {};
-    std::string sha256;
-    std::string imagePath;
-    std::string error;
-    bool        rendererStateRestored  = false;
+    int                      width                 = 0;
+    int                      height                = 0;
+    SP<Render::IFramebuffer> framebuffer;
+    SP<Render::ITexture>     texture;
+    std::string              error;
+    bool                     rendererStateRestored = false;
 };
 
 class CRenderScope {
@@ -283,18 +171,69 @@ class CRenderScope {
 };
 
 struct STopology {
-    PHLWORKSPACE                                  workspace;
-    PHLMONITOR                                    monitor;
-    Layout::Tiled::CScrollingAlgorithm*           algorithm = nullptr;
-    SP<Layout::Tiled::SScrollingData>              data;
-    SP<Layout::ITarget>                            captureTarget;
-    SP<Layout::Tiled::SScrollingTargetData>        captureData;
-    Layout::Tiled::eScrollDirection                direction = Layout::Tiled::SCROLL_DIR_RIGHT;
-    double                                         offset    = 0;
-    std::string                                    canonical;
-    std::string                                    json;
-    std::string                                    error;
+    struct SCandidate {
+        WP<Layout::ITarget> target;
+        PHLWINDOWREF        window;
+        size_t              column = 0;
+        size_t              row    = 0;
+        double              primaryStart = 0;
+        double              primarySize  = 0;
+        bool                visible      = false;
+        std::string         windowIdentity;
+        std::string         title;
+    };
+
+    PHLWORKSPACE                        workspace;
+    PHLMONITOR                          monitor;
+    Layout::Tiled::CScrollingAlgorithm* algorithm = nullptr;
+    SP<Layout::Tiled::SScrollingData>    data;
+    Layout::Tiled::eScrollDirection      direction = Layout::Tiled::SCROLL_DIR_RIGHT;
+    double                               offset    = 0;
+    std::vector<SCandidate>              candidates;
+    std::string                          activeWorkspace;
+    std::string                          focusedWindow;
+    std::string                          canonical;
+    std::string                          json;
+    std::string                          error;
 };
+
+struct SPendingRequest {
+    uint64_t                   pendingGeneration = 0;
+    std::string                requestId;
+    PHLMONITORREF              monitor;
+    SP<Render::IFramebuffer>   pendingFramebuffer;
+    SP<Render::ITexture>       pendingTexture;
+    CBox                       physicalTextureBox;
+    CBox                       logicalCropBox;
+    CBox                       markerBox;
+    CHyprColor                 markerColor;
+    std::string                markerHex;
+    std::string                targetIdentity;
+    std::string                windowIdentity;
+    std::string                targetTitle;
+    std::string                targetVisibility;
+    size_t                     column = 0;
+    size_t                     row    = 0;
+    std::string                topologyBefore;
+    std::string                topologyBeforeJson;
+    std::string                activeWorkspaceBefore;
+    std::string                focusedWindowBefore;
+    bool                       pendingOverlay = false;
+    size_t                     pendingPassCount = 0;
+};
+
+struct SCleanupHandshake {
+    uint64_t      generation = 0;
+    std::string   requestId;
+    PHLMONITORREF monitor;
+    std::string   topologyBefore;
+    std::string   topologyBeforeJson;
+    std::string   activeWorkspaceBefore;
+    std::string   focusedWindowBefore;
+};
+
+std::optional<SPendingRequest>   g_pending;
+std::optional<SCleanupHandshake> g_cleanupHandshake;
 
 std::string targetJson(const SP<Layout::ITarget>& target, const CBox& layoutBox, const size_t row, const float proportion) {
     const auto window = target ? target->window() : PHLWINDOW{};
@@ -338,16 +277,6 @@ STopology snapshotTopology() {
         return result;
     }
 
-    const auto focusedWindow = Desktop::focusState()->window();
-    if (focusedWindow && focusedWindow->m_workspace == result.workspace) {
-        const auto target = focusedWindow->layoutTarget();
-        const auto data   = target ? result.algorithm->dataFor(target) : SP<Layout::Tiled::SScrollingTargetData>{};
-        if (target && data) {
-            result.captureTarget = target;
-            result.captureData   = data;
-        }
-    }
-
     for (const auto& targetRef : result.workspace->m_space->targets()) {
         const auto target = targetRef.lock();
         if (!target || target->floating())
@@ -355,10 +284,6 @@ STopology snapshotTopology() {
         const auto data = result.algorithm->dataFor(target);
         if (!data)
             continue;
-        if (!result.captureTarget) {
-            result.captureTarget = target;
-            result.captureData   = data;
-        }
         const auto column = data->column.lock();
         if (column) {
             result.data = column->scrollingData.lock();
@@ -367,7 +292,7 @@ STopology snapshotTopology() {
         }
     }
 
-    if (!result.captureTarget || !result.captureData || !result.data || !result.data->controller) {
+    if (!result.data || !result.data->controller) {
         result.error = "no live scrolling target/data/controller is available";
         return result;
     }
@@ -392,9 +317,17 @@ STopology snapshotTopology() {
             return result;
         }
 
+        const auto primaryStart = controller.calculateStripStart(columnIndex, result.algorithm->usableArea());
+        const auto primarySize  = controller.calculateStripSize(columnIndex, result.algorithm->usableArea());
+        const auto horizontal   = result.direction == Layout::Tiled::SCROLL_DIR_RIGHT || result.direction == Layout::Tiled::SCROLL_DIR_LEFT;
+        const auto usable       = result.algorithm->usableArea();
+        const auto viewportStart = horizontal ? usable.x : usable.y;
+        const auto viewportEnd   = viewportStart + (horizontal ? usable.w : usable.h);
+        const auto visible       = primaryStart < viewportEnd && primaryStart + primarySize > viewportStart;
+
         columns << "{\"index\":" << columnIndex << ",\"identity\":" << quoted(identity(column)) << ",\"width\":" << number(strip.size)
-                << ",\"calculatedStart\":" << number(controller.calculateStripStart(columnIndex, result.algorithm->usableArea()))
-                << ",\"calculatedSize\":" << number(controller.calculateStripSize(columnIndex, result.algorithm->usableArea())) << ",\"targets\":[";
+                << ",\"calculatedStart\":" << number(primaryStart) << ",\"calculatedSize\":" << number(primarySize)
+                << ",\"visible\":" << (visible ? "true" : "false") << ",\"targets\":[";
         for (size_t row = 0; row < column->targetDatas.size(); ++row) {
             if (row)
                 columns << ',';
@@ -405,6 +338,18 @@ STopology snapshotTopology() {
                 return result;
             }
             columns << targetJson(target, targetData->layoutBox, row, strip.targetSizes[row]);
+            const auto window = target->window();
+            if (window) {
+                result.candidates.push_back({.target = target,
+                                             .window = window,
+                                             .column = columnIndex,
+                                             .row = row,
+                                             .primaryStart = primaryStart,
+                                             .primarySize = primarySize,
+                                             .visible = visible,
+                                             .windowIdentity = identity(window),
+                                             .title = window->m_title});
+            }
         }
         columns << "]}";
     }
@@ -428,28 +373,16 @@ STopology snapshotTopology() {
     json << "{\"algorithmIdentity\":" << quoted(identity(result.algorithm)) << ",\"dataIdentity\":" << quoted(identity(result.data))
          << ",\"direction\":" << quoted(directionName(result.direction)) << ",\"offset\":" << number(result.offset)
          << ",\"columns\":" << columns.str() << ",\"layoutTargets\":" << layoutTargets.str() << '}';
-    result.json      = json.str();
-    result.canonical = result.json;
+    const auto focusedWindow = Desktop::focusState()->window();
+    result.activeWorkspace = std::to_string(result.workspace->m_id) + ":" + result.workspace->m_name;
+    result.focusedWindow   = focusedWindow ? identity(focusedWindow) : "0x0";
+    result.json            = json.str();
+    result.canonical       = result.json + "|active=" + result.activeWorkspace + "|focus=" + result.focusedWindow;
     return result;
 }
 
-bool writePpm(const std::string& path, const int width, const int height, const std::vector<uint8_t>& pixels) {
-    std::ofstream output{path, std::ios::binary | std::ios::trunc};
-    if (!output)
-        return false;
-    output << "P6\n" << width << ' ' << height << "\n255\n";
-    for (int y = height - 1; y >= 0; --y) {
-        for (int x = 0; x < width; ++x) {
-            const auto offset = static_cast<size_t>((y * width + x) * 4);
-            output.write(reinterpret_cast<const char*>(&pixels[offset]), 3);
-        }
-    }
-    return output.good();
-}
-
-SCaptureEvidence captureTarget(const WP<Layout::ITarget>& targetRef, const PHLWINDOWREF& windowRef, const PHLMONITORREF& monitorRef, const std::string& outputPath) {
+SCaptureEvidence captureTarget(const WP<Layout::ITarget>& targetRef, const PHLWINDOWREF& windowRef, const PHLMONITORREF& monitorRef) {
     SCaptureEvidence evidence;
-    evidence.imagePath = outputPath;
 
     auto target  = targetRef.lock();
     auto window  = windowRef.lock();
@@ -501,34 +434,6 @@ SCaptureEvidence captureTarget(const WP<Layout::ITarget>& targetRef, const PHLWI
     g_pHyprRenderer->m_renderData.blockScreenShader = true;
     renderScope.finish();
 
-    framebuffer->bind();
-    std::vector<uint8_t> pixels(static_cast<size_t>(evidence.width) * evidence.height * 4);
-    while (glGetError() != GL_NO_ERROR) {}
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
-    glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    if (const auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER); status != GL_FRAMEBUFFER_COMPLETE) {
-        evidence.error = "capture framebuffer is incomplete: " + std::to_string(status);
-        return evidence;
-    }
-    GLint readFormat = 0;
-    GLint readType   = 0;
-    glGetIntegerv(GL_IMPLEMENTATION_COLOR_READ_FORMAT, &readFormat);
-    glGetIntegerv(GL_IMPLEMENTATION_COLOR_READ_TYPE, &readType);
-    if ((readFormat != GL_RGBA && readFormat != GL_BGRA_EXT) || readType != GL_UNSIGNED_BYTE) {
-        evidence.error = "unsupported framebuffer read format/type: " + std::to_string(readFormat) + "/" + std::to_string(readType);
-        return evidence;
-    }
-    while (glGetError() != GL_NO_ERROR) {}
-    glReadPixels(0, 0, evidence.width, evidence.height, readFormat, readType, pixels.data());
-    if (const auto error = glGetError(); error != GL_NO_ERROR) {
-        evidence.error = "glReadPixels failed with GL error " + std::to_string(error) + " for format/type " + std::to_string(readFormat) + "/" + std::to_string(readType);
-        return evidence;
-    }
-    if (readFormat == GL_BGRA_EXT) {
-        for (size_t pixel = 0; pixel < pixels.size(); pixel += 4)
-            std::swap(pixels[pixel], pixels[pixel + 2]);
-    }
-
     renderScope.restore();
     evidence.rendererStateRestored = renderScope.restored();
     if (!evidence.rendererStateRestored) {
@@ -536,121 +441,265 @@ SCaptureEvidence captureTarget(const WP<Layout::ITarget>& targetRef, const PHLWI
         return evidence;
     }
 
-    for (size_t pixel = 0; pixel < pixels.size(); pixel += 4) {
-        if (pixels[pixel + 3] != 0)
-            ++evidence.nontransparentPixels;
-    }
-
-    std::unordered_map<uint32_t, size_t> colorCounts;
-    uint32_t                             backgroundKey = 0;
-    size_t                               bestCount     = 0;
-    for (size_t pixel = 0; pixel < pixels.size(); pixel += 4) {
-        const auto key = static_cast<uint32_t>(pixels[pixel]) | (static_cast<uint32_t>(pixels[pixel + 1]) << 8) |
-            (static_cast<uint32_t>(pixels[pixel + 2]) << 16) | (static_cast<uint32_t>(pixels[pixel + 3]) << 24);
-        const auto count = ++colorCounts[key];
-        if (count > bestCount) {
-            bestCount     = count;
-            backgroundKey = key;
-        }
-    }
-    const std::array<uint8_t, 4> background = {static_cast<uint8_t>(backgroundKey), static_cast<uint8_t>(backgroundKey >> 8),
-                                                static_cast<uint8_t>(backgroundKey >> 16), static_cast<uint8_t>(backgroundKey >> 24)};
-
-    int minX = evidence.width;
-    int minY = evidence.height;
-    int maxX = -1;
-    int maxY = -1;
-    for (int y = 0; y < evidence.height; ++y) {
-        for (int x = 0; x < evidence.width; ++x) {
-            const auto offset = static_cast<size_t>((y * evidence.width + x) * 4);
-            if (std::equal(background.begin(), background.end(), pixels.begin() + offset))
-                continue;
-            minX = std::min(minX, x);
-            minY = std::min(minY, y);
-            maxX = std::max(maxX, x);
-            maxY = std::max(maxY, y);
-        }
-    }
-    if (maxX >= minX && maxY >= minY)
-        evidence.nonBackgroundBounds = {static_cast<double>(minX), static_cast<double>(minY), static_cast<double>(maxX - minX + 1), static_cast<double>(maxY - minY + 1)};
-
-    evidence.sha256 = sha256(pixels);
-    if (!writePpm(outputPath, evidence.width, evidence.height, pixels))
-        evidence.error = "failed to write PPM evidence";
+    evidence.framebuffer = framebuffer;
+    evidence.texture     = framebuffer->getTexture();
+    if (!evidence.texture)
+        evidence.error = "completed framebuffer did not expose a texture";
     return evidence;
 }
 
-std::optional<std::pair<std::string, std::string>> parseRequest(const std::string& argument) {
-    const auto separator = argument.find('|');
-    if (separator == std::string::npos || separator == 0 || separator + 1 == argument.size())
-        return std::nullopt;
-    const auto requestId = argument.substr(0, separator);
-    const auto path      = argument.substr(separator + 1);
-    if (requestId.size() > 128 || path.size() > 512 || path.find("..") != std::string::npos || !path.starts_with(PATH_PREFIX) || !path.ends_with(".ppm"))
-        return std::nullopt;
-    return std::pair{requestId, path};
+std::vector<std::string> splitRequest(const std::string& argument) {
+    std::vector<std::string> fields;
+    size_t                   start = 0;
+    while (start <= argument.size()) {
+        const auto separator = argument.find('|', start);
+        fields.emplace_back(argument.substr(start, separator == std::string::npos ? std::string::npos : separator - start));
+        if (separator == std::string::npos)
+            break;
+        start = separator + 1;
+    }
+    return fields;
 }
 
-SDispatchResult inspect(std::string argument) {
-    const auto request = parseRequest(argument);
-    if (!request)
-        return {.success = false, .error = "expected REQUEST_ID|/tmp/hyprexpo-scroll-probe-*.ppm"};
+bool validRequestId(const std::string& requestId) {
+    return !requestId.empty() && requestId.size() <= 128 &&
+        std::ranges::all_of(requestId, [](const unsigned char c) { return std::isalnum(c) || c == '.' || c == '_' || c == '-'; });
+}
+
+std::optional<STopology::SCandidate> selectCandidate(const STopology& topology, const std::string& selector) {
+    if (selector == "visible") {
+        const auto focused         = Desktop::focusState()->window();
+        const auto focusedIdentity = focused ? identity(focused) : "";
+        const auto selected        = std::ranges::find_if(topology.candidates, [&](const auto& candidate) {
+            return candidate.visible && candidate.windowIdentity == focusedIdentity;
+        });
+        if (selected != topology.candidates.end())
+            return *selected;
+        const auto firstVisible = std::ranges::find_if(topology.candidates, [](const auto& candidate) { return candidate.visible; });
+        return firstVisible == topology.candidates.end() ? std::nullopt : std::optional{*firstVisible};
+    }
+    if (selector == "offscreen") {
+        const auto selected = std::ranges::find_if(topology.candidates, [](const auto& candidate) { return !candidate.visible; });
+        return selected == topology.candidates.end() ? std::nullopt : std::optional{*selected};
+    }
+    const auto selected = std::ranges::find_if(topology.candidates, [&](const auto& candidate) {
+        return candidate.windowIdentity == selector || candidate.title == selector;
+    });
+    return selected == topology.candidates.end() ? std::nullopt : std::optional{*selected};
+}
+
+std::pair<CHyprColor, std::string> markerColor(const uint64_t generation, const std::string& requestId) {
+    uint32_t seed = static_cast<uint32_t>(generation * 2654435761ULL);
+    for (const unsigned char c : requestId)
+        seed = (seed * 33U) ^ c;
+    const uint8_t red   = static_cast<uint8_t>(96U + (seed & 0x7FU));
+    const uint8_t green = static_cast<uint8_t>(96U + ((seed >> 8U) & 0x7FU));
+    const uint8_t blue  = static_cast<uint8_t>(96U + ((seed >> 16U) & 0x7FU));
+    std::ostringstream hex;
+    hex << '#' << std::hex << std::setfill('0') << std::setw(2) << static_cast<unsigned int>(red) << std::setw(2) << static_cast<unsigned int>(green)
+        << std::setw(2) << static_cast<unsigned int>(blue);
+    return {CHyprColor{red / 255.F, green / 255.F, blue / 255.F, 1.F}, hex.str()};
+}
+
+void clearPendingState() {
+    if (!g_pending)
+        return;
+    g_pending->pendingOverlay      = false;
+    g_pending->pendingPassCount    = 0;
+    g_pending->pendingTexture      = {};
+    g_pending->pendingFramebuffer  = {};
+    g_pending.reset();
+}
+
+void emitFailure(const std::string& requestId, const uint64_t generation, const std::string& stage, const std::string& error) {
+    std::ostringstream record;
+    record << "{\"schema\":2,\"stage\":" << quoted(stage) << ",\"requestId\":" << quoted(requestId) << ",\"sessionGeneration\":" << generation
+           << ",\"hyprlandVersion\":" << quoted(EXPECTED_VERSION) << ",\"compileHash\":" << quoted(GIT_COMMIT_HASH)
+           << ",\"runtimeHash\":" << quoted(runtimeCommitHash()) << ",\"runtimeAbiHash\":" << quoted(runtimeAbiHash())
+           << ",\"mutationOutcome\":\"not-attempted\",\"rollbackStatus\":\"not-required\",\"status\":\"FAIL\",\"error\":" << quoted(error) << '}';
+    Log::logger->log(Log::INFO, "HYPREXPO_SCROLL_PROBE {}", record.str());
+}
+
+SDispatchResult present(std::string argument) {
+    const auto fields = splitRequest(argument);
+    if (fields.size() != 3 || fields[0] != "present" || !validRequestId(fields[1]) || fields[2].empty())
+        return {.success = false, .error = "expected present|REQUEST_ID|SELECTOR"};
+    if (g_pending)
+        return {.success = false, .error = "a diagnostic presentation is already pending acknowledgement"};
 
     const auto generation = ++g_sessionGeneration;
+    const auto& requestId  = fields[1];
     try {
-        const auto before = snapshotTopology();
-        if (!before.error.empty())
-            throw std::runtime_error(before.error);
-
-        const auto captureWindow = before.captureTarget->window();
-        if (!captureWindow)
-            throw std::runtime_error("capture target has no live window");
-        const auto capture = captureTarget(before.captureTarget, captureWindow, before.monitor, request->second);
+        const auto topologyBefore = snapshotTopology();
+        if (!topologyBefore.error.empty())
+            throw std::runtime_error(topologyBefore.error);
+        const auto candidate = selectCandidate(topologyBefore, fields[2]);
+        if (!candidate)
+            throw std::runtime_error(fields[2] == "offscreen" ? "no controller-classified offscreen target is available" : "requested target is unavailable");
+        const auto window = candidate->window.lock();
+        if (!window)
+            throw std::runtime_error("selected target window expired before capture");
+        const auto capture = captureTarget(candidate->target, candidate->window, topologyBefore.monitor);
         if (!capture.error.empty())
             throw std::runtime_error(capture.error);
 
-        const auto after = snapshotTopology();
-        if (!after.error.empty())
-            throw std::runtime_error(after.error);
+        const auto monitorWidth  = static_cast<int>(topologyBefore.monitor->m_pixelSize.x);
+        const auto monitorHeight = static_cast<int>(topologyBefore.monitor->m_pixelSize.y);
+        const auto textureX      = std::floor((monitorWidth - capture.width) / 2.0);
+        const auto textureY      = std::floor((monitorHeight - capture.height) / 2.0);
+        if (textureX < 56 || capture.width > monitorWidth || capture.height > monitorHeight)
+            throw std::runtime_error("target texture leaves no isolated marker margin on the recovery output");
+        const auto [color, colorHex] = markerColor(generation, requestId);
+        const CBox physicalTextureBox{textureX, textureY, static_cast<double>(capture.width), static_cast<double>(capture.height)};
+        const CBox logicalCropBox{topologyBefore.monitor->m_position.x + physicalTextureBox.x / topologyBefore.monitor->m_scale,
+                                  topologyBefore.monitor->m_position.y + physicalTextureBox.y / topologyBefore.monitor->m_scale,
+                                  physicalTextureBox.w / topologyBefore.monitor->m_scale, physicalTextureBox.h / topologyBefore.monitor->m_scale};
+        g_pending = SPendingRequest{.pendingGeneration = generation,
+                                    .requestId = requestId,
+                                    .monitor = topologyBefore.monitor,
+                                    .pendingFramebuffer = capture.framebuffer,
+                                    .pendingTexture = capture.texture,
+                                    .physicalTextureBox = physicalTextureBox,
+                                    .logicalCropBox = logicalCropBox,
+                                    .markerBox = {12, 12, 28, 28},
+                                    .markerColor = color,
+                                    .markerHex = colorHex,
+                                    .targetIdentity = identity(candidate->target.lock()),
+                                    .windowIdentity = candidate->windowIdentity,
+                                    .targetTitle = candidate->title,
+                                    .targetVisibility = candidate->visible ? "visible" : "offscreen",
+                                    .column = candidate->column,
+                                    .row = candidate->row,
+                                    .topologyBefore = topologyBefore.canonical,
+                                    .topologyBeforeJson = topologyBefore.json,
+                                    .activeWorkspaceBefore = topologyBefore.activeWorkspace,
+                                    .focusedWindowBefore = topologyBefore.focusedWindow};
+        g_pHyprRenderer->damageMonitor(topologyBefore.monitor);
 
-        const bool unchanged = before.canonical == after.canonical;
         std::ostringstream record;
-        record << "{\"schema\":1,\"requestId\":" << quoted(request->first) << ",\"sessionGeneration\":" << generation
+        record << "{\"schema\":2,\"stage\":\"READY\",\"requestId\":" << quoted(requestId) << ",\"sessionGeneration\":" << generation
                << ",\"hyprlandVersion\":" << quoted(EXPECTED_VERSION) << ",\"compileHash\":" << quoted(GIT_COMMIT_HASH)
-               << ",\"runtimeHash\":" << quoted(runtimeCommitHash()) << ",\"runtimeAbiHash\":" << quoted(runtimeAbiHash()) << ",\"monitor\":{\"id\":" << before.monitor->m_id
-               << ",\"name\":" << quoted(before.monitor->m_name) << ",\"pixelWidth\":" << before.monitor->m_pixelSize.x
-               << ",\"pixelHeight\":" << before.monitor->m_pixelSize.y << "},\"workspace\":{\"id\":" << before.workspace->m_id
-               << ",\"name\":" << quoted(before.workspace->m_name) << "},\"algorithmIdentity\":" << quoted(identity(before.algorithm))
-               << ",\"dataIdentity\":" << quoted(identity(before.data)) << ",\"direction\":" << quoted(directionName(before.direction))
-               << ",\"offsetBefore\":" << number(before.offset) << ",\"offsetAfter\":" << number(after.offset)
-               << ",\"columnsBefore\":" << before.json << ",\"columnsAfter\":" << after.json << ",\"topologyUnchanged\":" << (unchanged ? "true" : "false")
-               << ",\"capture\":{\"targetIdentity\":" << quoted(identity(before.captureTarget)) << ",\"windowIdentity\":" << quoted(identity(captureWindow))
-               << ",\"width\":" << capture.width << ",\"height\":" << capture.height << ",\"pixelCount\":" << static_cast<size_t>(capture.width) * capture.height
-               << ",\"nontransparentPixels\":" << capture.nontransparentPixels << ",\"nonBackgroundBounds\":" << boxJson(capture.nonBackgroundBounds)
-               << ",\"sha256\":" << quoted(capture.sha256) << ",\"imagePath\":" << quoted(capture.imagePath)
-               << ",\"rendererStateRestored\":" << (capture.rendererStateRestored ? "true" : "false")
-               << "},\"mutationOutcome\":\"not-attempted\",\"rollbackStatus\":\"not-required\",\"status\":" << quoted(unchanged ? "PASS" : "FAIL") << "}";
+               << ",\"runtimeHash\":" << quoted(runtimeCommitHash()) << ",\"runtimeAbiHash\":" << quoted(runtimeAbiHash())
+               << ",\"monitor\":{\"id\":" << topologyBefore.monitor->m_id << ",\"name\":" << quoted(topologyBefore.monitor->m_name)
+               << ",\"pixelWidth\":" << monitorWidth << ",\"pixelHeight\":" << monitorHeight << ",\"scale\":" << number(topologyBefore.monitor->m_scale)
+               << "},\"target\":{\"targetIdentity\":" << quoted(g_pending->targetIdentity) << ",\"windowIdentity\":" << quoted(candidate->windowIdentity)
+               << ",\"title\":" << quoted(candidate->title) << ",\"column\":" << candidate->column << ",\"row\":" << candidate->row
+               << ",\"visibility\":" << quoted(g_pending->targetVisibility) << ",\"primaryStart\":" << number(candidate->primaryStart)
+               << ",\"primarySize\":" << number(candidate->primarySize) << "},\"capture\":{\"width\":" << capture.width << ",\"height\":" << capture.height
+               << ",\"physicalTextureBox\":" << boxJson(physicalTextureBox) << ",\"logicalCropBox\":" << boxJson(logicalCropBox)
+               << ",\"rendererStateRestored\":" << (capture.rendererStateRestored ? "true" : "false") << "},\"marker\":{\"color\":" << quoted(colorHex)
+               << ",\"box\":" << boxJson(g_pending->markerBox) << "},\"topologyBefore\":" << topologyBefore.json
+               << ",\"activeWorkspaceBefore\":" << quoted(topologyBefore.activeWorkspace) << ",\"focusedWindowBefore\":" << quoted(topologyBefore.focusedWindow)
+               << ",\"pendingGeneration\":" << generation << ",\"pendingFramebuffer\":true,\"pendingTexture\":true,\"pendingOverlay\":false"
+               << ",\"mutationOutcome\":\"not-attempted\",\"rollbackStatus\":\"not-required\",\"status\":\"READY\"}";
         Log::logger->log(Log::INFO, "HYPREXPO_SCROLL_PROBE {}", record.str());
-        if (!unchanged)
-            return {.success = false, .error = "probe changed live scrolling topology or offset"};
         return {};
     } catch (const std::exception& error) {
-        std::ostringstream record;
-        record << "{\"schema\":1,\"requestId\":" << quoted(request->first) << ",\"sessionGeneration\":" << generation
-               << ",\"hyprlandVersion\":" << quoted(EXPECTED_VERSION) << ",\"compileHash\":" << quoted(GIT_COMMIT_HASH)
-               << ",\"runtimeHash\":" << quoted(runtimeCommitHash()) << ",\"runtimeAbiHash\":" << quoted(runtimeAbiHash())
-               << ",\"mutationOutcome\":\"not-attempted\",\"rollbackStatus\":\"not-required\",\"status\":\"FAIL\",\"error\":"
-               << quoted(error.what()) << "}";
-        Log::logger->log(Log::INFO, "HYPREXPO_SCROLL_PROBE {}", record.str());
+        clearPendingState();
+        emitFailure(requestId, generation, "READY", error.what());
         return {.success = false, .error = error.what()};
     } catch (...) {
-        std::ostringstream record;
-        record << "{\"schema\":1,\"requestId\":" << quoted(request->first) << ",\"sessionGeneration\":" << generation
-               << ",\"hyprlandVersion\":" << quoted(EXPECTED_VERSION) << ",\"compileHash\":" << quoted(GIT_COMMIT_HASH)
-               << ",\"runtimeHash\":" << quoted(runtimeCommitHash()) << ",\"runtimeAbiHash\":" << quoted(runtimeAbiHash())
-               << ",\"mutationOutcome\":\"not-attempted\",\"rollbackStatus\":\"not-required\",\"status\":\"FAIL\",\"error\":\"unknown exception\"}";
-        Log::logger->log(Log::INFO, "HYPREXPO_SCROLL_PROBE {}", record.str());
+        clearPendingState();
+        emitFailure(requestId, generation, "READY", "unknown exception");
         return {.success = false, .error = "unknown exception"};
+    }
+}
+
+SDispatchResult acknowledge(std::string argument) {
+    const auto fields = splitRequest(argument);
+    if (fields.size() != 3 || fields[0] != "ack" || !validRequestId(fields[1]))
+        return {.success = false, .error = "expected ack|REQUEST_ID|GENERATION"};
+    uint64_t generation = 0;
+    try {
+        size_t consumed = 0;
+        generation      = std::stoull(fields[2], &consumed);
+        if (consumed != fields[2].size())
+            return {.success = false, .error = "ack generation is invalid"};
+    } catch (...) {
+        return {.success = false, .error = "ack generation is invalid"};
+    }
+    if (!g_pending || g_pending->requestId != fields[1] || g_pending->pendingGeneration != generation)
+        return {.success = false, .error = "ack does not match the current pending request"};
+
+    const auto monitor = g_pending->monitor.lock();
+    g_cleanupHandshake = SCleanupHandshake{.generation = generation,
+                                            .requestId = fields[1],
+                                            .monitor = g_pending->monitor,
+                                            .topologyBefore = g_pending->topologyBefore,
+                                            .topologyBeforeJson = g_pending->topologyBeforeJson,
+                                            .activeWorkspaceBefore = g_pending->activeWorkspaceBefore,
+                                            .focusedWindowBefore = g_pending->focusedWindowBefore};
+    clearPendingState();
+    if (!monitor) {
+        g_cleanupHandshake.reset();
+        return {.success = false, .error = "pending monitor expired during acknowledgement"};
+    }
+    g_pHyprRenderer->damageMonitor(monitor);
+    return {};
+}
+
+void emitCleanupDone() {
+    if (!g_cleanupHandshake)
+        return;
+    const auto topologyAfter = snapshotTopology();
+    const auto unchanged = topologyAfter.error.empty() && topologyAfter.canonical == g_cleanupHandshake->topologyBefore &&
+        topologyAfter.activeWorkspace == g_cleanupHandshake->activeWorkspaceBefore && topologyAfter.focusedWindow == g_cleanupHandshake->focusedWindowBefore;
+    std::ostringstream record;
+    record << "{\"schema\":2,\"stage\":\"DONE\",\"requestId\":" << quoted(g_cleanupHandshake->requestId)
+           << ",\"sessionGeneration\":" << g_cleanupHandshake->generation << ",\"topologyBefore\":" << g_cleanupHandshake->topologyBeforeJson
+           << ",\"topologyAfter\":" << (topologyAfter.error.empty() ? topologyAfter.json : "null")
+           << ",\"topologyUnchanged\":" << (unchanged ? "true" : "false") << ",\"activeWorkspaceBefore\":" << quoted(g_cleanupHandshake->activeWorkspaceBefore)
+           << ",\"activeWorkspaceAfter\":" << quoted(topologyAfter.activeWorkspace) << ",\"focusedWindowBefore\":" << quoted(g_cleanupHandshake->focusedWindowBefore)
+           << ",\"focusedWindowAfter\":" << quoted(topologyAfter.focusedWindow)
+           << ",\"pendingGeneration\":null,\"pendingFramebuffer\":false,\"pendingTexture\":false,\"pendingOverlay\":false,\"pendingPassCount\":0"
+           << ",\"markerAbsentFromQueuedPass\":true,\"mutationOutcome\":\"not-attempted\",\"rollbackStatus\":\"not-required\",\"status\":"
+           << quoted(unchanged ? "PASS" : "FAIL");
+    if (!topologyAfter.error.empty())
+        record << ",\"error\":" << quoted(topologyAfter.error);
+    record << '}';
+    Log::logger->log(Log::INFO, "HYPREXPO_SCROLL_PROBE {}", record.str());
+    g_cleanupHandshake.reset();
+}
+
+void hkRenderWorkspace(void* thisptr, PHLMONITOR monitor, PHLWORKSPACE workspace, const Time::steady_tp& now, const CBox& geometry) {
+    ((origRenderWorkspace)g_pRenderWorkspaceHook->m_original)(thisptr, monitor, workspace, now, geometry);
+    try {
+        if (g_pending) {
+            const auto pendingMonitor = g_pending->monitor.lock();
+            if (!pendingMonitor || pendingMonitor != monitor || !g_pending->pendingTexture)
+                return;
+            const CBox outputBox{0, 0, pendingMonitor->m_pixelSize.x, pendingMonitor->m_pixelSize.y};
+            auto backdropData  = CRectPassElement::SRectData{};
+            backdropData.box   = outputBox;
+            backdropData.color = CHyprColor{0.02, 0.02, 0.025, 1.0};
+            g_pHyprRenderer->currentPass().add(makeUnique<CRectPassElement>(backdropData));
+            auto markerBorderData  = CRectPassElement::SRectData{};
+            markerBorderData.box   = {8, 8, 36, 36};
+            markerBorderData.color = CHyprColor{0, 0, 0, 1};
+            g_pHyprRenderer->currentPass().add(makeUnique<CRectPassElement>(markerBorderData));
+            auto markerData  = CRectPassElement::SRectData{};
+            markerData.box   = g_pending->markerBox;
+            markerData.color = g_pending->markerColor;
+            g_pHyprRenderer->currentPass().add(makeUnique<CRectPassElement>(markerData));
+            auto textureData   = CTexPassElement::SRenderData{};
+            textureData.tex    = g_pending->pendingTexture;
+            textureData.box    = g_pending->physicalTextureBox;
+            textureData.damage = CRegion{outputBox};
+            g_pHyprRenderer->currentPass().add(makeUnique<CTexPassElement>(std::move(textureData)));
+            g_pending->pendingOverlay   = true;
+            g_pending->pendingPassCount = 4;
+            return;
+        }
+        if (g_cleanupHandshake && g_cleanupHandshake->monitor.lock() == monitor)
+            emitCleanupDone();
+    } catch (const std::exception& error) {
+        const auto requestId  = g_pending ? g_pending->requestId : (g_cleanupHandshake ? g_cleanupHandshake->requestId : "render-hook");
+        const auto generation = g_pending ? g_pending->pendingGeneration : (g_cleanupHandshake ? g_cleanupHandshake->generation : 0);
+        emitFailure(requestId, generation, "RENDER", error.what());
+    } catch (...) {
+        const auto requestId  = g_pending ? g_pending->requestId : (g_cleanupHandshake ? g_cleanupHandshake->requestId : "render-hook");
+        const auto generation = g_pending ? g_pending->pendingGeneration : (g_cleanupHandshake ? g_cleanupHandshake->generation : 0);
+        emitFailure(requestId, generation, "RENDER", "unknown exception");
     }
 }
 
@@ -667,16 +716,34 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     if (std::string_view{GIT_TAG}.substr(1) != EXPECTED_VERSION || std::string_view{GIT_COMMIT_HASH} != EXPECTED_HASH || runtimeAbi != clientAbi ||
         !runtimeAbi.starts_with(EXPECTED_HASH))
         throw std::runtime_error("scrolling API probe requires exact Hyprland 0.56.1 / 5c9377c ABI");
-    const std::vector<uint8_t> shaSelfTest = {'a', 'b', 'c'};
-    if (sha256(shaSelfTest) != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
-        throw std::runtime_error("scrolling API probe SHA-256 self-test failed");
-    if (!HyprlandAPI::addDispatcherV2(g_handle, std::string{DISPATCHER}, inspect))
-        throw std::runtime_error("failed to register scrolling API probe dispatcher");
-    return {"hyprexpo-scroll-probe", "Read-only native scrolling topology and tight capture probe", "sandwich", "0.1.0"};
+    if (!HyprlandAPI::addDispatcherV2(g_handle, std::string{PRESENT_DISPATCHER}, present) ||
+        !HyprlandAPI::addDispatcherV2(g_handle, std::string{ACK_DISPATCHER}, acknowledge))
+        throw std::runtime_error("failed to register scrolling API probe dispatchers");
+
+    const auto functions = HyprlandAPI::findFunctionsByName(g_handle, "renderWorkspace");
+    if (functions.empty())
+        throw std::runtime_error("failed to resolve exact renderWorkspace hook target");
+    g_pRenderWorkspaceHook = HyprlandAPI::createFunctionHook(g_handle, functions[0].address, (void*)hkRenderWorkspace);
+    if (!g_pRenderWorkspaceHook || !g_pRenderWorkspaceHook->hook())
+        throw std::runtime_error("failed to install exact renderWorkspace hook");
+    return {"hyprexpo-scroll-probe", "GPU-only native scrolling target presentation probe", "sandwich", "0.2.0"};
 }
 
 APICALL EXPORT void PLUGIN_EXIT() {
-    if (g_handle)
-        HyprlandAPI::removeDispatcher(g_handle, std::string{DISPATCHER});
+    const auto monitor = g_pending ? g_pending->monitor.lock() : PHLMONITOR{};
+    clearPendingState();
+    g_cleanupHandshake.reset();
+    if (monitor)
+        g_pHyprRenderer->damageMonitor(monitor);
+    if (g_pRenderWorkspaceHook) {
+        g_pRenderWorkspaceHook->unhook();
+        if (g_handle)
+            HyprlandAPI::removeFunctionHook(g_handle, g_pRenderWorkspaceHook);
+        g_pRenderWorkspaceHook = nullptr;
+    }
+    if (g_handle) {
+        HyprlandAPI::removeDispatcher(g_handle, std::string{ACK_DISPATCHER});
+        HyprlandAPI::removeDispatcher(g_handle, std::string{PRESENT_DISPATCHER});
+    }
     g_handle = nullptr;
 }

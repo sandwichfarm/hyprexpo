@@ -125,6 +125,8 @@ int main() {
              "glGetIntegerv(",
              "glBindBuffer(",
              "glPixelStorei(",
+             "readPixels(",
+             "makeSnapshotFB(",
              "writePpm(",
              "std::ofstream",
              "PATH_PREFIX",
