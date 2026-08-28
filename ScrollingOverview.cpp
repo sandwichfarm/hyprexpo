@@ -205,7 +205,11 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
     }
 
     m_blockOverviewRendering = true;
-    Hyprutils::Utils::CScopeGuard captureGuard{[this]() { m_blockOverviewRendering = false; }};
+    m_blockDamageReporting   = true;
+    Hyprutils::Utils::CScopeGuard captureGuard{[this]() {
+        m_blockOverviewRendering = false;
+        m_blockDamageReporting   = false;
+    }};
     for (auto& row : m_rows) {
         if (row.kind != EWorkspaceKind::Mixed)
             continue;

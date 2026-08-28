@@ -360,6 +360,8 @@ int main() {
     expectContains(scrollingSource, "scrollingThumbnailBudgetMultiplier", "scrolling renderer reads the bounded monitor-relative config");
     expectContains(scrollingSource, "captureWorkspacePreview(", "mixed-layout rows reuse the sole workspace capture boundary");
     expectContains(scrollingSource, "m_blockOverviewRendering = true", "mixed-layout capture forces the original grid render path");
+    expectContains(scrollingSource, "m_blockDamageReporting   = true", "mixed-layout capture suppresses recursive damage feedback");
+    expectContains(sessionSource, "using grid fallback", "factory records native scrolling failures before compatibility fallback");
     expectContains(mainSource, "g_pOverview->onConfigReload()", "config reload invalidates the active session without a concrete downcast");
     expectAbsent(scrollingSource, "g_pHyprRenderer->renderWorkspace(", "scrolling renderer does not duplicate grid/mixed workspace capture");
 
