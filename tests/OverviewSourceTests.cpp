@@ -138,6 +138,20 @@ int main() {
     expect(numberSelection.find("number_key_mode") == std::string::npos && numberSelection.find("numberKeyToVisibleIndex") == std::string::npos,
            "kb_selectn semantics do not depend on the raw number-key mode");
 
+    const auto workspaceMoveHandler = extractFunction(interactionSource, "void COverview::onWindowMoveToWorkspace(");
+    expect(!workspaceMoveHandler.empty(), "workspace-move close handler exists");
+    const auto monitorRelevancePos = workspaceMoveHandler.find("const bool movedOnOverviewMonitor");
+    const auto classifierPos       = workspaceMoveHandler.find("Hyprexpo::shouldAbortOverviewCloseForWorkspaceMove(window->m_pinned, movedOnOverviewMonitor)");
+    const auto abortFlagPos        = workspaceMoveHandler.find("externalWorkspaceMoveDuringClose = true;");
+    const auto workspaceDamagePos  = workspaceMoveHandler.find("damage();", abortFlagPos);
+    const auto scheduleFramePos    = workspaceMoveHandler.find("monitor->scheduleFrame();", workspaceDamagePos);
+    expect(monitorRelevancePos != std::string::npos && classifierPos != std::string::npos && monitorRelevancePos < classifierPos,
+           "workspace-move handler classifies pin state after computing monitor relevance");
+    expect(classifierPos != std::string::npos && abortFlagPos != std::string::npos && classifierPos < abortFlagPos,
+           "workspace-move handler rejects pinned events before mutating close state");
+    expect(abortFlagPos != std::string::npos && workspaceDamagePos != std::string::npos && scheduleFramePos != std::string::npos && abortFlagPos < workspaceDamagePos && workspaceDamagePos < scheduleFramePos,
+           "accepted external moves retain flag, damage, and frame scheduling in order");
+
     const auto numberDispatcher = extractFunction(dispatchersSource, "static SDispatchResult onKbSelectNumberDispatcher(std::string arg) {");
     const auto indexDispatcher  = extractFunction(dispatchersSource, "static SDispatchResult onKbSelectIndexDispatcher(std::string arg) {");
     expect(numberDispatcher.find("g_pOverview->onKbSelectNumber(num)") != std::string::npos,
