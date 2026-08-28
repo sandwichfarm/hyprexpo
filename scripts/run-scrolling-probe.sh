@@ -7,9 +7,9 @@ EXPECTED_BASE="f3ed01d3b024e404563e7ce18efdf1583aaa8cba"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ARTIFACT_ROOT="$REPO_ROOT/.planning/quick/260828-w7w-implement-issue-85-provide-a-niri-like-o"
-RESULT="$ARTIFACT_ROOT/260828-w7w-00R-RESULT.md"
+RESULT="$ARTIFACT_ROOT/260828-w7w-00R2-RESULT.md"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
-EVIDENCE_DIR="/tmp/hyprexpo-scroll-probe-recovery-$RUN_ID"
+EVIDENCE_DIR="/tmp/hyprexpo-scroll-probe-normalized-recovery-$RUN_ID"
 BUILD_DIR="$EVIDENCE_DIR/build"
 CONFIG="$EVIDENCE_DIR/hyprland.conf"
 STDOUT_LOG="$EVIDENCE_DIR/hyprland-stdout.log"
@@ -373,15 +373,15 @@ write_fail() {
     {
         printf '%s\n' '---'
         printf 'status: FAIL\n'
-        printf 'plan: 260828-w7w-00R\n'
+        printf 'plan: 260828-w7w-00R2\n'
         printf 'run_id: %s\n' "$RUN_ID"
         printf 'evidence_dir: %s\n' "$EVIDENCE_DIR"
         printf '%s\n\n' '---'
-        printf '# Scrolling GPU Presentation Recovery Result\n\n'
+        printf '# Scrolling Normalized Content Recovery Result\n\n'
         printf '**Gate:** FAIL — Plans 01-05 remain blocked.\n\n'
         printf '**Failed command/stage:** `%s`\n\n' "$LAST_COMMAND"
         printf '**Evidence:** %s\n\n' "$reason"
-        printf 'The immutable Plan 00 result remains FAIL. No downstream plan is authorized.\n'
+        printf 'The immutable Plan 00 and Plan 00R results remain FAIL. No downstream plan is authorized.\n'
     } > "$RESULT"
 }
 
@@ -528,11 +528,11 @@ launch_pattern_client() {
                 *) bg="92;38;12"; fg="80;210;240" ;;
             esac
             printf "\033[2J\033[H\033[?25l\033[48;2;%sm  GPU TARGET %s  \033[0m\n\n\033[48;2;%sm UNIQUE BLOCK %s UNIQUE BLOCK \033[0m\n\nalpha-%s beta-%s gamma-%s\n" "$bg" "$PROBE_INDEX" "$fg" "$PROBE_INDEX" "$PROBE_INDEX" "$PROBE_INDEX" "$PROBE_INDEX"
-            while IFS= read -r command; do
-                if [ "$command" = change ]; then
+            while true; do
+                if IFS= read -r command < "$PROBE_FIFO" && [ "$command" = change ]; then
                     printf "\033[2J\033[H\033[?25l\033[48;2;150;20;40m  CHANGED GPU TARGET %s  \033[0m\n\n\033[48;2;20;80;220m BLUE CHANGED BLOCK %s BLUE CHANGED \033[0m\n\ndelta-%s epsilon-%s zeta-%s\n" "$PROBE_INDEX" "$PROBE_INDEX" "$PROBE_INDEX" "$PROBE_INDEX" "$PROBE_INDEX"
                 fi
-            done < "$PROBE_FIFO"' &
+            done' &
     CLIENT_PIDS+=("$!")
 }
 
@@ -554,6 +554,21 @@ hc dispatch layoutmsg consume >/dev/null
 hc dispatch focuswindow 'title:^(HYPREXPO-PROBE-1)$' >/dev/null
 sleep 0.5
 hc clients -j > "$EVIDENCE_DIR/clients-fixture.json"
+hc dismissnotify >/dev/null || true
+LAST_COMMAND="notification-free fixture settlement"
+fixture_settled=false
+for attempt in $(seq 1 20); do
+    hc dismissnotify >/dev/null || true
+    env WAYLAND_DISPLAY="$NESTED_SOCKET" grim -o "$NESTED_OUTPUT" -t ppm "$EVIDENCE_DIR/fixture-settle-a.ppm"
+    sleep 0.15
+    env WAYLAND_DISPLAY="$NESTED_SOCKET" grim -o "$NESTED_OUTPUT" -t ppm "$EVIDENCE_DIR/fixture-settle-b.ppm"
+    if cmp "$EVIDENCE_DIR/fixture-settle-a.ppm" "$EVIDENCE_DIR/fixture-settle-b.ppm" >/dev/null; then
+        fixture_settled=true
+        printf 'attempt=%s sha256=%s\n' "$attempt" "$(sha256sum "$EVIDENCE_DIR/fixture-settle-a.ppm" | cut -d' ' -f1)" > "$EVIDENCE_DIR/fixture-settlement.txt"
+        break
+    fi
+done
+[[ "$fixture_settled" == true ]] || die "notification-free fixture output did not settle"
 
 capture_state() {
     local path="$1"
@@ -652,7 +667,8 @@ if b['x'] < 0 or b['y'] < 0 or b['x'] + b['w'] > a['width'] or b['y'] + b['h'] >
 PY
 }
 
-declare -A READY_FILES=() DONE_FILES=() TIGHT_FILES=() FULL_FILES=() RESTORED_FILES=() STATE_BEFORE=() STATE_AFTER=() TIGHT_SHAS=()
+declare -A READY_FILES=() DONE_FILES=() TIGHT_FILES=() FULL_FILES=() RESTORED_FILES=() STATE_BEFORE=() STATE_AFTER=()
+declare -A RAW_TIGHT_SHAS=() NORMALIZED_SHAS=() CROP_SHAS=() CONTENT_ANALYSES=()
 
 run_request() {
     local label="$1"
@@ -668,11 +684,13 @@ run_request() {
     local full_analysis="$EVIDENCE_DIR/$label-full-analysis.json"
     local tight_analysis="$EVIDENCE_DIR/$label-tight-analysis.json"
     local restored_analysis="$EVIDENCE_DIR/$label-restored-analysis.json"
+    local content_analysis="$EVIDENCE_DIR/$label-content-analysis.json"
 
     guard_or_abort "before-request-$label"
     capture_state "$before"
     LAST_COMMAND="present $label"
     hc dispatch hyprexpo-scroll-probe:inspect "present|$request_id|$selector" >/dev/null || die "present dispatcher failed for $label"
+    guard_or_abort "after-present-$label"
     wait_for_record "$request_id" READY "$ready"
     PENDING_ID="$request_id"
     PENDING_GENERATION="$(jq -r '.sessionGeneration' "$ready")"
@@ -698,15 +716,17 @@ run_request() {
     for _ in $(seq 1 20); do
         env WAYLAND_DISPLAY="$NESTED_SOCKET" grim -o "$NESTED_OUTPUT" -t ppm "$full"
         ppm_analyze "$full" "$full_analysis" "$marker_x" "$marker_y"
-        if validate_marker "$ready" "$full_analysis" 2>/dev/null; then marker_ok=true; break; fi
+        if assert_raw_marker "$full" "$ready" 2>/dev/null; then marker_ok=true; break; fi
         sleep 0.05
     done
     [[ "$marker_ok" == true ]] || die "generation marker was not observable for $label"
     env WAYLAND_DISPLAY="$NESTED_SOCKET" grim -g "$crop_x,$crop_y ${crop_w}x${crop_h}" -t ppm "$tight"
     ppm_analyze "$tight" "$tight_analysis"
     validate_tight "$ready" "$tight_analysis" || die_primary "retained target texture was blank, uniform, corrupt, or wrongly sized for $label"
+    normalized_ppm_compare "$tight" "$ready" "$tight" "$ready" "$content_analysis" || die "normalization rejected raw target evidence for $label"
 
     LAST_COMMAND="ack and restore $label"
+    guard_or_abort "before-ack-$label"
     hc dispatch hyprexpo-scroll-probe:ack "ack|$request_id|$PENDING_GENERATION" >/dev/null || die "matching ack failed for $label"
     wait_for_record "$request_id" DONE "$done"
     PENDING_ID=""
@@ -731,14 +751,38 @@ run_request() {
     RESTORED_FILES["$label"]="$restored"
     STATE_BEFORE["$label"]="$before"
     STATE_AFTER["$label"]="$after"
-    TIGHT_SHAS["$label"]="$(sha256sum "$tight" | awk '{print $1}')"
+    CONTENT_ANALYSES["$label"]="$content_analysis"
+    RAW_TIGHT_SHAS["$label"]="$(jq -r '.left.rawTargetSha' "$content_analysis")"
+    NORMALIZED_SHAS["$label"]="$(jq -r '.left.normalizedTargetSha' "$content_analysis")"
+    CROP_SHAS["$label"]="$(jq -r '.left.contentCropSha' "$content_analysis")"
+}
+
+compare_stable_content() {
+    local left="$1"
+    local right="$2"
+    local comparison="$EVIDENCE_DIR/$left-vs-$right-content-comparison.json"
+    normalized_ppm_compare "${TIGHT_FILES[$left]}" "${READY_FILES[$left]}" "${TIGHT_FILES[$right]}" "${READY_FILES[$right]}" "$comparison"
+    jq -e '.left.normalizedTargetSha == .right.normalizedTargetSha and .outsideMaskAE == 0 and .outsideMaskRMSE == 0 and .outsideMaskBounds == null and .outsidePixelsPreserved == true' "$comparison" >/dev/null ||
+        die "unchanged normalized target content was unstable for $left/$right"
+    jq -e -n --argjson left "$(jq '.sessionGeneration' "${READY_FILES[$left]}")" --argjson right "$(jq '.sessionGeneration' "${READY_FILES[$right]}")" \
+        --arg leftColor "$(jq -r '.marker.color' "${READY_FILES[$left]}")" --arg rightColor "$(jq -r '.marker.color' "${READY_FILES[$right]}")" \
+        '$left != $right and $leftColor != $rightColor' >/dev/null || die "unchanged pair did not carry distinct raw generation markers"
+}
+
+compare_changed_content() {
+    local left="$1"
+    local right="$2"
+    local comparison="$EVIDENCE_DIR/$left-vs-$right-content-comparison.json"
+    normalized_ppm_compare "${TIGHT_FILES[$left]}" "${READY_FILES[$left]}" "${TIGHT_FILES[$right]}" "${READY_FILES[$right]}" "$comparison"
+    jq -e '.left.normalizedTargetSha != .right.normalizedTargetSha and .outsideMaskAE > 0 and .outsideMaskRMSE > 0 and .outsideMaskBounds != null and .outsidePixelsPreserved == true' "$comparison" >/dev/null ||
+        die "controlled target change did not alter normalized content outside the marker mask"
 }
 
 LAST_COMMAND="visible stable generations"
 run_request visible-a1 visible
 VISIBLE_ID="$(jq -r '.target.windowIdentity' "${READY_FILES[visible-a1]}")"
 run_request visible-a2 "$VISIBLE_ID"
-[[ "${TIGHT_SHAS[visible-a1]}" == "${TIGHT_SHAS[visible-a2]}" ]] || die "unchanged visible target SHA-256 was unstable"
+compare_stable_content visible-a1 visible-a2
 
 LAST_COMMAND="offscreen stable generations"
 run_request offscreen-b1 offscreen
@@ -746,28 +790,43 @@ OFFSCREEN_ID="$(jq -r '.target.windowIdentity' "${READY_FILES[offscreen-b1]}")"
 OFFSCREEN_TITLE="$(jq -r '.target.title' "${READY_FILES[offscreen-b1]}")"
 [[ "$OFFSCREEN_ID" != "$VISIBLE_ID" ]] || die "visible and offscreen selectors resolved the same target"
 run_request offscreen-b2 "$OFFSCREEN_ID"
-[[ "${TIGHT_SHAS[offscreen-b1]}" == "${TIGHT_SHAS[offscreen-b2]}" ]] || die "unchanged offscreen target SHA-256 was unstable"
+compare_stable_content offscreen-b1 offscreen-b2
 
 LAST_COMMAND="controlled offscreen content change"
 [[ -n "${CLIENT_FIFOS[$OFFSCREEN_TITLE]:-}" ]] || die "offscreen target title did not map to a controlled FIFO"
 printf 'change\n' > "${CLIENT_FIFOS[$OFFSCREEN_TITLE]}"
 sleep 0.75
+hc clients -j | jq -e --arg address "$OFFSCREEN_ID" 'any(.[]; .address == $address)' >/dev/null || die "controlled offscreen target exited after FIFO content change"
 run_request offscreen-b-changed "$OFFSCREEN_ID"
-[[ "${TIGHT_SHAS[offscreen-b1]}" != "${TIGHT_SHAS[offscreen-b-changed]}" ]] || die "controlled offscreen content change did not alter tight SHA-256"
+compare_changed_content offscreen-b1 offscreen-b-changed
 
 LAST_COMMAND="final health and unload"
 hc plugin list -j > "$EVIDENCE_DIR/plugins-before-unload.json"
 hc configerrors -j > "$EVIDENCE_DIR/config-errors-final.json"
 jq -e 'length == 1 and .[0].name == "hyprexpo-scroll-probe"' "$EVIDENCE_DIR/plugins-before-unload.json" >/dev/null || die "probe plugin health changed after generations"
 jq -e '[.[] | select(length > 0)] | length == 0' "$EVIDENCE_DIR/config-errors-final.json" >/dev/null || die "nested config errors appeared"
-if rg -n 'ASSERT|SIG(SEGV|ABRT)|stack trace|terminate called|std::exception|resource leak' "$INSTANCE_LOG" "$STDOUT_LOG" > "$EVIDENCE_DIR/fatal-log-scan.txt"; then
-    die "nested logs contain a fatal/assertion/resource-leak signature"
-fi
+guard_or_abort before-final-unload
 hc plugin unload "$PROBE_SO" >/dev/null || die "probe plugin unload failed"
 sleep 0.15
 hc plugin list -j > "$EVIDENCE_DIR/plugins-after-unload.json"
+hc configerrors -j > "$EVIDENCE_DIR/config-errors-after-unload.json"
 jq -e 'length == 0' "$EVIDENCE_DIR/plugins-after-unload.json" >/dev/null || die "probe plugin remained loaded after unload"
+jq -e '[.[] | select(length > 0)] | length == 0' "$EVIDENCE_DIR/config-errors-after-unload.json" >/dev/null || die "nested config errors appeared after unload"
 kill -0 "$NESTED_PID" 2>/dev/null || die "nested compositor exited during unload"
+env WAYLAND_DISPLAY="$NESTED_SOCKET" grim -o "$NESTED_OUTPUT" -t ppm "$EVIDENCE_DIR/post-unload-restored.ppm"
+ppm_analyze "$EVIDENCE_DIR/post-unload-restored.ppm" "$EVIDENCE_DIR/post-unload-restored-analysis.json" \
+    "$(jq -r '.marker.box.x + (.marker.box.w / 2) | floor' "${READY_FILES[offscreen-b-changed]}")" \
+    "$(jq -r '.marker.box.y + (.marker.box.h / 2) | floor' "${READY_FILES[offscreen-b-changed]}")"
+if validate_marker "${READY_FILES[offscreen-b-changed]}" "$EVIDENCE_DIR/post-unload-restored-analysis.json" 2>/dev/null; then
+    die "request marker remained after explicit probe unload"
+fi
+if rg -n 'ASSERT|SIG(SEGV|ABRT)|stack trace|terminate called|std::exception|resource leak' "$INSTANCE_LOG" "$STDOUT_LOG" > "$EVIDENCE_DIR/fatal-log-scan.txt"; then
+    die "nested logs contain a fatal/assertion/resource-leak signature"
+fi
+for label in visible-a1 visible-a2 offscreen-b1 offscreen-b2 offscreen-b-changed; do
+    jq -e '.stage == "READY" and .status == "READY"' "${READY_FILES[$label]}" >/dev/null
+    jq -e '.stage == "DONE" and .status == "PASS" and .pendingGeneration == null' "${DONE_FILES[$label]}" >/dev/null
+done
 guard_or_abort after-final-unload
 cp "$INSTANCE_LOG" "$EVIDENCE_DIR/hyprland-instance.log"
 
@@ -775,37 +834,45 @@ LAST_COMMAND="PASS result write"
 {
     printf '%s\n' '---'
     printf 'status: PASS\n'
-    printf 'plan: 260828-w7w-00R\n'
+    printf 'plan: 260828-w7w-00R2\n'
     printf 'run_id: %s\n' "$RUN_ID"
     printf 'evidence_dir: %s\n' "$EVIDENCE_DIR"
     printf '%s\n\n' '---'
-    printf '# Scrolling GPU Presentation Recovery Result\n\n'
+    printf '# Scrolling Normalized Content Recovery Result\n\n'
     printf '**Gate:** PASS — pending exact human approval; Plans 01-05 remain blocked until approval.\n\n'
     printf '## Runtime Contract\n\n'
     printf -- '- Hyprland `%s` / `%s`; nested PID `%s` survived capture and unload.\n' "$EXPECTED_VERSION" "$EXPECTED_HASH" "$NESTED_PID"
     printf -- '- Probe used only retained GPU framebuffer textures; grim used nested `WAYLAND_DISPLAY=%s` and output `%s`.\n' "$NESTED_SOCKET" "$NESTED_OUTPUT"
-    printf -- '- Five request generations reached READY -> marker/full+tight PPM -> ack -> marker-free DONE/restored PPM.\n'
+    printf -- '- Five request generations reached READY -> raw marker/full+tight PPM -> normalized comparison -> ack -> marker-free DONE/restored PPM.\n'
     printf -- '- Every generation preserved canonical direction/offset/column widths/target membership and exact active-workspace/focus/client state.\n'
-    printf -- '- Probe unload left zero plugins, an alive compositor, empty config errors, and a clean fatal-log scan.\n\n'
+    printf -- '- Probe unload left zero plugins, an alive compositor, empty config errors, no pending generation records, a marker-free output, and a clean fatal-log scan.\n\n'
     printf '## Pixel Evidence\n\n'
+    printf -- '- Raw marker correlation precedes normalization for every generation. The fixed mask is `x=634..648, y=60..61`, canonical RGB `0,0,0`; every outside pixel is preserved.\n'
     for label in visible-a1 visible-a2 offscreen-b1 offscreen-b2 offscreen-b-changed; do
-        printf -- '- `%s`: target `%s` / `%s` (%s), generation `%s`, marker `%s`, tight `%s`, SHA `%s`, full `%s`, restored `%s`.\n' \
+        printf -- '- `%s`: target `%s` / `%s` (%s), generation `%s`, raw marker `%s`, tight `%s`, raw SHA `%s`, normalized SHA `%s`, content-crop SHA `%s`, analysis `%s`, full `%s`, restored `%s`.\n' \
             "$label" "$(jq -r '.target.windowIdentity' "${READY_FILES[$label]}")" "$(jq -r '.target.title' "${READY_FILES[$label]}")" \
             "$(jq -r '.target.visibility' "${READY_FILES[$label]}")" "$(jq -r '.sessionGeneration' "${READY_FILES[$label]}")" \
-            "$(jq -r '.marker.color' "${READY_FILES[$label]}")" "${TIGHT_FILES[$label]}" "${TIGHT_SHAS[$label]}" "${FULL_FILES[$label]}" "${RESTORED_FILES[$label]}"
+            "$(jq -r '.marker.color' "${READY_FILES[$label]}")" "${TIGHT_FILES[$label]}" "${RAW_TIGHT_SHAS[$label]}" "${NORMALIZED_SHAS[$label]}" \
+            "${CROP_SHAS[$label]}" "${CONTENT_ANALYSES[$label]}" "${FULL_FILES[$label]}" "${RESTORED_FILES[$label]}"
     done
-    printf '\n- Visible unchanged SHA equality: `%s`.\n' "${TIGHT_SHAS[visible-a1]}"
-    printf -- '- Offscreen unchanged SHA equality: `%s`.\n' "${TIGHT_SHAS[offscreen-b1]}"
-    printf -- '- Offscreen changed SHA: `%s` (different: PASS).\n\n' "${TIGHT_SHAS[offscreen-b-changed]}"
+    printf '\n- Visible unchanged normalized SHA equality: `%s`; outside-mask AE/RMSE `0/0`.\n' "${NORMALIZED_SHAS[visible-a1]}"
+    printf -- '- Offscreen unchanged normalized SHA equality: `%s`; outside-mask AE/RMSE `0/0`.\n' "${NORMALIZED_SHAS[offscreen-b1]}"
+    changed_comparison="$EVIDENCE_DIR/offscreen-b1-vs-offscreen-b-changed-content-comparison.json"
+    printf -- '- Offscreen changed normalized SHA: `%s`; outside-mask AE `%s`, RMSE `%s`, bounds `%s`; comparison `%s`.\n\n' \
+        "${NORMALIZED_SHAS[offscreen-b-changed]}" "$(jq -r '.outsideMaskAE' "$changed_comparison")" "$(jq -r '.outsideMaskRMSE' "$changed_comparison")" \
+        "$(jq -c '.outsideMaskBounds' "$changed_comparison")" "$changed_comparison"
     printf '## Correlated Records\n\n'
     for label in visible-a1 visible-a2 offscreen-b1 offscreen-b2 offscreen-b-changed; do
         printf -- '- `%s`: READY `%s`; DONE `%s`; state before/after `%s`, `%s`.\n' "$label" "${READY_FILES[$label]}" "${DONE_FILES[$label]}" "${STATE_BEFORE[$label]}" "${STATE_AFTER[$label]}"
     done
     printf '\n## Guards and Health\n\n'
     printf -- '- Recovery guard log: `%s`\n' "$GUARD_LOG"
-    printf -- '- Runtime/plugin/config/log evidence: `%s`\n\n' "$EVIDENCE_DIR"
-    printf 'The immutable Plan 00 result remains FAIL. Plan 01 may begin only after the exact signal `00R GPU capture approved`.\n'
+    printf -- '- Marker-free post-unload output: `%s`\n' "$EVIDENCE_DIR/post-unload-restored.ppm"
+    printf -- '- Explicit unload/plugin absence/config/PID/marker/log evidence: `%s`\n\n' "$EVIDENCE_DIR"
+    printf 'The immutable Plan 00 and Plan 00R results remain FAIL. Plan 01 may begin only after the exact signal `00R2 normalized capture approved`.\n'
 } > "$RESULT"
+
+guard_or_abort after-result-write
 
 echo "[scrolling-probe] PASS"
 echo "[scrolling-probe] result: $RESULT"
