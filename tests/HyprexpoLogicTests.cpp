@@ -246,7 +246,7 @@ void checkScrollingSceneAndInputMath() {
 
     const SFocusRef first{.kind = EHitKind::Target, .workspaceID = 1, .targetToken = 101};
     const auto right = moveFocus(scene, first, EFocusDirection::Right);
-    expect(right.kind == EHitKind::Target && right.targetToken == 201, "spatial focus moves deterministically across columns");
+    expect(right.kind == EHitKind::Target && right.targetToken == 202, "spatial focus chooses the closest aligned target across columns deterministically");
     const auto down = moveFocus(scene, first, EFocusDirection::Down);
     expect(down.kind == EHitKind::EmptyWorkspace && down.workspaceID == 2, "spatial focus moves deterministically across rows");
     expect(moveFocus(scene, first, EFocusDirection::Left).targetToken == 101, "spatial focus stays put when no candidate exists");
@@ -257,9 +257,10 @@ void checkScrollingDropIntents() {
 
     const auto scene = scrollingScene();
     const auto& target = scene.targets[1];
+    const auto& rowTarget = scene.targets[2];
     const SDropSource source{.workspaceID = 1, .columnIndex = 1, .rowIndex = 0, .sourceColumnWillDisappear = false};
 
-    auto intent = resolveDrop(scene, source, {target.box.x + target.box.w / 2.0, target.box.y + target.box.h * 0.9}, 0.0);
+    auto intent = resolveDrop(scene, source, {rowTarget.box.x + rowTarget.box.w / 2.0, rowTarget.box.y + rowTarget.box.h * 0.9}, 0.0);
     expect(intent.kind == EDropKind::ExistingColumn && intent.placement == EColumnPlacement::Existing && intent.rowIndex == 1,
            "drop center resolves same-column row reorder");
 
