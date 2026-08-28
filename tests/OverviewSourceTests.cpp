@@ -306,6 +306,68 @@ int main() {
     expectContains(makefile, "OverviewCapture.cpp", "Make production sources include the shared capture boundary");
     expectContains(makefile, "OverviewCapture.hpp", "Make headers include the shared capture boundary");
 
+    const auto sessionHeader   = readFile("IOverviewSession.hpp");
+    const auto sessionSource   = readFile("IOverviewSession.cpp");
+    const auto scrollingHeader = readFile("ScrollingOverview.hpp");
+    const auto scrollingSource = readFile("ScrollingOverview.cpp");
+    const auto passSource      = readFile("OverviewPassElement.cpp");
+    const auto gestureSource   = readFile("ExpoGesture.cpp");
+    expect(!sessionHeader.empty() && !sessionSource.empty(), "common overview session interface and factory can be read from repo root");
+    expect(!scrollingHeader.empty() && !scrollingSource.empty(), "read-only scrolling session source can be read from repo root");
+
+    for (const auto& token : {"class IOverviewSession", "virtual ~IOverviewSession", "virtual void render()", "virtual void damage()", "virtual void onDamageReported()",
+                              "virtual void onPreRender()", "virtual void fullRender()", "virtual void close(", "virtual bool closeCommitted()", "virtual void setClosing(",
+                              "virtual void resetSwipe()", "virtual void onSwipeUpdate(", "virtual void onSwipeEnd()", "virtual void onWindowMoveToWorkspace(",
+                              "virtual void selectHoveredWorkspace()", "virtual void onKbMoveFocus(", "virtual void onKbConfirm()", "virtual void onKbSelectNumber(",
+                              "virtual void onKbSelectToken(", "virtual bool selectVisibleToken(", "virtual int64_t selectedWorkspaceID()", "virtual bool selectWorkspaceByID(",
+                              "virtual bool selectVisibleIndex(", "virtual bool moveWindowBetweenVisibleIndices(", "virtual bool blocksOverviewRendering()",
+                              "virtual bool blocksDamageReporting()", "virtual bool isSwiping()", "virtual PHLMONITOR monitor()", "virtual uint64_t sessionGeneration()"})
+        expectContains(sessionHeader, token, "session interface covers caller surface " + std::string{token});
+    expectContains(sessionHeader, "std::unique_ptr<IOverviewSession> g_pOverview", "one polymorphic owner stores the active session");
+    expectContains(sessionHeader, "createOverviewSession", "session factory is declared beside the polymorphic owner");
+    expectContains(source, "class COverview final : public IOverviewSession", "existing grid overview implements the common interface without mode branches");
+    expectAbsent(source, "inline std::unique_ptr<COverview> g_pOverview", "grid header no longer owns a concrete global session");
+
+    for (const auto& token : {"snapshotWorkspace(startedOn)", "CScrollingOverview", "COverview", "std::make_unique<CScrollingOverview>", "std::make_unique<COverview>"})
+        expectContains(sessionSource, token, "factory implements guarded selection token " + std::string{token});
+    expectOrder(sessionSource, "snapshotWorkspace(startedOn)", "std::make_unique<CScrollingOverview>", "factory snapshots live native state before selecting scrolling");
+    expectOrder(sessionSource, "std::make_unique<CScrollingOverview>", "std::make_unique<COverview>", "factory retains grid fallback after scrolling construction failure");
+    expectContains(dispatchersSource, "createOverviewSession(", "dispatcher creates sessions through the single factory");
+    expectContains(gestureSource, "createOverviewSession(", "gesture creates sessions through the single factory");
+    expectAbsent(dispatchersSource + gestureSource, "std::make_unique<COverview>", "callers never instantiate the concrete grid implementation");
+
+    for (const auto& token : {"->pMonitor", "->m_isSwiping", "->blockOverviewRendering", "->blockDamageReporting"})
+        expectAbsent(mainSource + dispatchersSource + passSource + gestureSource, token, "external callers avoid concrete session field " + std::string{token});
+    for (const auto& token : {"blocksOverviewRendering()", "blocksDamageReporting()", "isSwiping()", "monitor()"})
+        expectContains(mainSource + dispatchersSource + passSource, token, "external callers use virtual accessor " + std::string{token});
+    expectAbsent(mainSource + dispatchersSource + passSource + gestureSource, "dynamic_cast<COverview", "session callers contain no concrete overview downcast");
+
+    expectContains(passSource, "sessionGeneration()", "render pass validates the active session identity");
+    expectContains(passSource, "m_sessionGeneration", "render pass retains only an immutable generation identity");
+    expectOrder(passSource, "if (!g_pOverview", "g_pOverview->fullRender()", "render pass null-checks before virtual rendering");
+    expectContains(mainSource, "g_pOverview.reset();", "plugin exit destroys the session owner");
+    expectOrder(mainSource, "g_pOverview.reset();", "removeAllOfType", "plugin exit destroys session-owned GPU state before pass removal");
+
+    for (const auto& token : {"class CScrollingOverview final : public IOverviewSession", "SCacheKey", "sessionGeneration", "workspaceID", "targetToken",
+                              "contentDamageGeneration", "captureWidth", "captureHeight", "budgetGeneration", "PHLWINDOWREF", "WP<Layout::ITarget>", "releaseCacheEntry"})
+        expectContains(scrollingHeader + scrollingSource, token, "scrolling session exposes bounded cache/lifetime token " + std::string{token});
+    for (const auto& token : {"snapshotWorkspace(", "buildScene(", "initialPan(", "planCaptureBudget(", "captureWindowPreview(", "captureWorkspacePreview(",
+                              "EWorkspaceKind::Scrolling", "EWorkspaceKind::Mixed", "EWorkspaceKind::Empty", "EWorkspaceKind::Terminal", "group", "floating", "fullscreen", "pinned"})
+        expectContains(scrollingSource, token, "scrolling renderer covers full read-only scene token " + std::string{token});
+    expectOrder(scrollingSource, "releaseCacheEntry", "captureWindowPreview(", "stale cache ownership is released before replacement capture");
+    expectContains(scrollingSource, "scrollingThumbnailBudgetMultiplier", "scrolling renderer reads the bounded monitor-relative config");
+    expectContains(scrollingSource, "captureWorkspacePreview(", "mixed-layout rows reuse the sole workspace capture boundary");
+    expectAbsent(scrollingSource, "g_pHyprRenderer->renderWorkspace(", "scrolling renderer does not duplicate grid/mixed workspace capture");
+
+    for (const auto& token : {"input.mouse.move", "input.mouse.button", "input.mouse.axis", "input.touch.down", "input.touch.motion", "input.touch.up", "input.touch.cancel",
+                              "beginDragTarget", "moveWindowToWorkspace", ".moveTape(", ".setOffset(", ".addStrip(", ".removeStrip(", ".setColumnWidth(", ".setTargetSize(", ".recalculate("})
+        expectAbsent(scrollingSource, token, "Plan 02 scrolling session stays read-only and input-free: " + std::string{token});
+
+    expectContains(makefile, "IOverviewSession.cpp", "Make production sources include the overview factory");
+    expectContains(makefile, "ScrollingOverview.cpp", "Make production sources include the scrolling renderer");
+    expectContains(makefile, "IOverviewSession.hpp", "Make headers include the overview interface");
+    expectContains(makefile, "ScrollingOverview.hpp", "Make headers include the scrolling renderer contract");
+
     if (failures != 0)
         return 1;
 
