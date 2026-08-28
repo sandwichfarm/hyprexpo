@@ -50,6 +50,20 @@ std::string extractFunction(const std::string& source, const std::string& signat
     return {};
 }
 
+void expectContains(const std::string& source, const std::string& token, const std::string& label) {
+    expect(source.find(token) != std::string::npos, label);
+}
+
+void expectAbsent(const std::string& source, const std::string& token, const std::string& label) {
+    expect(source.find(token) == std::string::npos, label);
+}
+
+void expectOrder(const std::string& source, const std::string& first, const std::string& second, const std::string& label) {
+    const auto firstPosition = source.find(first);
+    const auto secondPosition = source.find(second);
+    expect(firstPosition != std::string::npos && secondPosition != std::string::npos && firstPosition < secondPosition, label);
+}
+
 }
 
 int main() {
@@ -202,6 +216,41 @@ int main() {
     expect(disablePos < reloadPos, "the registration fence is set before the teardown reload re-runs the config");
 
     expect(mainSource.find("config.reloaded.listen") != std::string::npos, "the gesture is re-applied after every config reload");
+
+    const auto adapterHeader = readFile("ScrollingLayoutAdapter.hpp");
+    const auto adapterSource = readFile("ScrollingLayoutAdapter.cpp");
+    const auto diagnosticSource = readFile("ScrollingDiagnostics.cpp");
+    const auto diagnosticScript = readFile("scripts/read-scrolling-diagnostic.sh");
+    expect(!adapterHeader.empty() && !adapterSource.empty(), "scrolling adapter source can be read from repo root");
+    expect(!diagnosticSource.empty() && !diagnosticScript.empty(), "scrolling diagnostic source and reader can be read from repo root");
+
+    for (const auto& token : {"NullWorkspace", "InertWorkspace", "MissingSpace", "MissingAlgorithm", "MissingTiledAlgorithm", "WrongAlgorithmName", "CastFailure", "ExpiredTarget",
+                              "ExpiredColumn", "ExpiredData", "MissingScrollingData", "ColumnCardinalityMismatch", "TargetCardinalityMismatch", "InvalidGeometry"})
+        expectContains(adapterHeader, token, "adapter exposes typed fail-closed result " + std::string{token});
+    for (const auto& token : {"workspace->inert()", "workspace->m_space", "algorithm()", "tiledAlgo()", "algoMatcher()->getNameForTiledAlgo", "dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>",
+                              "dataFor(target)", ".lock()", "stripCount()", "getDirection()", "getOffset()", "getStrip(", "targetSizes.size()", "targetDatas.size()", "calculateStripStart(",
+                              "calculateStripSize(", "layoutBox", "windowStableID", "algorithmFingerprint", "dataFingerprint"})
+        expectContains(adapterSource, token, "adapter implements guarded snapshot token " + std::string{token});
+    expectOrder(adapterSource, "algoMatcher()->getNameForTiledAlgo", "dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>", "adapter verifies matcher name before dynamic cast");
+    expectOrder(adapterSource, "dataFor(target)", "column->scrollingData.lock()", "adapter locks native ownership hops after resolving target data");
+
+    for (const auto& token : {".moveTape(", ".moveTapeNormalized(", ".snapToGrid(", ".setOffset(", ".adjustOffset(", ".centerCol(", ".fitCol(", ".focusColumn(", ".addStrip(",
+                              ".insertStrip(", ".removeStrip(", ".swapStrips(", ".setColumnWidth(", ".setTargetSize(", ".recalculate(", "beginDragTarget", "moveWindowToWorkspace", "glReadPixels(",
+                              "readPixels(", "std::ofstream", "m_title", "m_class"})
+        expectAbsent(adapterSource + diagnosticSource, token, "read-only adapter/diagnostic forbids " + std::string{token});
+    expectAbsent(adapterHeader, "CScrollingAlgorithm*", "adapter DTO/header retains no raw scrolling algorithm pointer");
+
+    for (const auto& token : {"requestId", "sessionGeneration", "hyprlandVersion", "runtimeHash", "clientHash", "monitorId", "workspaceId", "algorithmFingerprint", "dataFingerprint", "direction",
+                              "offsetBefore", "offsetAfter", "activeWorkspaceBefore", "activeWorkspaceAfter", "focusedWindowBefore", "focusedWindowAfter", "columns", "targets", "layoutBox", "visible",
+                              "group", "floating", "fullscreen", "pinned", "captureStatus", "retainedFramebuffer", "physicalPresentationBox", "logicalCropBox", "acknowledged", "cleanupComplete",
+                              "topologyEqual", "directionEqual", "offsetEqual", "orderEqual", "widthsEqual", "membershipEqual", "sizesEqual", "mutationOutcome", "rollbackStatus", "status"})
+        expectContains(diagnosticSource, token, "diagnostic JSON includes observability field " + std::string{token});
+    expectContains(diagnosticSource, "snapshotWorkspace", "diagnostic serializes copied adapter snapshots");
+    expectContains(diagnosticSource, "snapshotsEquivalent", "diagnostic performs before/after readback equality");
+    expectContains(dispatchersSource, "hyprexpo:scrolling_debug", "read-only scrolling diagnostic dispatcher is registered");
+    expectContains(dispatchersSource, "HYPREXPO_SCROLLING_DIAGNOSTIC {}", "dispatcher emits one structured diagnostic log record");
+    expectContains(diagnosticScript, "expected exactly one diagnostic record", "reader rejects missing or duplicate request records");
+    expectContains(diagnosticScript, "valid_request_id", "reader validates the request ID before filtering logs");
 
     if (failures != 0)
         return 1;
