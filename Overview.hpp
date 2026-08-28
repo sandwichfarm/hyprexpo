@@ -40,7 +40,7 @@ class COverview {
 
     void resetSwipe();
     void onSwipeUpdate(double delta);
-    void onSwipeEnd();
+    void onSwipeEnd(bool switchToSelection);
 
     // close without a selection
     void          close(bool switchToSelection = true);

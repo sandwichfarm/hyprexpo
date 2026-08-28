@@ -517,11 +517,13 @@ static SDispatchResult registerExpoGesture(int fingerCount, const std::string& d
 
     std::expected<void, std::string> result;
     if (action == "expo")
-        result = g_pTrackpadGestures->addGesture(makeUnique<CExpoGesture>(), fingerCount, direction, modMask, deltaScale, disableInhibit);
+        result = g_pTrackpadGestures->addGesture(makeUnique<CExpoGesture>(EExpoGestureAction::Expo), fingerCount, direction, modMask, deltaScale, disableInhibit);
+    else if (action == "cancel")
+        result = g_pTrackpadGestures->addGesture(makeUnique<CExpoGesture>(EExpoGestureAction::Cancel), fingerCount, direction, modMask, deltaScale, disableInhibit);
     else if (action == "unset")
         result = g_pTrackpadGestures->removeGesture(fingerCount, direction, modMask, deltaScale, disableInhibit);
     else
-        return {.success = false, .error = std::format("invalid action '{}', expected expo|unset", action)};
+        return {.success = false, .error = std::format("invalid action '{}', expected expo|cancel|unset", action)};
 
     if (!result)
         return {.success = false, .error = result.error()};

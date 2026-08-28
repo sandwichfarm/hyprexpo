@@ -111,7 +111,7 @@ Pinned windows, including browser Picture-in-Picture windows, stay pinned and vi
 
 ### Trackpad gesture
 
-`gesture_fingers` and `gesture_direction` register the same interactive, follow-your-finger overview gesture that [`hl.plugin.hyprexpo.gesture{}`](../guides/lua-gestures.md) provides, but from plain config. Hyprland selects either hyprlang or Lua for the whole config and a `.lua` cannot be sourced from a `.conf`, so hyprlang users need this to reach the gesture at all.
+`gesture_fingers` and `gesture_direction` register the interactive, follow-your-finger `expo` gesture from plain config. They remain expo-only; registering the `cancel` action requires [`hl.plugin.hyprexpo.gesture{}`](../guides/lua-gestures.md) in a Lua config. Hyprland selects either hyprlang or Lua for the whole config and a `.lua` cannot be sourced from a `.conf`, so hyprlang users need these keys to reach the expo gesture at all.
 
 ```ini
 plugin {

@@ -103,7 +103,20 @@ hl.plugin.hyprexpo.gesture({
     direction = "up",
     action = "expo",
 })
+
+hl.plugin.hyprexpo.gesture({
+    fingers = 4,
+    direction = "down",
+    action = "cancel",
+})
 ```
+
+The `expo` action keeps the existing follow-your-finger behavior: it opens the
+overview when closed, and an expo close gesture selects the hovered workspace.
+The `cancel` action is inert while the overview is closed. While it is open, a
+cancel swipe starts an interactive close without selecting the hovered tile. A
+completed cancel swipe returns to the workspace where the overview opened; an
+incomplete swipe restores the still-open overview.
 
 `gesture` accepts this table shape:
 
@@ -111,10 +124,13 @@ hl.plugin.hyprexpo.gesture({
 | --- | --- | --- | --- |
 | `fingers` | integer | yes | number of fingers |
 | `direction` | string | yes | swipe direction |
-| `action` | string | no | `expo` or `unset`; defaults to `expo` |
+| `action` | string | no | `expo`, `cancel`, or `unset`; defaults to `expo` |
 | `mods` | string | no | modifier expression passed to Hyprland |
 | `scale` | number | no | gesture scale; defaults to `1.0` |
 | `disable_inhibit` | boolean | no | whether to bypass inhibit handling |
+
+Use `unset` with the same fingers, direction, modifiers, scale, and inhibit
+settings to remove a registered gesture.
 
 ## Argument Validation
 

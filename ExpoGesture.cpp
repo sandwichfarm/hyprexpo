@@ -13,6 +13,14 @@ void CExpoGesture::begin(const ITrackpadGesture::STrackpadGestureBegin& e) {
     m_lastDelta   = 0.F;
     m_firstUpdate = true;
 
+    if (m_action == EExpoGestureAction::Cancel) {
+        if (!g_pOverview || g_pOverview->closeCommitted())
+            return;
+
+        g_pOverview->setClosing(true);
+        return;
+    }
+
     const auto monitor = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
     if (!monitor || !monitor->m_activeWorkspace)
         return;
@@ -47,7 +55,7 @@ void CExpoGesture::end(const ITrackpadGesture::STrackpadGestureEnd& e) {
         return;
 
     g_pOverview->setClosing(false);
-    g_pOverview->onSwipeEnd();
+    g_pOverview->onSwipeEnd(m_action == EExpoGestureAction::Expo);
     if (g_pOverview)
         g_pOverview->resetSwipe();
 }

@@ -2,9 +2,14 @@
 
 #include <hyprland/src/managers/input/trackpad/gestures/ITrackpadGesture.hpp>
 
+enum class EExpoGestureAction {
+    Expo,
+    Cancel,
+};
+
 class CExpoGesture : public ITrackpadGesture {
   public:
-    CExpoGesture()          = default;
+    explicit CExpoGesture(EExpoGestureAction action) : m_action(action) {}
     virtual ~CExpoGesture() = default;
 
     virtual void begin(const ITrackpadGesture::STrackpadGestureBegin& e);
@@ -12,6 +17,7 @@ class CExpoGesture : public ITrackpadGesture {
     virtual void end(const ITrackpadGesture::STrackpadGestureEnd& e);
 
   private:
-    float m_lastDelta   = 0.F;
-    bool  m_firstUpdate = false;
+    const EExpoGestureAction m_action;
+    float                    m_lastDelta   = 0.F;
+    bool                     m_firstUpdate = false;
 };
