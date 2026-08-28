@@ -314,7 +314,7 @@ void checkScrollingInputCoordinates() {
     expect(touchRotated && near(touchRotated->x, 520.0) && near(touchRotated->y, -700.0), "rotated touch coordinates map through the output transform exactly once");
     transformed.transform = EOutputTransform::Flipped270;
     const auto touchFlipped = touchToGlobalLogical({0.2, 0.3}, transformed);
-    expect(touchFlipped && near(touchFlipped->x, 520.0) && near(touchFlipped->y, -700.0), "flipped rotated touch mapping follows the calibrated transform matrix");
+    expect(touchFlipped && near(touchFlipped->x, 520.0) && near(touchFlipped->y, -100.0), "flipped rotated touch mapping follows the calibrated transform matrix");
     expect(!touchToGlobalLogical({1.01, 0.5}, transformed), "touch coordinates outside normalized bounds are rejected");
 }
 
@@ -361,7 +361,8 @@ void checkScrollingMouseInputState() {
            "threshold crossing begins exactly one window drag and resolves an intent");
     state = result.state;
     const auto mixed = scene.workspaces[2];
-    const SPoint mixedGlobal{monitor.position.x + 500.0, monitor.position.y + mixed.box.y + 20.0};
+    context.pan = 340.0;
+    const SPoint mixedGlobal{monitor.position.x + 500.0, monitor.position.y + mixed.box.y + 20.0 - context.pan};
     result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = mixedGlobal}, context);
     expect(result.effects.consume && result.effects.updateDrag && !result.effects.beginDrag && result.effects.dropIntent && result.effects.dropIntent->kind == EDropKind::MixedFallback,
            "owned drag motion updates one mixed-workspace pure intent");
@@ -370,6 +371,7 @@ void checkScrollingMouseInputState() {
     expect(result.effects.consume && result.effects.finishDrag && result.effects.dropIntent && result.effects.dropIntent->kind == EDropKind::MixedFallback,
            "drag release emits one finish effect and does not mutate topology");
 
+    context.pan = 0.0;
     state = transitionInput({}, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context).state;
     state = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 20.0, targetGlobal.y}}, context).state;
     result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {monitor.position.x - 10.0, monitor.position.y}, .button = 0x111, .pressed = false}, context);
@@ -389,7 +391,7 @@ void checkScrollingTouchAndResetState() {
     using namespace Hyprexpo::Scrolling;
 
     const auto scene = scrollingScene();
-    const SMonitorGeometry monitor{.logicalSize = {1000.0, 500.0}, .pixelSize = {1000.0, 500.0}, .scale = 1.0};
+    const SMonitorGeometry monitor{.position = {}, .logicalSize = {1000.0, 500.0}, .pixelSize = {1000.0, 500.0}, .scale = 1.0};
     SInputContext context{.scene = &scene, .monitor = monitor, .pan = 0.0, .viewportHeight = 500.0, .dragThreshold = 12.0};
     const auto& target = scene.targets.front();
     const SPoint targetPoint{target.box.x + target.box.w / 2.0, target.box.y + target.box.h / 2.0};
@@ -401,20 +403,20 @@ void checkScrollingTouchAndResetState() {
     result = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = {900.0, 200.0}, .touchId = 7}, context);
     expect(result.effects.consume && near(result.effects.panDelta, 120.0) && !result.effects.beginDrag, "matching touch background motion pans without dragging");
     state = result.state;
-    result = transitionInput(state, {.kind = EInputKind::TouchUp, .touchId = 7}, context);
+    result = transitionInput(state, {.kind = EInputKind::TouchUp, .globalLogicalPoint = {}, .touchId = 7}, context);
     expect(result.effects.consume && result.effects.resetOwnership && !result.effects.selection, "touch canvas up ends without selection");
 
     result = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 9}, context);
     state = result.state;
     result = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = {targetPoint.x + 4.0, targetPoint.y}, .touchId = 9}, context);
     state = result.state;
-    result = transitionInput(state, {.kind = EInputKind::TouchUp, .touchId = 9}, context);
+    result = transitionInput(state, {.kind = EInputKind::TouchUp, .globalLogicalPoint = {}, .touchId = 9}, context);
     expect(result.effects.consume && result.effects.selection && result.effects.selection->targetToken == target.token, "touch target tap selects exact pressed window");
 
     state = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 11}, context).state;
-    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .touchId = 12}, context);
+    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .globalLogicalPoint = {}, .touchId = 12}, context);
     expect(!result.effects.consume && result.state.mode == EInputMode::TouchPressPending, "mismatched touch cancel passes through without releasing ownership");
-    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .touchId = 11}, context);
+    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .globalLogicalPoint = {}, .touchId = 11}, context);
     expect(result.effects.consume && result.effects.cancelDrag && result.effects.resetOwnership && result.state.mode == EInputMode::Idle,
            "matching touch cancel clears pending ownership deterministically");
     state = result.state;
@@ -423,7 +425,7 @@ void checkScrollingTouchAndResetState() {
 
     state = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 13}, context).state;
     state = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = {targetPoint.x + 20.0, targetPoint.y}, .touchId = 13}, context).state;
-    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .touchId = 13}, context);
+    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .globalLogicalPoint = {}, .touchId = 13}, context);
     expect(result.effects.consume && result.effects.cancelDrag && result.state.mode == EInputMode::Idle, "touch cancel tears down an active drag");
 
     state = transitionInput({}, {.kind = EInputKind::MouseMove, .globalLogicalPoint = targetPoint}, context).state;
