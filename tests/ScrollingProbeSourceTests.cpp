@@ -36,6 +36,16 @@ void requireAbsent(const std::string& source, const std::string_view token) {
     std::exit(1);
 }
 
+void requireOrder(const std::string& source, const std::string_view first, const std::string_view second) {
+    const auto firstPosition  = source.find(first);
+    const auto secondPosition = source.find(second);
+    if (firstPosition != std::string::npos && secondPosition != std::string::npos && firstPosition < secondPosition)
+        return;
+
+    std::cerr << "probe contract order mismatch: " << first << " must precede " << second << '\n';
+    std::exit(1);
+}
+
 } // namespace
 
 int main() {
@@ -60,15 +70,33 @@ int main() {
              "beginFullFakeRender(",
              "renderWindow(",
              "endRender()",
-             "glReadPixels(",
              "CRenderScope",
-             "offsetBefore",
-             "offsetAfter",
-             "columnsBefore",
-             "columnsAfter",
-             "nontransparentPixels",
-             "nonBackgroundBounds",
-             "sha256",
+             "getTexture()",
+             "CTexPassElement",
+             "CRectPassElement",
+             "currentPass().add",
+             "damageMonitor(",
+             "findFunctionsByName",
+             "createFunctionHook",
+             "origRenderWorkspace",
+             "sessionGeneration",
+             "markerColor",
+             "physicalTextureBox",
+             "logicalCropBox",
+             "targetVisibility",
+             "pendingGeneration",
+             "pendingFramebuffer",
+             "pendingTexture",
+             "pendingOverlay",
+             "acknowledge",
+             "topologyBefore",
+             "topologyAfter",
+             "activeWorkspaceBefore",
+             "activeWorkspaceAfter",
+             "focusedWindowBefore",
+             "focusedWindowAfter",
+             "removeFunctionHook",
+             "unhook()",
              "mutationOutcome",
              "rollbackStatus",
          })
@@ -92,8 +120,27 @@ int main() {
              ".setColumnWidth(",
              ".setTargetSize(",
              ".recalculate(",
+             "glReadPixels(",
+             "GL_IMPLEMENTATION_COLOR_READ_",
+             "glGetIntegerv(",
+             "glBindBuffer(",
+             "glPixelStorei(",
+             "writePpm(",
+             "std::ofstream",
+             "PATH_PREFIX",
+             "outputPath",
+             "imagePath",
+             "nontransparentPixels",
+             "nonBackgroundBounds",
+             "removeAllOfType<CTexPassElement>",
+             "dispatch focuswindow",
+             "dispatch workspace",
+             "moveWindowToWorkspace",
          })
         requireAbsent(source, token);
+
+    requireOrder(source, "g_pRenderWorkspaceHook->m_original", "currentPass().add");
+    requireOrder(source, "clearPendingState", "g_pRenderWorkspaceHook->unhook()");
 
     std::cout << "Scrolling probe source contract PASS\n";
     return 0;
