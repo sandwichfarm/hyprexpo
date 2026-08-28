@@ -168,7 +168,9 @@ std::size_t centeredWorkspaceBacktrack(std::size_t tileCount, int64_t activeWork
         return 0;
 
     const std::size_t centerTarget = tileCount / 2;
-    if (!lowestExistingID || !highestExistingID || *lowestExistingID > *highestExistingID || activeWorkspaceID < *lowestExistingID || activeWorkspaceID > *highestExistingID)
+    if (!lowestExistingID || !highestExistingID)
+        return centerTarget > 0 ? centerTarget - 1 : 0;
+    if (*lowestExistingID > *highestExistingID || activeWorkspaceID < *lowestExistingID || activeWorkspaceID > *highestExistingID)
         return centerTarget;
 
     const __int128 lastOffset      = static_cast<__int128>(tileCount - 1);
