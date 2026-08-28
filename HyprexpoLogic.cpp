@@ -162,6 +162,25 @@ int gridColumnsToIncludeWorkspace(int configuredColumns, int firstWorkspaceID, i
     return cols;
 }
 
+std::size_t centeredWorkspaceBacktrack(std::size_t tileCount, int64_t activeWorkspaceID, std::optional<int64_t> lowestExistingID,
+                                       std::optional<int64_t> highestExistingID) {
+    if (tileCount == 0)
+        return 0;
+
+    const std::size_t centerTarget = tileCount / 2;
+    if (!lowestExistingID || !highestExistingID || *lowestExistingID > *highestExistingID || activeWorkspaceID < *lowestExistingID || activeWorkspaceID > *highestExistingID)
+        return centerTarget;
+
+    const __int128 lastOffset      = static_cast<__int128>(tileCount - 1);
+    const __int128 roomBefore      = static_cast<__int128>(activeWorkspaceID) - static_cast<__int128>(*lowestExistingID);
+    const __int128 roomAfter       = static_cast<__int128>(*highestExistingID) - static_cast<__int128>(activeWorkspaceID);
+    const __int128 maxBacktrack    = std::min(lastOffset, roomBefore);
+    const __int128 minBacktrack    = std::max<__int128>(0, lastOffset - roomAfter);
+    const __int128 boundedTarget   = std::min(maxBacktrack, std::max(static_cast<__int128>(centerTarget), minBacktrack));
+
+    return static_cast<std::size_t>(boundedTarget);
+}
+
 int tileIndexFromPoint(double x, double y, double width, double height, int sideLength) {
     if (width <= 0 || height <= 0 || sideLength <= 0)
         return -1;
