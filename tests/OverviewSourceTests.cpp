@@ -131,6 +131,28 @@ int main() {
 
     const auto interactionSource = readFile("OverviewInteraction.cpp");
     expect(!interactionSource.empty(), "OverviewInteraction.cpp can be read from repo root");
+
+    const auto enterSubmap = extractFunction(interactionSource, "void COverview::enterSubmapIfEnabled() {");
+    expect(!enterSubmap.empty(), "keyboard navigation submap entry function exists");
+    const auto captureSubmapPos = enterSubmap.find("previousSubmap = g_pKeybindManager->getCurrentSubmap().name;");
+    const auto enterSubmapPos   = enterSubmap.find("Config::Actions::setSubmap(\"hyprexpo\");");
+    const auto activateGuardPos = enterSubmap.find("submapActive = true;");
+    expect(captureSubmapPos != std::string::npos, "submap entry captures the exact active Hyprland submap");
+    expect(enterSubmapPos != std::string::npos, "submap entry switches to the hyprexpo navigation submap");
+    expect(activateGuardPos != std::string::npos, "submap entry marks the navigation submap active");
+    expect(captureSubmapPos < enterSubmapPos, "active submap capture happens before entering hyprexpo");
+    expect(enterSubmapPos < activateGuardPos, "submap-active guard is set only after entering hyprexpo");
+
+    const auto resetSubmap = extractFunction(interactionSource, "void COverview::resetSubmapIfNeeded() {");
+    expect(!resetSubmap.empty(), "keyboard navigation submap reset function exists");
+    const auto restoreSubmapPos = resetSubmap.find("Config::Actions::setSubmap(previousSubmap);");
+    const auto clearGuardPos    = resetSubmap.find("submapActive = false;");
+    expect(restoreSubmapPos != std::string::npos, "submap reset restores the exact captured submap");
+    expect(resetSubmap.find("Config::Actions::setSubmap(\"reset\");") == std::string::npos,
+           "submap reset never hardcodes Hyprland's default submap");
+    expect(clearGuardPos != std::string::npos, "submap reset clears the active guard");
+    expect(restoreSubmapPos < clearGuardPos, "captured submap restoration happens before clearing the active guard");
+
     const auto numberSelection = extractFunction(interactionSource, "void COverview::onKbSelectNumber(int num) {");
     expect(!numberSelection.empty(), "workspace-number dispatcher selection function exists");
     expect(numberSelection.find("selectWorkspaceByID(num)") != std::string::npos,
@@ -166,6 +188,16 @@ int main() {
 
     const auto renderSource = readFile("OverviewRender.cpp");
     expect(!renderSource.empty(), "OverviewRender.cpp can be read from repo root");
+    const auto closeOverview = extractFunction(renderSource, "void COverview::close(bool switchToSelection) {");
+    expect(!closeOverview.empty(), "overview close function exists");
+    expect(closeOverview.find("resetSubmapIfNeeded();") != std::string::npos,
+           "normal overview close restores the captured submap");
+
+    const auto overviewDestructor = extractFunction(source, "COverview::~COverview() {");
+    expect(!overviewDestructor.empty(), "overview destructor exists");
+    expect(overviewDestructor.find("resetSubmapIfNeeded();") != std::string::npos,
+           "overview teardown restores the captured submap");
+
     const auto fullRender = extractFunction(renderSource, "void COverview::fullRender(");
     expect(!fullRender.empty(), "overview fullRender function exists");
     expect(fullRender.find("Hyprexpo::shouldShowWorkspaceLabel(") != std::string::npos,
