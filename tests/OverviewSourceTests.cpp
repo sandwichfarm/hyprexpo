@@ -253,6 +253,52 @@ int main() {
     expectContains(diagnosticScript, "expected exactly one diagnostic record", "reader rejects missing or duplicate request records");
     expectContains(diagnosticScript, "valid_request_id", "reader validates the request ID before filtering logs");
 
+    const auto captureHeader = readFile("OverviewCapture.hpp");
+    const auto captureSource = readFile("OverviewCapture.cpp");
+    const auto configHeader  = readFile("HyprexpoConfig.hpp");
+    const auto makefile      = readFile("Makefile");
+    expect(!captureHeader.empty() && !captureSource.empty(), "shared overview capture source can be read from repo root");
+    expectContains(captureHeader, "captureWorkspacePreview", "shared capture API exposes the grid and mixed-row workspace boundary");
+    expectContains(captureHeader, "captureWindowPreview", "shared capture API exposes tight scrolling-target capture");
+    expectContains(captureHeader, "completed", "tight capture result distinguishes completed textures from failed attempts");
+
+    const auto workspaceCapture = extractFunction(captureSource, "bool captureWorkspacePreview(");
+    expect(!workspaceCapture.empty(), "shared workspace capture implementation exists");
+    for (const auto& token : {"beginRender(", "clearWithColor(", "applyExclusiveWorkspacePreviewState(", "applyWorkspaceWindowGoalState(", "CPinnedWindowPreviewGuard",
+                              "renderWorkspace(", "restoreWorkspaceWindowGoalState(", "restoreWorkspacePreviewStates(", "restoreActiveWorkspaceAfterPreview(", "endRender()"})
+        expectContains(workspaceCapture, token, "shared workspace capture preserves grid operation " + std::string{token});
+    expectOrder(workspaceCapture, "beginRender(", "clearWithColor(", "workspace capture begins before clearing");
+    expectOrder(workspaceCapture, "clearWithColor(", "applyExclusiveWorkspacePreviewState(", "workspace capture clears before temporary workspace state");
+    expectOrder(workspaceCapture, "applyWorkspaceWindowGoalState(", "renderWorkspace(", "workspace goal state is applied before rendering");
+    expectOrder(workspaceCapture, "renderWorkspace(", "restoreWorkspaceWindowGoalState(", "workspace goal state is restored after rendering");
+    expectOrder(workspaceCapture, "restoreWorkspacePreviewStates(", "restoreActiveWorkspaceAfterPreview(", "workspace preview state restores before active workspace");
+    expectOrder(workspaceCapture, "restoreActiveWorkspaceAfterPreview(", "endRender()", "workspace capture ends only after workspace restoration");
+    expectContains(overviewConstructor, "captureWorkspacePreview(", "initial grid capture uses the shared workspace helper");
+    const auto redrawID = extractFunction(renderSource, "void COverview::redrawID(");
+    expectContains(redrawID, "captureWorkspacePreview(", "grid redraw uses the shared workspace helper");
+    expectAbsent(source, "g_pHyprRenderer->renderWorkspace(", "grid construction no longer duplicates workspace snapshot rendering");
+    expectAbsent(renderSource, "g_pHyprRenderer->renderWorkspace(", "grid redraw no longer duplicates workspace snapshot rendering");
+
+    const auto windowCapture = extractFunction(captureSource, "SWindowCaptureResult captureWindowPreview(");
+    expect(!windowCapture.empty(), "tight scrolling-target capture implementation exists");
+    for (const auto& token : {"createFB(", "beginFullFakeRender(", "m_bBlockSurfaceFeedback = true", "m_bRenderingSnapshot = true", "startRenderPass()", "renderWindow(",
+                              "Render::RENDER_PASS_ALL, true, true", "blockScreenShader = true", "endRender()", "getTexture()", ".completed = true"})
+        expectContains(windowCapture, token, "tight target capture uses approved GPU operation " + std::string{token});
+    expectOrder(windowCapture, "beginFullFakeRender(", "renderWindow(", "target capture begins fake rendering before the window draw");
+    expectOrder(windowCapture, "renderWindow(", "endRender()", "target capture balances the renderer after drawing");
+    expectOrder(windowCapture, "endRender()", ".completed = true", "target capture publishes only after balanced completion");
+    for (const auto& token : {"glReadPixels(", "readPixels(", "std::ofstream", ".ppm", "sha256", "SHA256"})
+        expectAbsent(captureSource, token, "production capture forbids plugin-side pixel evidence path " + std::string{token});
+
+    for (const auto& token : {"SCROLLING_THUMBNAIL_BUDGET_DEFAULT", "SCROLLING_THUMBNAIL_BUDGET_MIN", "SCROLLING_THUMBNAIL_BUDGET_MAX"})
+        expectContains(configHeader, token, "thumbnail budget exposes bounded config constant " + std::string{token});
+    expectContains(configSource, "plugin:hyprexpo:scrolling_thumbnail_budget", "scrolling thumbnail budget configuration is registered");
+    expectContains(configSource, "HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_DEFAULT", "scrolling thumbnail budget registration uses the resolved default");
+    expectContains(configSource, ".min = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN", "scrolling thumbnail budget registration enforces the minimum");
+    expectContains(configSource, ".max = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MAX", "scrolling thumbnail budget registration enforces the maximum");
+    expectContains(makefile, "OverviewCapture.cpp", "Make production sources include the shared capture boundary");
+    expectContains(makefile, "OverviewCapture.hpp", "Make headers include the shared capture boundary");
+
     if (failures != 0)
         return 1;
 
