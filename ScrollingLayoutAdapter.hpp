@@ -29,6 +29,7 @@ enum class ESnapshotFailure {
     ColumnCardinalityMismatch,
     TargetCardinalityMismatch,
     InvalidGeometry,
+    HostException,
 };
 
 struct STargetSnapshot {
@@ -42,6 +43,7 @@ struct STargetSnapshot {
     bool                floating = false;
     bool                fullscreen = false;
     bool                pinned = false;
+    bool                visible = false;
     WP<Layout::ITarget> targetRef;
     PHLWINDOWREF        windowRef;
 };
@@ -58,7 +60,6 @@ struct SColumnSnapshot {
 
 struct SWorkspaceSnapshot {
     int64_t                      workspaceID = 0;
-    std::string                  workspaceName;
     int64_t                      monitorID = 0;
     uintptr_t                    algorithmFingerprint = 0;
     uintptr_t                    dataFingerprint = 0;

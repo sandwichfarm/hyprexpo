@@ -7,6 +7,7 @@
 #include "HyprexpoLogic.hpp"
 #include "HyprlandConfigCompat.hpp"
 #include "Overview.hpp"
+#include "ScrollingDiagnostics.hpp"
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/debug/log/Logger.hpp>
@@ -45,6 +46,7 @@ static SDispatchResult onKbSelectNumberDispatcher(std::string arg);
 static SDispatchResult onKbSelectTokenDispatcher(std::string arg);
 static SDispatchResult onKbSelectIndexDispatcher(std::string arg);
 static SDispatchResult onMovePreviewWindowDispatcher(std::string arg);
+static SDispatchResult onScrollingDebugDispatcher(std::string arg);
 static SDispatchResult registerExpoGesture(int fingerCount, const std::string& directionName, const std::string& action, const std::string& mods, float deltaScale, bool disableInhibit);
 
 static std::string trimString(std::string value) {
@@ -655,6 +657,17 @@ static SDispatchResult onMovePreviewWindowDispatcher(std::string arg) {
     return {};
 }
 
+static SDispatchResult onScrollingDebugDispatcher(std::string arg) {
+    const auto emission = Hyprexpo::Scrolling::buildReadDiagnostic(arg);
+    if (!emission.validRequest)
+        return {.success = false, .error = emission.error};
+
+    Log::logger->log(Log::INFO, "HYPREXPO_SCROLLING_DIAGNOSTIC {}", emission.json);
+    if (!emission.success)
+        return {.success = false, .error = emission.error};
+    return {};
+}
+
 SP<Config::Values::CStringValue> createCancelKeyConfig() {
     g_pCancelKeyConfig = makeShared<Config::Values::CStringValue>("plugin:hyprexpo:cancel_key", "cancel key", HyprexpoConfig::CANCEL_KEY_DEFAULT);
     return g_pCancelKeyConfig;
@@ -684,6 +697,7 @@ void registerHyprexpoDispatchers() {
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:kb_select", onKbSelectTokenDispatcher);
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:kb_selecti", onKbSelectIndexDispatcher);
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:move_window", onMovePreviewWindowDispatcher);
+    HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:scrolling_debug", onScrollingDebugDispatcher);
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "expo", luaExpo);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_focus", luaKbFocus);

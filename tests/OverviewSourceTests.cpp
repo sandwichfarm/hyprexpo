@@ -240,10 +240,11 @@ int main() {
         expectAbsent(adapterSource + diagnosticSource, token, "read-only adapter/diagnostic forbids " + std::string{token});
     expectAbsent(adapterHeader, "CScrollingAlgorithm*", "adapter DTO/header retains no raw scrolling algorithm pointer");
 
-    for (const auto& token : {"requestId", "sessionGeneration", "hyprlandVersion", "runtimeHash", "clientHash", "monitorId", "workspaceId", "algorithmFingerprint", "dataFingerprint", "direction",
+    for (const auto& token : {"requestId", "sessionGeneration", "marker", "hyprlandVersion", "runtimeHash", "clientHash", "monitorId", "workspaceId", "algorithmFingerprint", "dataFingerprint", "direction",
                               "offsetBefore", "offsetAfter", "activeWorkspaceBefore", "activeWorkspaceAfter", "focusedWindowBefore", "focusedWindowAfter", "columns", "targets", "layoutBox", "visible",
-                              "group", "floating", "fullscreen", "pinned", "captureStatus", "retainedFramebuffer", "physicalPresentationBox", "logicalCropBox", "acknowledged", "cleanupComplete",
-                              "topologyEqual", "directionEqual", "offsetEqual", "orderEqual", "widthsEqual", "membershipEqual", "sizesEqual", "mutationOutcome", "rollbackStatus", "status"})
+                              "group", "floating", "fullscreen", "pinned", "captureStatus", "retainedFramebuffer", "physicalPresentationBox", "logicalCropBox", "pixelEvidence", "pendingGeneration",
+                              "pendingFramebuffer", "pendingTexture", "pendingOverlay", "pendingPassCount", "acknowledged", "cleanupComplete", "topologyEqual", "directionEqual", "offsetEqual", "orderEqual",
+                              "widthsEqual", "membershipEqual", "sizesEqual", "specialStateEqual", "algorithmEqual", "dataEqual", "activeWorkspaceEqual", "focusEqual", "mutationOutcome", "rollbackStatus", "status"})
         expectContains(diagnosticSource, token, "diagnostic JSON includes observability field " + std::string{token});
     expectContains(diagnosticSource, "snapshotWorkspace", "diagnostic serializes copied adapter snapshots");
     expectContains(diagnosticSource, "snapshotsEquivalent", "diagnostic performs before/after readback equality");
