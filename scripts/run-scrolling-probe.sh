@@ -63,6 +63,205 @@ full_guard() {
     } >> "${GUARD_LOG:-/dev/null}" 2>&1
 }
 
+assert_raw_marker() {
+    local ppm="$1"
+    local ready="$2"
+    python - "$ppm" "$ready" <<'PY'
+import json, re, sys
+
+def parse_ppm(path):
+    data = open(path, 'rb').read()
+    pos = 0
+    tokens = []
+    while len(tokens) < 4:
+        while pos < len(data) and data[pos] in b' \t\r\n':
+            pos += 1
+        if pos < len(data) and data[pos] == ord('#'):
+            newline = data.find(b'\n', pos)
+            if newline < 0:
+                raise ValueError('unterminated PPM comment')
+            pos = newline + 1
+            continue
+        start = pos
+        while pos < len(data) and data[pos] not in b' \t\r\n':
+            pos += 1
+        if start == pos:
+            raise ValueError('truncated PPM header')
+        tokens.append(data[start:pos])
+    if tokens[0] != b'P6':
+        raise ValueError('not binary PPM')
+    width, height, maximum = map(int, tokens[1:])
+    if maximum != 255:
+        raise ValueError('unsupported PPM max value')
+    if pos >= len(data) or data[pos] not in b' \t\r\n':
+        raise ValueError('missing PPM pixel separator')
+    pos += 2 if data[pos:pos + 2] == b'\r\n' else 1
+    pixels = data[pos:]
+    if len(pixels) != width * height * 3:
+        raise ValueError('truncated or extra PPM pixel data')
+    return width, height, pixels
+
+width, height, pixels = parse_ppm(sys.argv[1])
+record = json.load(open(sys.argv[2]))
+marker = record.get('marker')
+generation = record.get('sessionGeneration')
+if not isinstance(generation, int) or generation <= 0 or not isinstance(marker, dict):
+    raise ValueError('missing marker metadata')
+color = marker.get('color')
+box = marker.get('box')
+if not isinstance(color, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', color) or not isinstance(box, dict):
+    raise ValueError('invalid marker metadata')
+try:
+    x = int(box['x'] + box['w'] / 2)
+    y = int(box['y'] + box['h'] / 2)
+except (KeyError, TypeError, ValueError):
+    raise ValueError('invalid marker box')
+if x < 0 or y < 0 or x >= width or y >= height:
+    raise ValueError('marker sample outside raw PPM')
+sample = tuple(pixels[(y * width + x) * 3:(y * width + x + 1) * 3])
+expected = tuple(bytes.fromhex(color[1:]))
+if any(abs(left - right) > 3 for left, right in zip(expected, sample)):
+    raise ValueError(f'raw marker mismatch expected={expected} sample={sample}')
+PY
+}
+
+normalized_ppm_compare() {
+    local left_ppm="$1"
+    local left_ready="$2"
+    local right_ppm="$3"
+    local right_ready="$4"
+    local output="$5"
+    python - "$left_ppm" "$left_ready" "$right_ppm" "$right_ready" "$output" <<'PY'
+import hashlib, json, math, re, sys
+
+MASK_X_MIN, MASK_X_MAX = 634, 648
+MASK_Y_MIN, MASK_Y_MAX = 60, 61
+EXPECTED_WIDTH = 649
+CANONICAL = (0, 0, 0)
+
+def parse_ppm(path):
+    data = open(path, 'rb').read()
+    pos = 0
+    tokens = []
+    while len(tokens) < 4:
+        while pos < len(data) and data[pos] in b' \t\r\n':
+            pos += 1
+        if pos < len(data) and data[pos] == ord('#'):
+            newline = data.find(b'\n', pos)
+            if newline < 0:
+                raise ValueError('unterminated PPM comment')
+            pos = newline + 1
+            continue
+        start = pos
+        while pos < len(data) and data[pos] not in b' \t\r\n':
+            pos += 1
+        if start == pos:
+            raise ValueError('truncated PPM header')
+        tokens.append(data[start:pos])
+    if tokens[0] != b'P6':
+        raise ValueError('not binary PPM')
+    width, height, maximum = map(int, tokens[1:])
+    if maximum != 255:
+        raise ValueError('unsupported PPM max value')
+    if pos >= len(data) or data[pos] not in b' \t\r\n':
+        raise ValueError('missing PPM pixel separator')
+    pos += 2 if data[pos:pos + 2] == b'\r\n' else 1
+    pixels = data[pos:]
+    if len(pixels) != width * height * 3:
+        raise ValueError('truncated or extra PPM pixel data')
+    return width, height, pixels
+
+def parse_ready(path, width, height):
+    record = json.load(open(path))
+    marker = record.get('marker')
+    capture = record.get('capture')
+    generation = record.get('sessionGeneration')
+    if not isinstance(generation, int) or generation <= 0 or not isinstance(marker, dict):
+        raise ValueError('missing marker metadata')
+    if not isinstance(marker.get('color'), str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', marker['color']) or not isinstance(marker.get('box'), dict):
+        raise ValueError('invalid marker metadata')
+    if not isinstance(capture, dict) or capture.get('width') != width or capture.get('height') != height:
+        raise ValueError('PPM dimensions do not match capture metadata')
+    if width != EXPECTED_WIDTH:
+        raise ValueError(f'normalization requires width {EXPECTED_WIDTH}')
+    if MASK_X_MIN < 0 or MASK_Y_MIN < 0 or MASK_X_MAX >= width or MASK_Y_MAX >= height:
+        raise ValueError('normalization mask is outside PPM bounds')
+    return record
+
+def ppm_bytes(width, height, pixels):
+    return f'P6\n{width} {height}\n255\n'.encode() + pixels
+
+def analyze(ppm_path, ready_path):
+    width, height, pixels = parse_ppm(ppm_path)
+    ready = parse_ready(ready_path, width, height)
+    normalized = bytearray(pixels)
+    for y in range(MASK_Y_MIN, MASK_Y_MAX + 1):
+        for x in range(MASK_X_MIN, MASK_X_MAX + 1):
+            offset = (y * width + x) * 3
+            normalized[offset:offset + 3] = bytes(CANONICAL)
+    for y in range(height):
+        for x in range(width):
+            if MASK_X_MIN <= x <= MASK_X_MAX and MASK_Y_MIN <= y <= MASK_Y_MAX:
+                continue
+            offset = (y * width + x) * 3
+            if normalized[offset:offset + 3] != pixels[offset:offset + 3]:
+                raise ValueError('normalization altered a pixel outside the exact marker mask')
+    crop_width = MASK_X_MIN
+    crop = b''.join(pixels[(y * width) * 3:(y * width + crop_width) * 3] for y in range(height))
+    return {
+        'width': width,
+        'height': height,
+        'generation': ready['sessionGeneration'],
+        'markerColor': ready['marker']['color'],
+        'rawTargetSha': hashlib.sha256(ppm_bytes(width, height, pixels)).hexdigest(),
+        'normalizedTargetSha': hashlib.sha256(ppm_bytes(width, height, normalized)).hexdigest(),
+        'contentCropSha': hashlib.sha256(ppm_bytes(crop_width, height, crop)).hexdigest(),
+    }, pixels
+
+left, left_pixels = analyze(sys.argv[1], sys.argv[2])
+right, right_pixels = analyze(sys.argv[3], sys.argv[4])
+if left['width'] != right['width'] or left['height'] != right['height']:
+    raise ValueError('comparison dimensions differ')
+width, height = left['width'], left['height']
+different = []
+squared_error = 0
+outside_channels = 0
+raw_mask_ae = 0
+for y in range(height):
+    for x in range(width):
+        offset = (y * width + x) * 3
+        left_rgb = left_pixels[offset:offset + 3]
+        right_rgb = right_pixels[offset:offset + 3]
+        if MASK_X_MIN <= x <= MASK_X_MAX and MASK_Y_MIN <= y <= MASK_Y_MAX:
+            if left_rgb != right_rgb:
+                raw_mask_ae += 1
+            continue
+        deltas = [int(a) - int(b) for a, b in zip(left_rgb, right_rgb)]
+        outside_channels += 3
+        squared_error += sum(delta * delta for delta in deltas)
+        if any(deltas):
+            different.append((x, y))
+bounds = None
+if different:
+    min_x, max_x = min(x for x, _ in different), max(x for x, _ in different)
+    min_y, max_y = min(y for _, y in different), max(y for _, y in different)
+    bounds = {'x': min_x, 'y': min_y, 'w': max_x - min_x + 1, 'h': max_y - min_y + 1}
+result = {
+    'left': left,
+    'right': right,
+    'mask': {'xMin': MASK_X_MIN, 'xMax': MASK_X_MAX, 'yMin': MASK_Y_MIN, 'yMax': MASK_Y_MAX, 'canonical': list(CANONICAL)},
+    'outsidePixelsPreserved': True,
+    'rawMaskAE': raw_mask_ae,
+    'outsideMaskAE': len(different),
+    'outsideMaskRMSE': math.sqrt(squared_error / outside_channels),
+    'outsideMaskBounds': bounds,
+}
+with open(sys.argv[5], 'w') as output:
+    json.dump(result, output, indent=2, sort_keys=True)
+    output.write('\n')
+PY
+}
+
 normalization_self_test() {
     local fixtures="$EVIDENCE_DIR/normalization-fixtures"
     mkdir -p "$fixtures"
@@ -72,8 +271,8 @@ import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 width, height = 649, 100
 
-def ppm(path, pixels, maximum=255, extra=b''):
-    path.write_bytes(f'P6\n{width} {height}\n{maximum}\n'.encode() + pixels + extra)
+def ppm(path, pixels, maximum=255, extra=b'', image_width=width, image_height=height):
+    path.write_bytes(f'P6\n{image_width} {image_height}\n{maximum}\n'.encode() + pixels + extra)
 
 def ready(path, generation, color, capture_height=height, include_marker=True):
     record = {'sessionGeneration': generation, 'capture': {'width': width, 'height': capture_height}}
@@ -101,7 +300,8 @@ ppm(root / 'changed.ppm', changed)
 ppm(root / 'truncated.ppm', equal_a[:-1])
 ppm(root / 'extra.ppm', equal_a, extra=b'x')
 ppm(root / 'unsupported-max.ppm', equal_a, maximum=254)
-ppm(root / 'short.ppm', equal_a[:width * 61 * 3])
+ppm(root / 'wrong-width.ppm', equal_a[:648 * height * 3], image_width=648)
+ppm(root / 'short.ppm', equal_a[:width * 61 * 3], image_height=61)
 ready(root / 'ready-a.json', 3, '#c1d086')
 ready(root / 'ready-b.json', 4, '#95cab7')
 ready(root / 'ready-short.json', 5, '#aabbcc', capture_height=61)
@@ -124,7 +324,7 @@ PY
         echo "marker mismatch passed raw correlation" >&2
         return 1
     fi
-    for case in truncated extra unsupported-max; do
+    for case in truncated extra unsupported-max wrong-width; do
         if normalized_ppm_compare "$fixtures/$case.ppm" "$fixtures/ready-a.json" "$fixtures/equal-b.ppm" "$fixtures/ready-b.json" "$fixtures/$case.json" 2>/dev/null; then
             echo "$case PPM passed normalization" >&2
             return 1
