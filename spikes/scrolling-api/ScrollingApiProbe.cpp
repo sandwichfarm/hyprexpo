@@ -71,6 +71,16 @@ std::string quoted(const std::string_view value) {
     return "\"" + jsonEscape(value) + "\"";
 }
 
+std::string runtimeAbiHash() {
+    return __hyprland_api_get_hash();
+}
+
+std::string runtimeCommitHash() {
+    const auto abi       = runtimeAbiHash();
+    const auto separator = abi.find('_');
+    return abi.substr(0, separator);
+}
+
 template <typename T>
 std::string identity(const SP<T>& pointer) {
     std::ostringstream value;
@@ -494,10 +504,29 @@ SCaptureEvidence captureTarget(const WP<Layout::ITarget>& targetRef, const PHLWI
     framebuffer->bind();
     std::vector<uint8_t> pixels(static_cast<size_t>(evidence.width) * evidence.height * 4);
     while (glGetError() != GL_NO_ERROR) {}
-    glReadPixels(0, 0, evidence.width, evidence.height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-    if (glGetError() != GL_NO_ERROR) {
-        evidence.error = "glReadPixels failed";
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    if (const auto status = glCheckFramebufferStatus(GL_FRAMEBUFFER); status != GL_FRAMEBUFFER_COMPLETE) {
+        evidence.error = "capture framebuffer is incomplete: " + std::to_string(status);
         return evidence;
+    }
+    GLint readFormat = 0;
+    GLint readType   = 0;
+    glGetIntegerv(GL_IMPLEMENTATION_COLOR_READ_FORMAT, &readFormat);
+    glGetIntegerv(GL_IMPLEMENTATION_COLOR_READ_TYPE, &readType);
+    if ((readFormat != GL_RGBA && readFormat != GL_BGRA_EXT) || readType != GL_UNSIGNED_BYTE) {
+        evidence.error = "unsupported framebuffer read format/type: " + std::to_string(readFormat) + "/" + std::to_string(readType);
+        return evidence;
+    }
+    while (glGetError() != GL_NO_ERROR) {}
+    glReadPixels(0, 0, evidence.width, evidence.height, readFormat, readType, pixels.data());
+    if (const auto error = glGetError(); error != GL_NO_ERROR) {
+        evidence.error = "glReadPixels failed with GL error " + std::to_string(error) + " for format/type " + std::to_string(readFormat) + "/" + std::to_string(readType);
+        return evidence;
+    }
+    if (readFormat == GL_BGRA_EXT) {
+        for (size_t pixel = 0; pixel < pixels.size(); pixel += 4)
+            std::swap(pixels[pixel], pixels[pixel + 2]);
     }
 
     renderScope.restore();
@@ -588,7 +617,7 @@ SDispatchResult inspect(std::string argument) {
         std::ostringstream record;
         record << "{\"schema\":1,\"requestId\":" << quoted(request->first) << ",\"sessionGeneration\":" << generation
                << ",\"hyprlandVersion\":" << quoted(EXPECTED_VERSION) << ",\"compileHash\":" << quoted(GIT_COMMIT_HASH)
-               << ",\"runtimeHash\":" << quoted(__hyprland_api_get_hash()) << ",\"monitor\":{\"id\":" << before.monitor->m_id
+               << ",\"runtimeHash\":" << quoted(runtimeCommitHash()) << ",\"runtimeAbiHash\":" << quoted(runtimeAbiHash()) << ",\"monitor\":{\"id\":" << before.monitor->m_id
                << ",\"name\":" << quoted(before.monitor->m_name) << ",\"pixelWidth\":" << before.monitor->m_pixelSize.x
                << ",\"pixelHeight\":" << before.monitor->m_pixelSize.y << "},\"workspace\":{\"id\":" << before.workspace->m_id
                << ",\"name\":" << quoted(before.workspace->m_name) << "},\"algorithmIdentity\":" << quoted(identity(before.algorithm))
@@ -609,7 +638,8 @@ SDispatchResult inspect(std::string argument) {
         std::ostringstream record;
         record << "{\"schema\":1,\"requestId\":" << quoted(request->first) << ",\"sessionGeneration\":" << generation
                << ",\"hyprlandVersion\":" << quoted(EXPECTED_VERSION) << ",\"compileHash\":" << quoted(GIT_COMMIT_HASH)
-               << ",\"runtimeHash\":" << quoted(__hyprland_api_get_hash()) << ",\"mutationOutcome\":\"not-attempted\",\"rollbackStatus\":\"not-required\",\"status\":\"FAIL\",\"error\":"
+               << ",\"runtimeHash\":" << quoted(runtimeCommitHash()) << ",\"runtimeAbiHash\":" << quoted(runtimeAbiHash())
+               << ",\"mutationOutcome\":\"not-attempted\",\"rollbackStatus\":\"not-required\",\"status\":\"FAIL\",\"error\":"
                << quoted(error.what()) << "}";
         Log::logger->log(Log::INFO, "HYPREXPO_SCROLL_PROBE {}", record.str());
         return {.success = false, .error = error.what()};
@@ -617,7 +647,7 @@ SDispatchResult inspect(std::string argument) {
         std::ostringstream record;
         record << "{\"schema\":1,\"requestId\":" << quoted(request->first) << ",\"sessionGeneration\":" << generation
                << ",\"hyprlandVersion\":" << quoted(EXPECTED_VERSION) << ",\"compileHash\":" << quoted(GIT_COMMIT_HASH)
-               << ",\"runtimeHash\":" << quoted(__hyprland_api_get_hash())
+               << ",\"runtimeHash\":" << quoted(runtimeCommitHash()) << ",\"runtimeAbiHash\":" << quoted(runtimeAbiHash())
                << ",\"mutationOutcome\":\"not-attempted\",\"rollbackStatus\":\"not-required\",\"status\":\"FAIL\",\"error\":\"unknown exception\"}";
         Log::logger->log(Log::INFO, "HYPREXPO_SCROLL_PROBE {}", record.str());
         return {.success = false, .error = "unknown exception"};
@@ -632,8 +662,10 @@ APICALL EXPORT std::string PLUGIN_API_VERSION() {
 
 APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     g_handle = handle;
-    if (std::string_view{GIT_TAG}.substr(1) != EXPECTED_VERSION || std::string_view{GIT_COMMIT_HASH} != EXPECTED_HASH ||
-        std::string_view{__hyprland_api_get_hash()} != EXPECTED_HASH || std::string_view{__hyprland_api_get_client_hash()} != EXPECTED_HASH)
+    const std::string runtimeAbi = __hyprland_api_get_hash();
+    const std::string clientAbi  = __hyprland_api_get_client_hash();
+    if (std::string_view{GIT_TAG}.substr(1) != EXPECTED_VERSION || std::string_view{GIT_COMMIT_HASH} != EXPECTED_HASH || runtimeAbi != clientAbi ||
+        !runtimeAbi.starts_with(EXPECTED_HASH))
         throw std::runtime_error("scrolling API probe requires exact Hyprland 0.56.1 / 5c9377c ABI");
     const std::vector<uint8_t> shaSelfTest = {'a', 'b', 'c'};
     if (sha256(shaSelfTest) != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
