@@ -31,7 +31,7 @@ Nested test binds:
 12. Complete the expo gesture and confirm its existing open/select behavior is unchanged.
 13. From the workspace where the overview opened, hover a different tile and make a partial cancel swipe. Confirm the animation returns to the same still-open overview and the origin workspace has not changed.
 14. Repeat with a completed cancel swipe. Confirm the overview closes onto the origin workspace rather than the hovered tile.
-15. Open and complete cancel once more to catch stale swipe state. Confirm the origin workspace is unchanged, then inspect the nested compositor log for crashes, assertions, API/hash mismatches, and stale-callback errors.
+15. Open from the origin workspace, hover another tile, begin an expo close, and release below the completion threshold so the overview restores. Without changing the hovered tile, complete cancel and confirm its animation retargets the origin and closes there. Repeat open/completed-cancel once more to catch stale swipe state, then inspect the nested compositor log for crashes, assertions, API/hash mismatches, and stale-callback errors.
 16. Open or create a Picture-in-Picture-like pinned window. In the nested session, one practical path is to focus a test window and run `hyprctl dispatch pin` from a terminal.
 17. With the default `plugin:hyprexpo:show_pinned_windows = 0`, open overview and confirm the pinned window is not rendered into every workspace preview tile.
 18. Set `plugin:hyprexpo:show_pinned_windows = 1`, reload or apply the keyword, reopen overview, and confirm pinned windows render in previews again for users who opt in.

@@ -116,7 +116,9 @@ overview when closed, and an expo close gesture selects the hovered workspace.
 The `cancel` action is inert while the overview is closed. While it is open, a
 cancel swipe starts an interactive close without selecting the hovered tile. A
 completed cancel swipe returns to the workspace where the overview opened; an
-incomplete swipe restores the still-open overview.
+incomplete swipe restores the still-open overview. Each cancel swipe targets
+the opening workspace again, including after an incomplete expo close was
+previously aimed at another tile.
 
 `gesture` accepts this table shape:
 

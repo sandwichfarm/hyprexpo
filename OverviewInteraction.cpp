@@ -560,6 +560,11 @@ void COverview::setClosing(bool closing_) {
     closing = closing_;
 }
 
+void COverview::beginCancelSwipe() {
+    closeOnID = openedID;
+    closing   = true;
+}
+
 void COverview::onWindowMoveToWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace) {
     if (!closing || externalWorkspaceMoveDuringClose || !window)
         return;

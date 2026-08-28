@@ -235,8 +235,9 @@ int main() {
     const auto cancelSwipeBegin = extractFunction(interactionSource, "void COverview::beginCancelSwipe(");
     expect(!cancelSwipeBegin.empty(), "overview cancel-begin transition exists");
     const auto resetCancelTarget = cancelSwipeBegin.find("closeOnID = openedID");
-    const auto startCancelClose  = cancelSwipeBegin.find("closing = true", resetCancelTarget);
-    expect(resetCancelTarget != std::string::npos && startCancelClose != std::string::npos && resetCancelTarget < startCancelClose,
+    const auto startCancelClose  = cancelSwipeBegin.find("closing", resetCancelTarget);
+    const auto enableCancelClose = cancelSwipeBegin.find("= true", startCancelClose);
+    expect(resetCancelTarget != std::string::npos && startCancelClose != std::string::npos && enableCancelClose != std::string::npos && resetCancelTarget < startCancelClose,
            "cancel begin replaces any aborted expo target with the opening workspace before closing");
     const auto expoBeginBlock = monitorQueryStart == std::string::npos ? std::string{} : gestureBegin.substr(monitorQueryStart);
     expect(expoBeginBlock.find("std::make_unique<COverview>(monitor->m_activeWorkspace, true)") != std::string::npos &&

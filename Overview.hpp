@@ -29,6 +29,7 @@ class COverview {
     void onPreRender();
 
     void setClosing(bool closing);
+    void beginCancelSwipe();
     // True once close() has armed the teardown animation. Further gestures must
     // be ignored until the overview is destroyed, otherwise a second swipe
     // rewinds the in-flight close animation (the close "replays" from ~80%).

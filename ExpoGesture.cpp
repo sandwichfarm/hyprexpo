@@ -17,7 +17,7 @@ void CExpoGesture::begin(const ITrackpadGesture::STrackpadGestureBegin& e) {
         if (!g_pOverview || g_pOverview->closeCommitted())
             return;
 
-        g_pOverview->setClosing(true);
+        g_pOverview->beginCancelSwipe();
         return;
     }
 
