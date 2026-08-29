@@ -1,6 +1,7 @@
 #include "ScrollingOverview.hpp"
 
 #include "HyprexpoConfig.hpp"
+#include "HyprlandConfigCompat.hpp"
 #include "OverviewCapture.hpp"
 #include "OverviewInternal.hpp"
 #include "OverviewPassElement.hpp"
@@ -705,8 +706,7 @@ void CScrollingOverview::onSwipeUpdate(double delta) {
         return;
     m_isSwiping = true;
     m_swipeDelta = delta;
-    static auto* const* PDISTANCE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gesture_distance")->getDataStaticPtr();
-    const double distance = std::max<Hyprlang::INT>(1, **PDISTANCE);
+    const double distance = std::max<Hyprlang::INT>(1, CompatHyprlandAPI::intValue("plugin:hyprexpo:gesture_distance"));
     const float progress = static_cast<float>(transitionForSwipe(m_swipeClosing, m_swipeDelta, distance));
     m_transitionProgress->setCallbackOnEnd(nullptr);
     m_transitionProgress->setValueAndWarp(progress);
