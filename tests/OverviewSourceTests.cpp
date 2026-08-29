@@ -314,6 +314,8 @@ int main() {
     const auto captureSource = readFile("OverviewCapture.cpp");
     const auto configHeader  = readFile("HyprexpoConfig.hpp");
     const auto makefile      = readFile("Makefile");
+    const auto cmake         = readFile("CMakeLists.txt");
+    const auto meson         = readFile("meson.build");
     expect(!captureHeader.empty() && !captureSource.empty(), "shared overview capture source can be read from repo root");
     expectContains(captureHeader, "captureWorkspacePreview", "shared capture API exposes the grid and mixed-row workspace boundary");
     expectContains(captureHeader, "captureWindowPreview", "shared capture API exposes tight scrolling-target capture");
@@ -356,6 +358,31 @@ int main() {
     expectContains(configSource, ".max = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MAX", "scrolling thumbnail budget registration enforces the maximum");
     expectContains(makefile, "OverviewCapture.cpp", "Make production sources include the shared capture boundary");
     expectContains(makefile, "OverviewCapture.hpp", "Make headers include the shared capture boundary");
+
+    const std::string buildDefinitions = makefile + cmake + meson;
+    expect(!cmake.empty() && !meson.empty(), "CMake and Meson build definitions can be read from repo root");
+    for (const auto& productionSource : {"main.cpp", "Dispatchers.cpp", "PluginConfig.cpp", "IOverviewSession.cpp", "Overview.cpp", "OverviewInteraction.cpp",
+                                         "OverviewRender.cpp", "OverviewCapture.cpp", "ScrollingOverview.cpp", "ScrollingInputState.cpp", "ExpoGesture.cpp",
+                                         "OverviewPassElement.cpp", "HyprexpoLogic.cpp", "ScrollingOverviewLogic.cpp", "ScrollingMutationTransaction.cpp",
+                                         "ScrollingLayoutAdapter.cpp", "ScrollingDiagnostics.cpp"}) {
+        expectContains(makefile, productionSource, "Make includes production source " + std::string{productionSource});
+        expectContains(cmake, productionSource, "CMake includes production source " + std::string{productionSource});
+        expectContains(meson, productionSource, "Meson includes production source " + std::string{productionSource});
+    }
+
+    for (const auto& pureSource : {"HyprexpoLogic.cpp", "ScrollingOverviewLogic.cpp", "ScrollingInputState.cpp", "ScrollingMutationTransaction.cpp"}) {
+        expectContains(cmake, pureSource, "CMake logic tests include pure source " + std::string{pureSource});
+        expectContains(meson, pureSource, "Meson logic tests include pure source " + std::string{pureSource});
+    }
+
+    for (const auto& suite : {"HyprexpoLogicTests", "OverviewSourceTests"}) {
+        expectContains(makefile, suite, "Make registers test suite " + std::string{suite});
+        expectContains(cmake, "add_executable(" + std::string{suite}, "CMake creates test executable " + std::string{suite});
+        expectContains(cmake, "add_test(NAME " + std::string{suite}, "CTest registers test suite " + std::string{suite});
+        expectContains(meson, "executable('" + std::string{suite} + "'", "Meson creates test executable " + std::string{suite});
+        expectContains(meson, "test('" + std::string{suite} + "'", "Meson registers test suite " + std::string{suite});
+    }
+    expectContains(buildDefinitions, "tests/OverviewSourceTests.cpp", "build definitions include the source-contract suite");
 
     const auto sessionHeader   = readFile("IOverviewSession.hpp");
     const auto sessionSource   = readFile("IOverviewSession.cpp");
