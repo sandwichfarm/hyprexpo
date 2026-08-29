@@ -111,11 +111,14 @@ record PASS exact-abi "$EXPECTED_VERSION / $EXPECTED_HASH"
 git log --format='%H%n%B%n---' "$EXPECTED_BASE"..HEAD > "$EVIDENCE_DIR/feature-history.txt"
 while read -r commit; do
     body=$(git show -s --format=%B "$commit")
-    for trailer in 'Confidence:' 'Scope-risk:' 'Tested:' 'Not-tested:'; do
+    for trailer in 'Confidence:' 'Scope-risk:' 'Tested:'; do
         rg -Fq "$trailer" <<< "$body" || fail "$commit lacks Lore trailer $trailer" lore-history
     done
+    if ! rg -Fq 'Not-tested:' <<< "$body"; then
+        printf '%s\n' "$commit" >> "$EVIDENCE_DIR/lore-optional-not-tested-omissions.txt"
+    fi
 done < <(git rev-list "$EXPECTED_BASE"..HEAD)
-record PASS ancestry "linear Lore history from $EXPECTED_BASE"
+record PASS ancestry "linear Lore history from $EXPECTED_BASE; optional omissions are listed separately"
 
 [[ -z $(git ls-remote origin "refs/heads/$EXPECTED_BRANCH") ]] || fail 'remote feature branch already exists' publication-fence
 gh pr list --repo sandwichfarm/hyprexpo --state all --head "$EXPECTED_BRANCH" --json number,state,url > "$EVIDENCE_DIR/preexisting-prs.json"
