@@ -59,6 +59,18 @@ std::string directionName(Layout::Tiled::eScrollDirection direction) {
     return "unknown";
 }
 
+std::optional<Layout::Tiled::eScrollDirection> parseDirection(const std::string& direction) {
+    if (direction == "right")
+        return Layout::Tiled::SCROLL_DIR_RIGHT;
+    if (direction == "left")
+        return Layout::Tiled::SCROLL_DIR_LEFT;
+    if (direction == "down")
+        return Layout::Tiled::SCROLL_DIR_DOWN;
+    if (direction == "up")
+        return Layout::Tiled::SCROLL_DIR_UP;
+    return std::nullopt;
+}
+
 SSnapshotResult failure(ESnapshotFailure code, std::string error) {
     return {.failure = code, .error = std::move(error), .snapshot = std::nullopt};
 }
@@ -466,6 +478,11 @@ class CNativeMutationOperations final : public IMutationOperations {
             auto& native = nativeFor(workspaceState.workspaceID);
             if (workspaceState.kind == EMutationWorkspaceKind::Mixed || !native.data)
                 continue;
+            const auto direction = parseDirection(workspaceState.direction);
+            if (!direction || !native.data->controller)
+                throw std::runtime_error("native controller pre-state is incomplete");
+            native.data->controller->setDirection(*direction);
+            native.data->controller->setOffset(workspaceState.offset);
             for (const auto& expectedColumn : workspaceState.columns) {
                 const auto column = columnForIdentity(native, expectedColumn.identity);
                 if (column)
