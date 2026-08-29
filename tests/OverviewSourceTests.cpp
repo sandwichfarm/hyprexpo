@@ -428,6 +428,8 @@ int main() {
         expectContains(inputScript, token, "input oracle asserts exact diagnostic field " + std::string{token});
     expectContains(inputSource, "parseInputSequence", "production and oracle share the strict finite sequence parser");
     expectContains(inputSource, "inputDiagnosticJson", "production and oracle share request-correlated JSON serialization");
+    expectContains(scrollingSource, "parseInputSequence(sequence)", "runtime injection delegates strict parsing to the pure boundary");
+    expectContains(scrollingSource, "inputDiagnosticJson(parsed.requestId", "runtime injection delegates readback serialization to the oracle-covered boundary");
 
     expectContains(makefile, "IOverviewSession.cpp", "Make production sources include the overview factory");
     expectContains(makefile, "ScrollingOverview.cpp", "Make production sources include the scrolling renderer");
