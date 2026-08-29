@@ -469,8 +469,11 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
             if (!PMONITOR)
                 return {};
             renderingOverview = true;
-            g_pOverview       = createOverviewSession(PMONITOR->m_activeWorkspace);
+            auto overview     = createOverviewSession(PMONITOR->m_activeWorkspace);
             renderingOverview = false;
+            if (!overview)
+                return {.success = false, .error = "failed to initialize native scrolling overview"};
+            g_pOverview = std::move(overview);
         }
         return {};
     }
@@ -495,8 +498,11 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
         return {};
 
     renderingOverview = true;
-    g_pOverview       = createOverviewSession(PMONITOR->m_activeWorkspace);
+    auto overview     = createOverviewSession(PMONITOR->m_activeWorkspace);
     renderingOverview = false;
+    if (!overview)
+        return {.success = false, .error = "failed to initialize native scrolling overview"};
+    g_pOverview = std::move(overview);
     return {};
 }
 

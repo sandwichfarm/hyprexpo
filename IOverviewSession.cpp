@@ -3,32 +3,46 @@
 #include "Overview.hpp"
 #include "ScrollingLayoutAdapter.hpp"
 #include "ScrollingOverview.hpp"
+#include "globals.hpp"
 
 #include <hyprland/src/debug/log/Logger.hpp>
+#include <hyprland/src/plugins/PluginAPI.hpp>
 
 #include <atomic>
 #include <exception>
+
+namespace {
+
+void notifyScrollingFailure(const std::string& message) {
+    Log::logger->log(Log::ERR, "[hyprexpo] {}", message);
+    HyprlandAPI::addNotification(PHANDLE, "[hyprexpo] " + message, CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
+}
+
+}
 
 std::unique_ptr<IOverviewSession> createOverviewSession(const PHLWORKSPACE& startedOn, bool swipe) {
     static std::atomic<uint64_t> nextGeneration = 1;
     const uint64_t generation = nextGeneration.fetch_add(1, std::memory_order_relaxed);
 
     const bool detectedScrolling = Hyprexpo::Scrolling::workspaceUsesScrollingLayout(startedOn);
-    const auto snapshot = Hyprexpo::Scrolling::snapshotWorkspace(startedOn);
-    const bool emptyScrolling = detectedScrolling && startedOn && startedOn->getWindowCount() <= 0 && snapshot.failure == Hyprexpo::Scrolling::ESnapshotFailure::MissingScrollingData;
-    if (detectedScrolling && (snapshot.success() || emptyScrolling)) {
+    if (detectedScrolling) {
+        const auto snapshot = Hyprexpo::Scrolling::snapshotWorkspace(startedOn);
+        const bool emptyScrolling = startedOn && startedOn->getWindowCount() <= 0 && snapshot.failure == Hyprexpo::Scrolling::ESnapshotFailure::MissingScrollingData;
+        if (!snapshot.success() && !emptyScrolling) {
+            notifyScrollingFailure(std::format("native scrolling snapshot failed ({}): {}", snapshotFailureName(snapshot.failure), snapshot.error));
+            return nullptr;
+        }
         try {
             auto scrolling = std::make_unique<CScrollingOverview>(startedOn, swipe, generation, snapshot.snapshot);
             if (scrolling->valid())
                 return scrolling;
-            Log::logger->log(Log::ERR, "[hyprexpo] native scrolling session initialization failed; using grid fallback");
+            notifyScrollingFailure("native scrolling session initialization failed");
         } catch (const std::exception& error) {
-            Log::logger->log(Log::ERR, "[hyprexpo] native scrolling session threw during initialization: {}; using grid fallback", error.what());
+            notifyScrollingFailure(std::format("native scrolling session threw during initialization: {}", error.what()));
         } catch (...) {
-            Log::logger->log(Log::ERR, "[hyprexpo] native scrolling session threw an unknown exception; using grid fallback");
+            notifyScrollingFailure("native scrolling session threw an unknown exception");
         }
-    } else if (detectedScrolling) {
-        Log::logger->log(Log::ERR, "[hyprexpo] native scrolling snapshot failed ({}): {}; using grid fallback", snapshotFailureName(snapshot.failure), snapshot.error);
+        return nullptr;
     }
 
     return std::make_unique<COverview>(startedOn, swipe, generation);
