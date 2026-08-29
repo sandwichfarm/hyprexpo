@@ -551,6 +551,10 @@ void checkScrollingMutationTransactions() {
     const auto successful = simulateMutation(mutationFixture(), faultRequest);
     expect(successful.result.outcome == EMutationOutcome::Committed && !successful.trace.empty(), "fault fixture has a complete successful operation trace");
     expect(successful.controllerMoveCount == 1 && successful.reverseMoveCount == 0, "cross-workspace commit invokes the controller exactly once");
+    const auto reversed = simulateMutation(mutationFixture(), faultRequest,
+                                           SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::ReResolve, .when = EFaultWhen::After});
+    expect(reversed.result.outcome == EMutationOutcome::RolledBack && reversed.controllerMoveCount == 1 && reversed.reverseMoveCount == 1,
+           "post-controller failure invokes exactly one reverse move before exact rollback");
     for (const auto step : successful.trace) {
         for (const auto when : {EFaultWhen::Before, EFaultWhen::After}) {
             const auto failed = simulateMutation(mutationFixture(), faultRequest, SFaultInjection{.phase = EMutationPhase::Apply, .step = step, .when = when});
@@ -589,6 +593,9 @@ void checkScrollingMutationTransactions() {
     resized.workspaces[1].columns[0].targets[0].size = 0.25;
     const auto sizeViolations = verifyPostconditions(successful.result.before, resized, successful.result.plan, false);
     expect(std::ranges::find(sizeViolations, "unaffected.size") != sizeViolations.end(), "postconditions reject changed unaffected row sizes");
+
+    expect(nextUnusedOrdinaryWorkspaceID({1, 3, -99, 4}) == 2, "terminal allocation chooses the first globally unused positive ordinary workspace ID");
+    expect(nextUnusedOrdinaryWorkspaceID({1, 2, 3}) == 4, "terminal allocation advances past a dense positive workspace prefix");
 }
 
 }

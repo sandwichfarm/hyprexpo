@@ -269,6 +269,24 @@ int main() {
         expectAbsent(nativeMove + nativeMutationImplementation, token,
                      "native transaction forbids cursor/drag/camera operation " + std::string{token});
 
+    for (const auto& token : {"Desktop::globalWindowController()->moveWindowToWorkspace", "controllerMove", "reverse", "reResolve", "nextUnusedOrdinaryWorkspaceID",
+                              "State::workspaceState()->create", "m_monitor", "MixedFallback", "TerminalWorkspace"})
+        expectContains(adapterSource + mutationSource, token, "cross/terminal transaction exposes " + std::string{token});
+    expectOrder(adapterSource, "moveWindowToWorkspace", "reResolve", "cross move discards stale ownership before destination positioning");
+    expectContains(adapterSource, "if (reverse)", "rollback controller path explicitly reverses ownership");
+    expectContains(adapterSource, "m_createdDestination", "terminal rollback tracks the workspace created by this transaction");
+
+    expectContains(scrollingSource, "moveScrollingTarget(", "one validated release enters the native transaction boundary");
+    expectContains(scrollingSource, "EMutationOutcome::Committed", "committed mutation refreshes the scrolling session");
+    expectContains(scrollingSource, "EMutationOutcome::RolledBack", "rolled-back mutation refreshes the scrolling session");
+    expectContains(scrollingSource, "EMutationOutcome::RollbackFailed", "fatal rollback failure safe-closes the scrolling session");
+    expectContains(scrollingSource, "Log::logger->log(Log::ERR", "fatal mutation emits a high-severity diagnostic");
+    const auto applyEffects = extractFunction(scrollingSource, "void CScrollingOverview::applyInputEffects(");
+    expectOrder(applyEffects, "m_pendingDropIntent.reset()", "moveScrollingTarget(", "release consumes the retained transaction intent before native mutation");
+    expectOrder(applyEffects, "moveScrollingTarget(", "refreshScene()", "commit/rollback refresh happens after the exact-once transaction result");
+    expectContains(diagnosticSource, "mutationDiagnosticJson", "mutation outcomes serialize correlated postcondition evidence");
+    expectContains(diagnosticSource, "violatedInvariantIDs", "mutation diagnostics include exact violated invariant IDs");
+
     for (const auto& token : {"requestId", "sessionGeneration", "marker", "hyprlandVersion", "runtimeHash", "clientHash", "monitorId", "workspaceId", "algorithmFingerprint", "dataFingerprint", "direction",
                               "offsetBefore", "offsetAfter", "activeWorkspaceBefore", "activeWorkspaceAfter", "focusedWindowBefore", "focusedWindowAfter", "columns", "targets", "layoutBox", "visible",
                               "group", "floating", "fullscreen", "pinned", "captureStatus", "retainedFramebuffer", "physicalPresentationBox", "logicalCropBox", "pixelEvidence", "pendingGeneration",
