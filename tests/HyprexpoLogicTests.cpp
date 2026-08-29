@@ -547,6 +547,17 @@ void checkScrollingMutationTransactions() {
                                                      .placement = EColumnPlacement::Existing});
     expect(emptyPreState.result.outcome == EMutationOutcome::Rejected, "missing pre-state rejects without indexing an absent source workspace");
 
+    const auto debugRequest = parseMutationDebugRequest("native.case-1 1 402653184 existing-column 1 2 1");
+    expect(debugRequest.valid && debugRequest.requestID == "native.case-1" && debugRequest.targetStableID == 402653184 && debugRequest.kind == EDropKind::ExistingColumn,
+           "native mutation debug request accepts the shared dotted ID and exact destination");
+    const auto debugFault = parseMutationDebugRequest("rollback.case 1 402653184 new-before 1 0 0 apply:add-target:after");
+    expect(debugFault.valid && debugFault.fault && debugFault.fault->phase == EMutationPhase::Apply && debugFault.fault->step == EMutationStep::AddTarget &&
+               debugFault.fault->when == EFaultWhen::After,
+           "native mutation debug request admits one bounded post-add rollback fault");
+    expect(!parseMutationDebugRequest("bad/id 1 1 same-column 1 0 0").valid, "native mutation debug request shares the safe request ID grammar");
+    expect(!parseMutationDebugRequest("case 1 1 unknown 1 0 0").valid, "native mutation debug request rejects unknown destination kinds");
+    expect(!parseMutationDebugRequest("case 1 1 same-column 1 0 0 apply:remove-target:before").valid, "native mutation debug request rejects unapproved fault surfaces");
+
     expectMutationCommit({.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
                           .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1},
                          0, 0, 1, "same-column reorder");

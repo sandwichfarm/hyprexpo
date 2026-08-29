@@ -297,9 +297,15 @@ int main() {
     const auto mutationDiagnostic = extractFunction(diagnosticSource, "std::string mutationDiagnosticJson(");
     for (const auto& token : {"requestId", "sessionGeneration", "beforeSummary", "afterSummary", "beforeHash", "afterHash", "mutationOutcome", "violatedInvariantIDs"})
         expectContains(mutationDiagnostic, token, "mutation diagnostic carries correlated structural evidence " + std::string{token});
+    for (const auto& token : {"requestKind", "placement", "destinationColumnIndex", "destinationRowIndex", "beforeState", "afterState", "columns", "targets", "members", "width", "size"})
+        expectContains(mutationDiagnostic, token, "mutation diagnostic retains exact native postcondition field " + std::string{token});
     for (const auto& token : {"m_title", "m_class", "windowTitle", "windowClass"})
         expectAbsent(mutationDiagnostic, token, "mutation diagnostic excludes title/class secret surface " + std::string{token});
     expectContains(scrollingSource, "m_mutationRequestSequence", "release diagnostics allocate a session-local correlation sequence");
+    expectContains(adapterHeader + adapterSource, "runNativeMutationTest", "debug acceptance resolves and executes the loaded native transaction boundary");
+    expectContains(adapterSource, "m_fault", "native mutation operations retain only request-scoped fault injection");
+    expectContains(adapterSource, "checkpoint(EMutationPhase phase, EMutationStep step, EFaultWhen when)", "native operations evaluate exact transaction fault boundaries");
+    expectContains(dispatchersSource, "hyprexpo:scrolling_mutation_test", "loaded native mutation acceptance dispatcher is registered");
 
     for (const auto& token : {"requestId", "sessionGeneration", "marker", "hyprlandVersion", "runtimeHash", "clientHash", "monitorId", "workspaceId", "algorithmFingerprint", "dataFingerprint", "direction",
                               "offsetBefore", "offsetAfter", "activeWorkspaceBefore", "activeWorkspaceAfter", "focusedWindowBefore", "focusedWindowAfter", "columns", "targets", "layoutBox", "visible",
@@ -401,7 +407,7 @@ int main() {
         expectContains(nestedFixture, token, "nested fixture exposes scrolling contract token " + std::string{token});
     for (const auto& token : {"--all", "--evidence", "0.56.1", "5c9377c15f85c50648f35ca5a213754f95b93ca0", "f3ed01d3b024e404563e7ce18efdf1583aaa8cba",
                               "HYPREXPO_SCROLLING_DIAGNOSTIC", "HYPREXPO_SCROLLING_INPUT", "HYPREXPO_SCROLLING_MUTATION", "clients -j", "configerrors", "plugin list", "grim",
-                              "same-column", "new-column-before", "new-column-after", "cross-scrolling", "mixed-workspace", "terminal-workspace", "outside-release", "no-op-release",
+                              "same-column", "existing-column", "new-column-before", "new-column-after", "cross-scrolling", "mixed-workspace", "terminal-workspace", "outside-release", "no-op-release",
                               "touch-cancel-pending", "touch-cancel-pan", "touch-cancel-drag", "default-grid"})
         expectContains(validator, token, "validator covers acceptance token " + std::string{token});
     expectContains(validator, "--issue-85-publication-check", "validator exposes an opt-in issue-85 publication fence");
