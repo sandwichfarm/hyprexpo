@@ -387,6 +387,15 @@ int main() {
     expectContains(scrollingSource, "relativeDirection", "mouse axis honors the Hyprland relative-direction payload");
     expectContains(scrollingSource, "applyInputEffects", "all runtime input effects use one application path");
     expectContains(scrollingSource, "resetInputState", "refresh, close, cancel, and teardown share one idempotent reset path");
+    const auto scrollingProcessInput = extractFunction(scrollingSource, "SInputEffects CScrollingOverview::processInput(");
+    expectContains(scrollingProcessInput, "m_closing || m_closeCommitted", "closing scrolling sessions reject fresh mouse and touch ownership");
+    const auto scrollingKbMove = extractFunction(scrollingSource, "void CScrollingOverview::onKbMoveFocus(");
+    const auto scrollingKbConfirm = extractFunction(scrollingSource, "void CScrollingOverview::onKbConfirm(");
+    expectContains(scrollingKbMove, "m_closing || m_closeCommitted", "closing scrolling sessions reject fresh keyboard navigation");
+    expectContains(scrollingKbConfirm, "m_closing || m_closeCommitted", "closing scrolling sessions reject fresh keyboard selection");
+    const auto scrollingInstallInput = extractFunction(scrollingSource, "void CScrollingOverview::installInputListeners(");
+    expectContains(scrollingInstallInput, "event.device->m_boundOutput.empty()", "touch ownership requires an explicitly bound output");
+    expectAbsent(scrollingInstallInput, ": m_monitor.lock()", "unbound touch devices are not guessed onto the overview monitor");
     const auto scrollingRefresh = extractFunction(scrollingSource, "bool CScrollingOverview::refreshScene(");
     const auto scrollingDestructor = extractFunction(scrollingSource, "CScrollingOverview::~CScrollingOverview(");
     expectOrder(scrollingRefresh, "resetInputState(EResetReason::Refresh)", "releaseAllCaptureState();", "scene refresh clears input ownership before replacing cache state");

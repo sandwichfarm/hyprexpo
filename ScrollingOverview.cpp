@@ -225,6 +225,8 @@ void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const S
 }
 
 SInputEffects CScrollingOverview::processInput(const SInputEvent& event) {
+    if (m_closing || m_closeCommitted)
+        return {};
     const auto previousState = m_inputState;
     const auto transition = transitionInput(previousState, event, inputContext());
     m_inputState = transition.state;
@@ -258,7 +260,9 @@ void CScrollingOverview::installInputListeners() {
         info.cancelled = effects.consume;
     });
     touchDownHook = Event::bus()->m_events.input.touch.down.listen([this](const ITouch::SDownEvent& event, Event::SCallbackInfo& info) {
-        auto touchedMonitor = event.device && !event.device->m_boundOutput.empty() ? State::monitorState()->query().name(event.device->m_boundOutput).run() : m_monitor.lock();
+        if (!event.device || event.device->m_boundOutput.empty())
+            return;
+        const auto touchedMonitor = State::monitorState()->query().name(event.device->m_boundOutput).run();
         const auto point = normalizeTouchPoint({event.pos.x, event.pos.y}, touchedMonitor);
         if (!point)
             return;
@@ -285,6 +289,8 @@ void CScrollingOverview::installInputListeners() {
 }
 
 std::expected<std::string, std::string> CScrollingOverview::injectScrollingInput(const std::string& sequence) {
+    if (m_closing || m_closeCommitted)
+        return std::unexpected("scrolling overview is closing");
     const auto specs = splitInputFields(sequence, '|');
     if (specs.size() < 2 || !validRequestId(specs.front()))
         return std::unexpected("expected requestId followed by one or more strict input events");
@@ -803,10 +809,14 @@ void CScrollingOverview::ensureFocusVisible() {
 }
 
 void CScrollingOverview::selectHoveredWorkspace() {
+    if (m_closing || m_closeCommitted)
+        return;
     updateSelectionFromFocus();
 }
 
 void CScrollingOverview::onKbMoveFocus(const std::string& direction) {
+    if (m_closing || m_closeCommitted)
+        return;
     EFocusDirection focusDirection;
     if (direction == "left")
         focusDirection = EFocusDirection::Left;
@@ -825,21 +835,29 @@ void CScrollingOverview::onKbMoveFocus(const std::string& direction) {
 }
 
 void CScrollingOverview::onKbConfirm() {
+    if (m_closing || m_closeCommitted)
+        return;
     updateSelectionFromFocus();
     close(true);
 }
 
 void CScrollingOverview::onKbSelectNumber(int number) {
+    if (m_closing || m_closeCommitted)
+        return;
     if (selectWorkspaceByID(number))
         close(true);
 }
 
 void CScrollingOverview::onKbSelectToken(int visibleIndex) {
+    if (m_closing || m_closeCommitted)
+        return;
     if (visibleIndex >= 0 && selectVisibleIndex(static_cast<size_t>(visibleIndex)))
         close(true);
 }
 
 bool CScrollingOverview::selectVisibleToken(const std::string& token) {
+    if (m_closing || m_closeCommitted)
+        return false;
     const int visibleIndex = fallbackTokenToVisibleIndex(token);
     return visibleIndex >= 0 && selectVisibleIndex(static_cast<size_t>(visibleIndex));
 }
@@ -849,6 +867,8 @@ int64_t CScrollingOverview::selectedWorkspaceID() const {
 }
 
 bool CScrollingOverview::selectWorkspaceByID(int64_t workspaceID) {
+    if (m_closing || m_closeCommitted)
+        return false;
     if (!workspaceRow(workspaceID))
         return false;
     m_focus = {.kind = EHitKind::EmptyWorkspace, .workspaceID = workspaceID};
@@ -857,6 +877,8 @@ bool CScrollingOverview::selectWorkspaceByID(int64_t workspaceID) {
 }
 
 bool CScrollingOverview::selectVisibleIndex(size_t index) {
+    if (m_closing || m_closeCommitted)
+        return false;
     if (index >= m_rows.size() || !m_rows[index].workspace)
         return false;
     return selectWorkspaceByID(m_rows[index].workspace->m_id);
