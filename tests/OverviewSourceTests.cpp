@@ -429,8 +429,12 @@ int main() {
     for (const auto& token : {"workspaceUsesScrollingLayout(startedOn)", "snapshotWorkspace(startedOn)", "CScrollingOverview", "COverview", "std::make_unique<CScrollingOverview>", "std::make_unique<COverview>"})
         expectContains(sessionSource, token, "factory implements guarded selection token " + std::string{token});
     expectOrder(sessionSource, "snapshotWorkspace(startedOn)", "std::make_unique<CScrollingOverview>", "factory snapshots live native state before selecting scrolling");
-    expectOrder(sessionSource, "std::make_unique<CScrollingOverview>", "std::make_unique<COverview>", "factory retains grid fallback after scrolling construction failure");
+    expectContains(sessionSource, "notifyScrollingFailure", "detected scrolling initialization failure is operator-visible");
+    expectContains(sessionSource, "return nullptr", "detected scrolling initialization failure returns no session");
+    expectAbsent(sessionSource, "using grid fallback", "detected scrolling never silently falls back to grid");
+    expectOrder(sessionSource, "if (detectedScrolling)", "return std::make_unique<COverview>", "grid construction is reachable only after the detected-scrolling branch");
     expectContains(dispatchersSource, "createOverviewSession(", "dispatcher creates sessions through the single factory");
+    expectContains(dispatchersSource, "failed to initialize native scrolling overview", "dispatcher reports fail-closed scrolling creation");
     expectContains(gestureSource, "createOverviewSession(", "gesture creates sessions through the single factory");
     expectAbsent(dispatchersSource + gestureSource, "std::make_unique<COverview>", "callers never instantiate the concrete grid implementation");
 
