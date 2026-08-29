@@ -296,7 +296,7 @@ done
 jq -e '.events[0].consume == true and .events[0].panDelta != 0' "$EVIDENCE_DIR/input-axis-inside.json" >/dev/null || fail 'inside axis was not consumed as pan' input-axis
 record PASS runtime-input 'hover/axis plus pending/pan/drag touch-cancel recovery and immediate reacquisition'
 
-runtime_input new-column-before 'mouse_button:210:80:273:1|mouse_move:223:80|mouse_move:5:80|mouse_button:5:80:273:0'
+runtime_input new-column-before 'mouse_button:500:80:273:1|mouse_move:513:80|mouse_move:5:80|mouse_button:5:80:273:0'
 awk -v prefix="$MUTATION_PREFIX" '
     index($0, prefix) && index($0, "\"requestId\":\"scroll-drop-") {
         print substr($0, index($0, prefix) + length(prefix))
