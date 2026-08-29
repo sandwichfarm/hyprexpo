@@ -384,6 +384,27 @@ int main() {
     }
     expectContains(buildDefinitions, "tests/OverviewSourceTests.cpp", "build definitions include the source-contract suite");
 
+    const auto nestedFixture = readFile("scripts/run-nested.sh");
+    const auto validator = readFile("scripts/validate-scrolling-overview.sh");
+    const auto scrollingGuide = readFile("docs/guides/scrolling-overview.md");
+    const auto runtimeGuide = readFile("docs/guides/runtime-smoke.md");
+    const auto optionsGuide = readFile("docs/configuration/options.md");
+    const auto keyboardGuide = readFile("docs/configuration/keyboard.md");
+    const auto dispatcherGuide = readFile("docs/reference/dispatchers.md");
+    const auto readme = readFile("README.md");
+    const auto publicDocs = scrollingGuide + runtimeGuide + optionsGuide + keyboardGuide + dispatcherGuide + readme;
+    for (const auto& token : {"HYPREXPO_DEV_LAYOUT", "layout:scrolling", "layout:dwindle", "layoutmsg", "consume", "expel", "fit"})
+        expectContains(nestedFixture, token, "nested fixture exposes scrolling contract token " + std::string{token});
+    for (const auto& token : {"--all", "--evidence", "0.56.1", "5c9377c15f85c50648f35ca5a213754f95b93ca0", "f3ed01d3b024e404563e7ce18efdf1583aaa8cba",
+                              "HYPREXPO_SCROLLING_DIAGNOSTIC", "HYPREXPO_SCROLLING_INPUT", "HYPREXPO_SCROLLING_MUTATION", "clients -j", "configerrors", "plugin list", "grim",
+                              "same-column", "new-column-before", "new-column-after", "cross-scrolling", "mixed-workspace", "terminal-workspace", "outside-release", "no-op-release",
+                              "touch-cancel-pending", "touch-cancel-pan", "touch-cancel-drag", "default-grid"})
+        expectContains(validator, token, "validator covers acceptance token " + std::string{token});
+    for (const auto& token : {"input.mouse.move", "input.mouse.button", "input.mouse.axis", "input.touch.down", "input.touch.motion", "input.touch.up", "input.touch.cancel",
+                              "scrolling_thumbnail_budget", "m * W * H", "mixed", "terminal", "next empty", "same-column", "new column", "rollback", "0.56.1",
+                              "hyprexpo:scrolling_debug", "hyprexpo:scrolling_input_test", "not full Niri parity"})
+        expectContains(publicDocs, token, "public docs describe scrolling contract token " + std::string{token});
+
     const auto sessionHeader   = readFile("IOverviewSession.hpp");
     const auto sessionSource   = readFile("IOverviewSession.cpp");
     const auto passSource      = readFile("OverviewPassElement.cpp");
