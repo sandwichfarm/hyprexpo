@@ -44,7 +44,7 @@ workspace = 4, layout:scrolling, layoutopt:direction:up
 workspace = 5, layout:dwindle
 EOF
         read -r -d '' FIXTURE_BLOCK <<'EOF' || true
-# The first workspace settles to three columns: A+B share a column, C is a
+# The first workspace settles to three columns: C+D share a column, A and B are
 # dedicated column, and D remains offscreen at the default 0.42 width.
 exec-once = [workspace 1 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-SCROLL-A
 exec-once = [workspace 1 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-SCROLL-B
@@ -58,7 +58,7 @@ exec-once = [workspace 1 silent; float] kitty --class hyprexpo-scroll-fixture --
 exec-once = [workspace 1 silent; float] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-PINNED
 exec-once = [workspace 5 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-GROUP
 exec-once = [workspace 5 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-FULLSCREEN
-exec-once = sh -c 'sleep 2; hyprctl dispatch focuswindow title:HYPREXPO-SCROLL-B; hyprctl dispatch layoutmsg consume; hyprctl dispatch focuswindow title:HYPREXPO-PINNED; hyprctl dispatch pin; hyprctl dispatch focuswindow title:HYPREXPO-GROUP; hyprctl dispatch togglegroup; hyprctl dispatch focuswindow title:HYPREXPO-FULLSCREEN; hyprctl dispatch fullscreen 1; hyprctl dispatch workspace 1'
+exec-once = sh -c 'sleep 2; hyprctl dispatch focuswindow title:HYPREXPO-SCROLL-D; hyprctl dispatch layoutmsg consume; hyprctl dispatch focuswindow title:HYPREXPO-PINNED; hyprctl dispatch pin; hyprctl dispatch focuswindow title:HYPREXPO-GROUP; hyprctl dispatch togglegroup; hyprctl dispatch focuswindow title:HYPREXPO-FULLSCREEN; hyprctl dispatch fullscreen 1; hyprctl dispatch workspace 1'
 EOF
         ;;
     *)

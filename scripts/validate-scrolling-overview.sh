@@ -184,6 +184,8 @@ start_record_watcher() {
         }
     ' > "$output" &
     WATCHER_PID=$!
+    # Ensure tail has opened the current end before the dispatcher can emit.
+    sleep 0.1
 }
 
 wait_for_watcher() {
