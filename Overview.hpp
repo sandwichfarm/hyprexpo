@@ -31,6 +31,10 @@ class COverview final : public IOverviewSession {
     void onConfigReload() override {
         onDamageReported();
     }
+    void prepareForTeardown() override {}
+    std::expected<std::string, std::string> injectScrollingInput(const std::string&) override {
+        return std::unexpected("active overview is not a scrolling session");
+    }
 
     void setClosing(bool closing) override;
     // True once close() has armed the teardown animation. Further gestures must

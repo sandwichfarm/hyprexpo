@@ -2,6 +2,7 @@
 
 #include "IOverviewSession.hpp"
 #include "ScrollingLayoutAdapter.hpp"
+#include "ScrollingInputState.hpp"
 #include "ScrollingOverviewLogic.hpp"
 
 #include <hyprland/src/layout/target/Target.hpp>
@@ -25,6 +26,8 @@ class CScrollingOverview final : public IOverviewSession {
     void onDamageReported() override;
     void onPreRender() override;
     void onConfigReload() override;
+    void prepareForTeardown() override;
+    std::expected<std::string, std::string> injectScrollingInput(const std::string& sequence) override;
     void fullRender() override;
     void setClosing(bool closing) override;
     bool closeCommitted() const override;
@@ -98,7 +101,14 @@ class CScrollingOverview final : public IOverviewSession {
     SCacheEntry* cacheEntry(int64_t workspaceID, uint64_t targetToken);
     const SWorkspaceRow* workspaceRow(int64_t workspaceID) const;
     void updateSelectionFromFocus();
+    void ensureFocusVisible();
     bool commitSelection();
+    void installInputListeners();
+    Hyprexpo::Scrolling::SInputEffects resetInputState(Hyprexpo::Scrolling::EResetReason reason);
+    Hyprexpo::Scrolling::SInputContext inputContext() const;
+    Hyprexpo::Scrolling::SInputEffects processInput(const Hyprexpo::Scrolling::SInputEvent& event);
+    void applyInputEffects(const Hyprexpo::Scrolling::SInputEffects& effects, const Hyprexpo::Scrolling::SInputState& previousState);
+    std::optional<Hyprexpo::SPoint> normalizeTouchPoint(Hyprexpo::SPoint normalizedPoint, const PHLMONITOR& touchedMonitor) const;
 
     PHLWORKSPACE                              m_startedOn;
     PHLMONITORREF                             m_monitor;
@@ -124,4 +134,15 @@ class CScrollingOverview final : public IOverviewSession {
     std::vector<SWorkspaceRow>                m_rows;
     std::vector<SRenderTarget>                m_renderTargets;
     std::vector<SCacheEntry>                  m_cache;
+    Hyprexpo::Scrolling::SInputState          m_inputState;
+    Hyprexpo::Scrolling::SDropSource          m_pendingDropSource;
+    std::optional<Hyprexpo::Scrolling::SDropIntent> m_pendingDropIntent;
+    PHLMONITORREF                             m_touchMonitor;
+    CHyprSignalListener                       mouseMoveHook;
+    CHyprSignalListener                       mouseButtonHook;
+    CHyprSignalListener                       mouseAxisHook;
+    CHyprSignalListener                       touchDownHook;
+    CHyprSignalListener                       touchMotionHook;
+    CHyprSignalListener                       touchUpHook;
+    CHyprSignalListener                       touchCancelHook;
 };

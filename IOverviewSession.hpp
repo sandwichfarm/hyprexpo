@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <string>
 
@@ -16,6 +17,8 @@ class IOverviewSession {
     virtual void onDamageReported() = 0;
     virtual void onPreRender() = 0;
     virtual void onConfigReload() = 0;
+    virtual void prepareForTeardown() = 0;
+    virtual std::expected<std::string, std::string> injectScrollingInput(const std::string& sequence) = 0;
     virtual void fullRender() = 0;
 
     virtual void setClosing(bool closing) = 0;

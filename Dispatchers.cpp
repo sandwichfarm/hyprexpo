@@ -47,6 +47,7 @@ static SDispatchResult onKbSelectTokenDispatcher(std::string arg);
 static SDispatchResult onKbSelectIndexDispatcher(std::string arg);
 static SDispatchResult onMovePreviewWindowDispatcher(std::string arg);
 static SDispatchResult onScrollingDebugDispatcher(std::string arg);
+static SDispatchResult onScrollingInputTestDispatcher(std::string arg);
 static SDispatchResult registerExpoGesture(int fingerCount, const std::string& directionName, const std::string& action, const std::string& mods, float deltaScale, bool disableInhibit);
 
 static std::string trimString(std::string value) {
@@ -668,6 +669,21 @@ static SDispatchResult onScrollingDebugDispatcher(std::string arg) {
     return {};
 }
 
+static SDispatchResult onScrollingInputTestDispatcher(std::string arg) {
+    if (g_unloading)
+        return {.success = false, .error = "plugin is unloading"};
+    if (CompatHyprlandAPI::intValue("plugin:hyprexpo:scrolling_input_debug") == 0)
+        return {.success = false, .error = "scrolling input diagnostics are disabled"};
+    if (!g_pOverview)
+        return {.success = false, .error = "overview is not open"};
+
+    const auto emission = g_pOverview->injectScrollingInput(arg);
+    if (!emission)
+        return {.success = false, .error = emission.error()};
+    Log::logger->log(Log::INFO, "HYPREXPO_SCROLLING_INPUT {}", *emission);
+    return {};
+}
+
 SP<Config::Values::CStringValue> createCancelKeyConfig() {
     g_pCancelKeyConfig = makeShared<Config::Values::CStringValue>("plugin:hyprexpo:cancel_key", "cancel key", HyprexpoConfig::CANCEL_KEY_DEFAULT);
     return g_pCancelKeyConfig;
@@ -698,6 +714,7 @@ void registerHyprexpoDispatchers() {
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:kb_selecti", onKbSelectIndexDispatcher);
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:move_window", onMovePreviewWindowDispatcher);
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:scrolling_debug", onScrollingDebugDispatcher);
+    HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:scrolling_input_test", onScrollingInputTestDispatcher);
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "expo", luaExpo);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_focus", luaKbFocus);

@@ -41,6 +41,7 @@ inline constexpr int         DRAG_DROP_ENABLE_DEFAULT        = 1;
 inline constexpr int         SCROLLING_THUMBNAIL_BUDGET_DEFAULT = 4;
 inline constexpr int         SCROLLING_THUMBNAIL_BUDGET_MIN     = 1;
 inline constexpr int         SCROLLING_THUMBNAIL_BUDGET_MAX     = 16;
+inline constexpr int         SCROLLING_INPUT_DEBUG_DEFAULT      = 0;
 inline constexpr int         KEYNAV_ENABLE_DEFAULT           = 1;
 inline constexpr const char* NUMBER_KEY_MODE_DEFAULT         = "workspace";
 inline constexpr int         KEYNAV_WRAP_H_DEFAULT           = 1;

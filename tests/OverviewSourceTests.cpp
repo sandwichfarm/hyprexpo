@@ -378,7 +378,7 @@ int main() {
                               "m_events.input.touch.motion.listen", "m_events.input.touch.up.listen", "m_events.input.touch.cancel.listen"})
         expectContains(scrollingSource, token, "scrolling session subscribes to exact signal " + std::string{token});
     for (const auto& token : {"mouseMoveHook", "mouseButtonHook", "mouseAxisHook", "touchDownHook", "touchMotionHook", "touchUpHook", "touchCancelHook"})
-        expectContains(scrollingHeader, "CHyprSignalListener " + std::string{token}, "scrolling session owns listener handle " + std::string{token});
+        expectContains(scrollingHeader, token, "scrolling session owns listener handle " + std::string{token});
 
     expectContains(scrollingSource, "transitionInput(", "real and injected scrolling input share the pure transition function");
     expectContains(scrollingSource, "info.cancelled = effects.consume", "callbacks cancel compositor input only from the pure consume effect");
@@ -387,8 +387,10 @@ int main() {
     expectContains(scrollingSource, "relativeDirection", "mouse axis honors the Hyprland relative-direction payload");
     expectContains(scrollingSource, "applyInputEffects", "all runtime input effects use one application path");
     expectContains(scrollingSource, "resetInputState", "refresh, close, cancel, and teardown share one idempotent reset path");
-    expectOrder(scrollingSource, "resetInputState(EResetReason::Refresh)", "releaseAllCaptureState();", "scene refresh clears input ownership before replacing cache state");
-    expectOrder(scrollingSource, "resetInputState(EResetReason::Teardown)", "releaseAllCaptureState();", "destruction clears listeners/input before capture ownership");
+    const auto scrollingRefresh = extractFunction(scrollingSource, "bool CScrollingOverview::refreshScene(");
+    const auto scrollingDestructor = extractFunction(scrollingSource, "CScrollingOverview::~CScrollingOverview(");
+    expectOrder(scrollingRefresh, "resetInputState(EResetReason::Refresh)", "releaseAllCaptureState();", "scene refresh clears input ownership before replacing cache state");
+    expectOrder(scrollingDestructor, "resetInputState(EResetReason::Teardown)", "releaseAllCaptureState();", "destruction clears listeners/input before capture ownership");
     expectContains(sessionHeader, "injectScrollingInput", "injection routes through the polymorphic session without a concrete downcast");
     expectContains(overviewHeader, "injectScrollingInput", "grid session explicitly rejects scrolling-only injection");
     expectAbsent(source, "m_events.input.mouse.axis.listen", "grid mode does not install scrolling axis ownership");

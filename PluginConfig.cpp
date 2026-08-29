@@ -64,6 +64,9 @@ void registerHyprexpoConfigValues() {
                                                          HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_DEFAULT,
                                                          Config::Values::SIntValueOptions{.min = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN,
                                                                                          .max = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MAX}));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:scrolling_input_debug", "enable deterministic scrolling input injection diagnostics",
+                                                         HyprexpoConfig::SCROLLING_INPUT_DEBUG_DEFAULT,
+                                                         Config::Values::SIntValueOptions{.min = 0, .max = 1}));
 
     // keyboard navigation + styling
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:keynav_enable", "key navigation enable", HyprexpoConfig::KEYNAV_ENABLE_DEFAULT));

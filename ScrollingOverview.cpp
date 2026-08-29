@@ -9,15 +9,24 @@
 #define protected public
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
+#include <hyprland/src/event/EventBus.hpp>
+#include <hyprland/src/managers/input/InputManager.hpp>
+#include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
+#include <hyprland/src/state/MonitorState.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
 #include <hyprutils/utils/ScopeGuard.hpp>
 #undef private
 #undef protected
 
 #include <algorithm>
+#include <charconv>
+#include <cctype>
 #include <cmath>
+#include <format>
+#include <sstream>
+#include <string_view>
 #include <unordered_set>
 
 using namespace Hyprexpo::Scrolling;
@@ -42,20 +51,300 @@ CBox sceneBox(const Hyprexpo::SRect& box, double pan) {
     return {box.x, box.y - pan, box.w, box.h};
 }
 
+EOutputTransform outputTransform(wl_output_transform transform) {
+    switch (transform) {
+        case WL_OUTPUT_TRANSFORM_90: return EOutputTransform::Rotate90;
+        case WL_OUTPUT_TRANSFORM_180: return EOutputTransform::Rotate180;
+        case WL_OUTPUT_TRANSFORM_270: return EOutputTransform::Rotate270;
+        case WL_OUTPUT_TRANSFORM_FLIPPED: return EOutputTransform::Flipped;
+        case WL_OUTPUT_TRANSFORM_FLIPPED_90: return EOutputTransform::Flipped90;
+        case WL_OUTPUT_TRANSFORM_FLIPPED_180: return EOutputTransform::Flipped180;
+        case WL_OUTPUT_TRANSFORM_FLIPPED_270: return EOutputTransform::Flipped270;
+        default: return EOutputTransform::Normal;
+    }
+}
+
+const char* inputModeName(EInputMode mode) {
+    switch (mode) {
+        case EInputMode::Idle: return "Idle";
+        case EInputMode::MousePressPending: return "MousePressPending";
+        case EInputMode::TouchPressPending: return "TouchPressPending";
+        case EInputMode::CanvasPan: return "CanvasPan";
+        case EInputMode::WindowDrag: return "WindowDrag";
+    }
+    return "Idle";
+}
+
+const char* dropKindName(EDropKind kind) {
+    switch (kind) {
+        case EDropKind::Invalid: return "Invalid";
+        case EDropKind::NoOp: return "NoOp";
+        case EDropKind::ExistingColumn: return "ExistingColumn";
+        case EDropKind::NewColumnBefore: return "NewColumnBefore";
+        case EDropKind::NewColumnAfter: return "NewColumnAfter";
+        case EDropKind::CrossWorkspace: return "CrossWorkspace";
+        case EDropKind::MixedFallback: return "MixedFallback";
+        case EDropKind::TerminalWorkspace: return "TerminalWorkspace";
+    }
+    return "Invalid";
+}
+
+std::vector<std::string> splitInputFields(std::string_view value, char delimiter) {
+    std::vector<std::string> fields;
+    size_t start = 0;
+    while (start <= value.size()) {
+        const auto end = value.find(delimiter, start);
+        fields.emplace_back(value.substr(start, end == std::string_view::npos ? value.size() - start : end - start));
+        if (end == std::string_view::npos)
+            break;
+        start = end + 1;
+    }
+    return fields;
+}
+
+bool validRequestId(const std::string& value) {
+    return !value.empty() && value.size() <= 64 && std::ranges::all_of(value, [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_'; });
+}
+
+template <typename T>
+bool parseInputNumber(const std::string& value, T& out) {
+    const auto result = std::from_chars(value.data(), value.data() + value.size(), out);
+    return result.ec == std::errc{} && result.ptr == value.data() + value.size();
+}
+
+std::optional<EResetReason> parseResetReason(const std::string& value) {
+    if (value == "cancel")
+        return EResetReason::Cancel;
+    if (value == "refresh")
+        return EResetReason::Refresh;
+    if (value == "close")
+        return EResetReason::Close;
+    if (value == "teardown")
+        return EResetReason::Teardown;
+    return std::nullopt;
+}
+
 }
 
 CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, bool swipe, uint64_t sessionGeneration, const std::optional<SWorkspaceSnapshot>& initialSnapshot) :
     m_startedOn(startedOn), m_monitor(startedOn ? startedOn->m_monitor : PHLMONITORREF{}), m_sessionGeneration(sessionGeneration), m_isSwiping(swipe),
     m_selectedWorkspaceID(startedOn ? startedOn->m_id : 0) {
     m_valid = refreshScene(initialSnapshot);
+    if (m_valid)
+        installInputListeners();
 }
 
 CScrollingOverview::~CScrollingOverview() {
+    resetInputState(EResetReason::Teardown);
     releaseAllCaptureState();
 }
 
 bool CScrollingOverview::valid() const {
     return m_valid;
+}
+
+SInputContext CScrollingOverview::inputContext() const {
+    const auto MON = m_monitor.lock();
+    if (!MON)
+        return {};
+    return {
+        .scene = &m_scene,
+        .monitor = {
+            .position = {MON->m_position.x, MON->m_position.y},
+            .logicalSize = {MON->m_size.x, MON->m_size.y},
+            .pixelSize = {MON->m_pixelSize.x, MON->m_pixelSize.y},
+            .scale = MON->m_scale,
+            .transform = outputTransform(MON->m_transform),
+        },
+        .pan = m_pan,
+        .viewportHeight = MON->m_size.y,
+        .dragThreshold = 12.0,
+    };
+}
+
+std::optional<Hyprexpo::SPoint> CScrollingOverview::normalizeTouchPoint(Hyprexpo::SPoint normalizedPoint, const PHLMONITOR& touchedMonitor) const {
+    if (!touchedMonitor)
+        return std::nullopt;
+    return touchToGlobalLogical(normalizedPoint, {
+        .position = {touchedMonitor->m_position.x, touchedMonitor->m_position.y},
+        .logicalSize = {touchedMonitor->m_size.x, touchedMonitor->m_size.y},
+        .pixelSize = {touchedMonitor->m_pixelSize.x, touchedMonitor->m_pixelSize.y},
+        .scale = touchedMonitor->m_scale,
+        .transform = outputTransform(touchedMonitor->m_transform),
+    });
+}
+
+SInputEffects CScrollingOverview::resetInputState(EResetReason reason) {
+    if (reason == EResetReason::Teardown) {
+        mouseMoveHook.reset();
+        mouseButtonHook.reset();
+        mouseAxisHook.reset();
+        touchDownHook.reset();
+        touchMotionHook.reset();
+        touchUpHook.reset();
+        touchCancelHook.reset();
+    }
+    const auto reset = resetInput(m_inputState, reason);
+    m_inputState = reset.state;
+    m_touchMonitor.reset();
+    m_pendingDropSource = {};
+    m_pendingDropIntent.reset();
+    return reset.effects;
+}
+
+void CScrollingOverview::prepareForTeardown() {
+    resetInputState(EResetReason::Teardown);
+}
+
+void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const SInputState& previousState) {
+    bool needsDamage = effects.hoverChanged || effects.clearHover || effects.beginDrag || effects.updateDrag || effects.cancelDrag || effects.finishDrag;
+    if (effects.panDelta != 0.0) {
+        m_pan += effects.panDelta;
+        needsDamage = true;
+    }
+    if (effects.dropIntent)
+        m_pendingDropIntent = *effects.dropIntent;
+    if (effects.beginDrag || effects.updateDrag || effects.finishDrag)
+        m_pendingDropSource = previousState.mode == EInputMode::WindowDrag ? previousState.dragSource : m_inputState.dragSource;
+    if (effects.cancelDrag)
+        m_pendingDropIntent.reset();
+    if (effects.resetOwnership)
+        m_touchMonitor.reset();
+    if (needsDamage)
+        damage();
+
+    if (effects.selection) {
+        m_focus = {.kind = effects.selection->kind, .workspaceID = effects.selection->workspaceID, .targetToken = effects.selection->targetToken};
+        updateSelectionFromFocus();
+        const auto generation = m_sessionGeneration;
+        g_pEventLoopManager->doLater([generation]() {
+            if (g_pOverview && g_pOverview->sessionGeneration() == generation)
+                g_pOverview->close(true);
+        });
+    }
+}
+
+SInputEffects CScrollingOverview::processInput(const SInputEvent& event) {
+    const auto previousState = m_inputState;
+    const auto transition = transitionInput(previousState, event, inputContext());
+    m_inputState = transition.state;
+    const auto effects = transition.effects;
+    applyInputEffects(effects, previousState);
+    return effects;
+}
+
+void CScrollingOverview::installInputListeners() {
+    mouseMoveHook = Event::bus()->m_events.input.mouse.move.listen([this](const Vector2D&, Event::SCallbackInfo& info) {
+        const auto point = g_pInputManager->getMouseCoordsInternal();
+        const auto effects = processInput({.kind = EInputKind::MouseMove, .globalLogicalPoint = {point.x, point.y}});
+        info.cancelled = effects.consume;
+    });
+    mouseButtonHook = Event::bus()->m_events.input.mouse.button.listen([this](const IPointer::SButtonEvent& event, Event::SCallbackInfo& info) {
+        const auto point = g_pInputManager->getMouseCoordsInternal();
+        const auto effects = processInput({.kind = EInputKind::MouseButton,
+                                           .globalLogicalPoint = {point.x, point.y},
+                                           .button = event.button,
+                                           .pressed = event.state == WL_POINTER_BUTTON_STATE_PRESSED,
+                                           .time = event.timeMs});
+        info.cancelled = effects.consume;
+    });
+    mouseAxisHook = Event::bus()->m_events.input.mouse.axis.listen([this](const IPointer::SAxisEvent& event, Event::SCallbackInfo& info) {
+        const auto point = g_pInputManager->getMouseCoordsInternal();
+        const double direction = event.relativeDirection == WL_POINTER_AXIS_RELATIVE_DIRECTION_INVERTED ? -1.0 : 1.0;
+        const auto effects = processInput({.kind = EInputKind::MouseAxis,
+                                           .globalLogicalPoint = {point.x, point.y},
+                                           .axisDelta = event.delta * direction,
+                                           .time = event.timeMs});
+        info.cancelled = effects.consume;
+    });
+    touchDownHook = Event::bus()->m_events.input.touch.down.listen([this](const ITouch::SDownEvent& event, Event::SCallbackInfo& info) {
+        auto touchedMonitor = event.device && !event.device->m_boundOutput.empty() ? State::monitorState()->query().name(event.device->m_boundOutput).run() : m_monitor.lock();
+        const auto point = normalizeTouchPoint({event.pos.x, event.pos.y}, touchedMonitor);
+        if (!point)
+            return;
+        const auto effects = processInput({.kind = EInputKind::TouchDown, .globalLogicalPoint = *point, .touchId = event.touchID, .time = event.timeMs});
+        if (effects.consume && m_inputState.owner == EInputOwner::Touch && m_inputState.owningTouchId == event.touchID)
+            m_touchMonitor = touchedMonitor;
+        info.cancelled = effects.consume;
+    });
+    touchMotionHook = Event::bus()->m_events.input.touch.motion.listen([this](const ITouch::SMotionEvent& event, Event::SCallbackInfo& info) {
+        const auto point = normalizeTouchPoint({event.pos.x, event.pos.y}, m_touchMonitor.lock());
+        if (!point)
+            return;
+        const auto effects = processInput({.kind = EInputKind::TouchMotion, .globalLogicalPoint = *point, .touchId = event.touchID, .time = event.timeMs});
+        info.cancelled = effects.consume;
+    });
+    touchUpHook = Event::bus()->m_events.input.touch.up.listen([this](const ITouch::SUpEvent& event, Event::SCallbackInfo& info) {
+        const auto effects = processInput({.kind = EInputKind::TouchUp, .globalLogicalPoint = {}, .touchId = event.touchID, .time = event.timeMs});
+        info.cancelled = effects.consume;
+    });
+    touchCancelHook = Event::bus()->m_events.input.touch.cancel.listen([this](const ITouch::SCancelEvent& event, Event::SCallbackInfo& info) {
+        const auto effects = processInput({.kind = EInputKind::TouchCancel, .globalLogicalPoint = {}, .touchId = event.touchID, .time = event.timeMs});
+        info.cancelled = effects.consume;
+    });
+}
+
+std::expected<std::string, std::string> CScrollingOverview::injectScrollingInput(const std::string& sequence) {
+    const auto specs = splitInputFields(sequence, '|');
+    if (specs.size() < 2 || !validRequestId(specs.front()))
+        return std::unexpected("expected requestId followed by one or more strict input events");
+    if (specs.size() > 129)
+        return std::unexpected("input sequence exceeds the 128-event limit");
+
+    std::string eventsJson = "[";
+    for (size_t index = 1; index < specs.size(); ++index) {
+        const auto fields = splitInputFields(specs[index], ':');
+        if (fields.empty() || fields.front().empty())
+            return std::unexpected("input event name is empty");
+
+        SInputEffects effects;
+        if (fields.front() == "reset") {
+            if (fields.size() != 2)
+                return std::unexpected("reset event expects exactly one reason");
+            const auto reason = parseResetReason(fields[1]);
+            if (!reason)
+                return std::unexpected("reset reason must be cancel|refresh|close|teardown");
+            effects = resetInputState(*reason);
+        } else {
+            SInputEvent event;
+            auto parsePoint = [&](size_t xIndex, size_t yIndex) {
+                return fields.size() > yIndex && parseInputNumber(fields[xIndex], event.globalLogicalPoint.x) && parseInputNumber(fields[yIndex], event.globalLogicalPoint.y) &&
+                    std::isfinite(event.globalLogicalPoint.x) && std::isfinite(event.globalLogicalPoint.y);
+            };
+
+            if (fields.front() == "mouse_move" && fields.size() == 3 && parsePoint(1, 2)) {
+                event.kind = EInputKind::MouseMove;
+            } else if (fields.front() == "mouse_button" && fields.size() == 5 && parsePoint(1, 2)) {
+                int pressed = 0;
+                if (!parseInputNumber(fields[3], event.button) || !parseInputNumber(fields[4], pressed) || (pressed != 0 && pressed != 1))
+                    return std::unexpected("mouse_button expects x:y:button:0|1");
+                event.kind = EInputKind::MouseButton;
+                event.pressed = pressed == 1;
+            } else if (fields.front() == "mouse_axis" && fields.size() == 4 && parsePoint(1, 2) && parseInputNumber(fields[3], event.axisDelta) && std::isfinite(event.axisDelta)) {
+                event.kind = EInputKind::MouseAxis;
+            } else if ((fields.front() == "touch_down" || fields.front() == "touch_motion") && fields.size() == 4 && parseInputNumber(fields[1], event.touchId)) {
+                if (!parsePoint(2, 3))
+                    return std::unexpected("touch point must be finite logical x:y");
+                event.kind = fields.front() == "touch_down" ? EInputKind::TouchDown : EInputKind::TouchMotion;
+            } else if ((fields.front() == "touch_up" || fields.front() == "touch_cancel") && fields.size() == 2 && parseInputNumber(fields[1], event.touchId)) {
+                event.kind = fields.front() == "touch_up" ? EInputKind::TouchUp : EInputKind::TouchCancel;
+            } else {
+                return std::unexpected("invalid input event schema at index " + std::to_string(index - 1));
+            }
+            effects = processInput(event);
+        }
+
+        if (index > 1)
+            eventsJson += ',';
+        const auto drop = effects.dropIntent ? dropKindName(effects.dropIntent->kind) : "None";
+        eventsJson += std::format("{{\"index\":{},\"state\":\"{}\",\"consume\":{},\"hoverChanged\":{},\"clearHover\":{},\"panDelta\":{},"
+                                  "\"select\":{},\"beginDrag\":{},\"updateDrag\":{},\"finishDrag\":{},\"cancelDrag\":{},\"resetOwnership\":{},\"drop\":\"{}\"}}",
+                                  index - 1, inputModeName(m_inputState.mode), effects.consume, effects.hoverChanged, effects.clearHover, effects.panDelta,
+                                  effects.selection.has_value(), effects.beginDrag, effects.updateDrag, effects.finishDrag, effects.cancelDrag, effects.resetOwnership, drop);
+    }
+    eventsJson += ']';
+    return std::format("{{\"requestId\":\"{}\",\"events\":{},\"finalState\":\"{}\",\"owningTouchId\":{},\"hasDropIntent\":{}}}",
+                       specs.front(), eventsJson, inputModeName(m_inputState.mode), m_inputState.owningTouchId, m_pendingDropIntent.has_value());
 }
 
 void CScrollingOverview::releaseCacheEntry(SCacheEntry& entry) {
@@ -95,6 +384,7 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
     if (!MON || !m_startedOn || m_startedOn->inert())
         return false;
 
+    resetInputState(EResetReason::Refresh);
     releaseAllCaptureState();
     m_rows.clear();
     m_renderTargets.clear();
@@ -324,6 +614,7 @@ void CScrollingOverview::onPreRender() {
 }
 
 void CScrollingOverview::onConfigReload() {
+    resetInputState(EResetReason::Refresh);
     ++m_contentDamageGeneration;
     m_damageDirty = true;
     damage();
@@ -370,11 +661,17 @@ void CScrollingOverview::fullRender() {
             Render::GL::g_pHyprOpenGL->renderTextureInternal(entry->texture, box, {.damage = &damageRegion, .a = 1.F, .round = target.fullscreen ? 0 : 8});
         else
             Render::GL::g_pHyprOpenGL->renderRect(box, target.pinned ? CHyprColor{0.18, 0.12, 0.12, 1.0} : CHyprColor{0.12, 0.12, 0.12, 1.0}, {.round = 8});
+        const bool hovered = m_inputState.hover.kind == EHitKind::Target && m_inputState.hover.workspaceID == target.workspaceID && m_inputState.hover.targetToken == target.targetToken;
+        const bool dragging = m_inputState.mode == EInputMode::WindowDrag && m_inputState.pressed.workspaceID == target.workspaceID && m_inputState.pressed.targetToken == target.targetToken;
+        if (hovered || dragging)
+            Render::GL::g_pHyprOpenGL->renderRect(box, dragging ? CHyprColor{0.20, 0.48, 0.85, 0.20} : CHyprColor{0.85, 0.90, 1.0, 0.12}, {.round = target.fullscreen ? 0 : 8});
     }
 }
 
 void CScrollingOverview::setClosing(bool closing) {
     m_closing = closing;
+    if (closing)
+        resetInputState(EResetReason::Close);
 }
 
 bool CScrollingOverview::closeCommitted() const {
@@ -386,6 +683,7 @@ bool CScrollingOverview::shouldRenderOverviewForMonitor(const PHLMONITOR& reques
 }
 
 void CScrollingOverview::onWindowMoveToWorkspace(const PHLWINDOW&, const PHLWORKSPACE&) {
+    resetInputState(EResetReason::Refresh);
     ++m_contentDamageGeneration;
     m_damageDirty = true;
 }
@@ -451,6 +749,7 @@ bool CScrollingOverview::commitSelection() {
 void CScrollingOverview::close(bool switchToSelection) {
     if (m_closeCommitted)
         return;
+    resetInputState(EResetReason::Close);
     m_closeCommitted = true;
     if (switchToSelection)
         commitSelection();
@@ -477,6 +776,32 @@ void CScrollingOverview::updateSelectionFromFocus() {
     m_selectedWindow   = target->windowRef;
 }
 
+void CScrollingOverview::ensureFocusVisible() {
+    const auto MON = m_monitor.lock();
+    if (!MON)
+        return;
+    std::optional<Hyprexpo::SRect> focusBox;
+    if (m_focus.kind == EHitKind::Target) {
+        const auto target = std::ranges::find_if(m_scene.targets, [&](const auto& item) {
+            return item.workspaceID == m_focus.workspaceID && item.token == m_focus.targetToken;
+        });
+        if (target != m_scene.targets.end())
+            focusBox = target->box;
+    } else {
+        const auto workspace = std::ranges::find_if(m_scene.workspaces, [&](const auto& item) { return item.workspaceID == m_focus.workspaceID; });
+        if (workspace != m_scene.workspaces.end())
+            focusBox = workspace->box;
+    }
+    if (!focusBox)
+        return;
+    double requested = m_pan;
+    if (focusBox->y < requested)
+        requested = focusBox->y;
+    else if (focusBox->y + focusBox->h > requested + MON->m_size.y)
+        requested = focusBox->y + focusBox->h - MON->m_size.y;
+    m_pan = clampPan(m_scene, requested, MON->m_size.y);
+}
+
 void CScrollingOverview::selectHoveredWorkspace() {
     updateSelectionFromFocus();
 }
@@ -494,6 +819,7 @@ void CScrollingOverview::onKbMoveFocus(const std::string& direction) {
     else
         return;
     m_focus = moveFocus(m_scene, m_focus, focusDirection);
+    ensureFocusVisible();
     updateSelectionFromFocus();
     damage();
 }
