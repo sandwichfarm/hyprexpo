@@ -176,13 +176,11 @@ start_record_watcher() {
     local prefix=$1
     local correlation=$2
     local output=$3
-    hc rollinglog -f 2>/dev/null | awk -v prefix="$prefix" -v correlation="$correlation" '
-        index($0, prefix) && index($0, correlation) {
-            print substr($0, index($0, prefix) + length(prefix))
-            fflush()
-            exit
-        }
-    ' > "$output" &
+    WATCHER_PREFIX=$prefix
+    WATCHER_CORRELATION=$correlation
+    WATCHER_RAW="$output.follow"
+    : > "$WATCHER_RAW"
+    env HYPRLAND_INSTANCE_SIGNATURE="$INSTANCE" stdbuf -oL hyprctl rollinglog -f > "$WATCHER_RAW" 2>/dev/null &
     WATCHER_PID=$!
     # Ensure Hyprland registered the live follow socket before dispatch emits.
     sleep 0.1
@@ -192,6 +190,12 @@ wait_for_watcher() {
     local output=$1
     local label=$2
     for _ in $(seq 1 600); do
+        awk -v prefix="$WATCHER_PREFIX" -v correlation="$WATCHER_CORRELATION" '
+            index($0, prefix) && index($0, correlation) {
+                print substr($0, index($0, prefix) + length(prefix))
+                exit
+            }
+        ' "$WATCHER_RAW" > "$output"
         [[ -s $output ]] && break
         sleep 0.05
     done
@@ -274,11 +278,14 @@ done
 jq -e '.events[0].consume == true and .events[0].panDelta != 0' "$EVIDENCE_DIR/input-axis-inside.json" >/dev/null || fail 'inside axis was not consumed as pan' input-axis
 record PASS runtime-input 'hover/axis plus pending/pan/drag touch-cancel recovery and immediate reacquisition'
 
-start_record_watcher "$MUTATION_PREFIX" '"requestId":"scroll-drop-' "$EVIDENCE_DIR/mutation-new-column-before.json"
-mutation_watcher=$WATCHER_PID
 runtime_input new-column-before 'mouse_button:210:80:273:1|mouse_move:223:80|mouse_move:5:80|mouse_button:5:80:273:0'
-WATCHER_PID=$mutation_watcher
-wait_for_watcher "$EVIDENCE_DIR/mutation-new-column-before.json" runtime-mutation
+awk -v prefix="$MUTATION_PREFIX" '
+    index($0, prefix) && index($0, "\"requestId\":\"scroll-drop-") {
+        print substr($0, index($0, prefix) + length(prefix))
+        exit
+    }
+' "$EVIDENCE_DIR/input-new-column-before.json.follow" > "$EVIDENCE_DIR/mutation-new-column-before.json"
+[[ -s $EVIDENCE_DIR/mutation-new-column-before.json ]] || fail 'runtime drop emitted no mutation diagnostic' runtime-mutation
 jq -e '.mutationOutcome == "committed" and (.requestId | startswith("scroll-drop-")) and (.sessionGeneration > 0) and (.beforeHash != .afterHash)' \
     "$EVIDENCE_DIR/mutation-new-column-before.json" >/dev/null || fail 'runtime mutation was not a correlated structural commit' runtime-mutation
 hc clients -j > "$EVIDENCE_DIR/clients-after-new-column-before.json"
