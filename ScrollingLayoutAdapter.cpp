@@ -549,6 +549,18 @@ class CNativeMutationOperations final : public IMutationOperations {
             if (native.data)
                 native.data->recalculate();
         }
+        if (!m_preState)
+            throw std::runtime_error("controller restoration has no pre-state");
+        for (const auto& workspaceState : m_preState->workspaces) {
+            auto& native = nativeFor(workspaceState.workspaceID);
+            if (workspaceState.kind == EMutationWorkspaceKind::Mixed || !native.data)
+                continue;
+            const auto direction = parseDirection(workspaceState.direction);
+            if (!direction || !native.data->controller)
+                throw std::runtime_error("native controller pre-state is incomplete after recalculation");
+            native.data->controller->setDirection(*direction);
+            native.data->controller->setOffset(workspaceState.offset);
+        }
     }
 
     SMutationState snapshotPostState(const SMutationPlan& plan, bool rollback) override {
