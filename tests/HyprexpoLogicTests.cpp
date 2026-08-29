@@ -571,6 +571,25 @@ void checkScrollingMutationTransactions() {
     for (const auto& [label, request] : matrix) {
         const auto committed = simulateMutation(mutationFixture(), request);
         expect(committed.result.outcome == EMutationOutcome::Committed, label + " baseline commits before fault enumeration");
+        const auto hasBoundary = [](const SMutationSimulation& simulation, EMutationPhase phase, EMutationStep step, EFaultWhen when) {
+            return std::ranges::any_of(simulation.boundaries, [&](const auto& boundary) {
+                return boundary.phase == phase && boundary.step == step && boundary.when == when;
+            });
+        };
+        std::vector<EMutationStep> applySteps{EMutationStep::SnapshotPreState, EMutationStep::RestoreWidths, EMutationStep::RestoreSizes,
+                                              EMutationStep::Recalculate, EMutationStep::SnapshotPostState, EMutationStep::VerifyPostconditions};
+        if (request.sourceWorkspaceID == request.destinationWorkspaceID) {
+            applySteps.push_back(EMutationStep::RemoveTarget);
+            applySteps.push_back(EMutationStep::AddTarget);
+        } else {
+            applySteps.push_back(EMutationStep::ControllerMove);
+            applySteps.push_back(EMutationStep::ReResolve);
+            if (request.kind != EDropKind::MixedFallback)
+                applySteps.push_back(EMutationStep::AddTarget);
+        }
+        for (const auto step : applySteps)
+            for (const auto when : {EFaultWhen::Before, EFaultWhen::After})
+                expect(hasBoundary(committed, EMutationPhase::Apply, step, when), label + " exposes every required apply boundary before and after");
         for (const auto& boundary : committed.boundaries) {
             if (boundary.phase != EMutationPhase::Apply)
                 continue;
@@ -584,6 +603,15 @@ void checkScrollingMutationTransactions() {
         const auto rollbackTrace = simulateMutation(mutationFixture(), request,
                                                      SFaultInjection{.phase = EMutationPhase::Rollback, .step = EMutationStep::VerifyPostconditions,
                                                                      .when = EFaultWhen::After});
+        std::vector<EMutationStep> rollbackSteps{EMutationStep::RestorePreState, EMutationStep::RestoreWidths, EMutationStep::RestoreSizes,
+                                                 EMutationStep::Recalculate, EMutationStep::SnapshotPostState, EMutationStep::VerifyPostconditions};
+        if (request.sourceWorkspaceID != request.destinationWorkspaceID) {
+            rollbackSteps.push_back(EMutationStep::ReverseControllerMove);
+            rollbackSteps.push_back(EMutationStep::ReResolve);
+        }
+        for (const auto step : rollbackSteps)
+            for (const auto when : {EFaultWhen::Before, EFaultWhen::After})
+                expect(hasBoundary(rollbackTrace, EMutationPhase::Rollback, step, when), label + " exposes every required rollback boundary before and after");
         for (const auto& boundary : rollbackTrace.boundaries) {
             if (boundary.phase != EMutationPhase::Rollback)
                 continue;
@@ -601,6 +629,7 @@ void checkScrollingMutationTransactions() {
     const double insertedSum = inserted[0].size + inserted[1].size + inserted[2].size;
     expect(near(insertedSum, 1.0) && near(inserted[1].size, 1.0 / 3.0), "existing-column insertion allocates one bounded native row share and sums to one");
     expect(near(inserted[0].size / inserted[2].size, 0.35 / 0.65), "existing destination rows preserve their relative size ratio");
+    expect(near(successful.state.workspaces[1].columns[0].width, 0.55), "cross insertion preserves the existing destination column width");
 
     auto duplicate = successful.state;
     duplicate.workspaces[1].members.push_back(11);

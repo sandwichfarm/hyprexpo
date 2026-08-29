@@ -115,6 +115,7 @@ class CScrollingOverview final : public IOverviewSession {
     uint64_t                                  m_sessionGeneration = 0;
     uint64_t                                  m_contentDamageGeneration = 0;
     uint64_t                                  m_budgetGeneration = 0;
+    uint64_t                                  m_mutationRequestSequence = 0;
     bool                                      m_valid = false;
     bool                                      m_closing = false;
     bool                                      m_closeCommitted = false;

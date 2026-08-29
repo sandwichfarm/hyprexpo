@@ -54,6 +54,8 @@ struct SMutationState {
 };
 
 struct SMutationRequest {
+    std::string      requestID = {};
+    uint64_t         sessionGeneration = 0;
     uint64_t         targetIdentity = 0;
     int64_t          sourceWorkspaceID = 0;
     int64_t          destinationWorkspaceID = 0;
@@ -152,12 +154,14 @@ SMutationResult            executeMutation(const SMutationRequest& request, IMut
 struct SMutationSimulation {
     SMutationResult            result;
     SMutationState             state;
-    std::vector<EMutationStep> trace;
+    std::vector<SFaultInjection> boundaries;
     size_t                     controllerMoveCount = 0;
     size_t                     reverseMoveCount = 0;
 };
 
 SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequest& request, std::optional<SFaultInjection> fault = std::nullopt);
 int64_t             nextUnusedOrdinaryWorkspaceID(const std::vector<int64_t>& workspaceIDs);
+std::vector<double> expectedCommittedTargetSizes(const SMutationState& before, const SMutationPlan& plan, int64_t workspaceID, uint64_t columnIdentity,
+                                                 const std::vector<uint64_t>& targetIdentities);
 
 }

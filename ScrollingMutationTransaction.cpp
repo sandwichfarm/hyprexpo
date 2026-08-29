@@ -1,6 +1,7 @@
 #include "ScrollingMutationTransaction.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <exception>
 #include <map>
 #include <limits>
@@ -79,10 +80,7 @@ class CInMemoryOperations final : public IMutationOperations {
     }
 
     void checkpoint(EMutationPhase phase, EMutationStep step, EFaultWhen when) override {
-        const bool injectableHostBoundary = step == EMutationStep::RemoveTarget || step == EMutationStep::ControllerMove || step == EMutationStep::ReResolve ||
-            step == EMutationStep::AddTarget || step == EMutationStep::RestoreWidths || step == EMutationStep::RestoreSizes || step == EMutationStep::Recalculate;
-        if (phase == EMutationPhase::Apply && injectableHostBoundary && std::ranges::find(m_trace, step) == m_trace.end())
-            m_trace.push_back(step);
+        m_boundaries.push_back({.phase = phase, .step = step, .when = when});
         if (m_fault && m_fault->phase == phase && m_fault->step == step && m_fault->when == when)
             throw std::runtime_error("injected mutation boundary failure");
         if (m_fault && m_fault->phase == EMutationPhase::Rollback && phase == EMutationPhase::Apply && step == EMutationStep::VerifyPostconditions && when == EFaultWhen::Before)
@@ -181,17 +179,21 @@ class CInMemoryOperations final : public IMutationOperations {
     }
 
     void restoreSizes(const SMutationState& before, const SMutationPlan& plan, bool rollback) override {
-        const auto& reference = rollback ? before : m_beforeSnapshot;
-        std::unordered_map<uint64_t, double> sizes;
-        for (const auto& workspace : reference.workspaces)
-            for (const auto& column : workspace.columns)
+        if (rollback)
+            return;
+        for (auto& workspace : m_state.workspaces) {
+            for (auto& column : workspace.columns) {
+                std::vector<uint64_t> identities;
+                identities.reserve(column.targets.size());
                 for (const auto& target : column.targets)
-                    sizes[target.identity] = target.size;
-        for (auto& workspace : m_state.workspaces)
-            for (auto& column : workspace.columns)
-                for (auto& target : column.targets)
-                    if (const auto size = sizes.find(target.identity); size != sizes.end())
-                        target.size = column.targets.size() == 1 && target.identity == plan.request.targetIdentity ? 1.0 : size->second;
+                    identities.push_back(target.identity);
+                const auto sizes = expectedCommittedTargetSizes(before, plan, workspace.workspaceID, column.identity, identities);
+                if (sizes.size() != column.targets.size())
+                    throw std::runtime_error("normalized target-size plan is incomplete");
+                for (size_t index = 0; index < sizes.size(); ++index)
+                    column.targets[index].size = sizes[index];
+            }
+        }
     }
 
     void recalculate(const SMutationPlan&, bool) override {}
@@ -213,7 +215,7 @@ class CInMemoryOperations final : public IMutationOperations {
     SMutationState             m_state;
     SMutationState             m_beforeSnapshot;
     std::optional<SFaultInjection> m_fault;
-    std::vector<EMutationStep> m_trace;
+    std::vector<SFaultInjection> m_boundaries;
     uint64_t                   m_nextColumnIdentity = 10000;
     size_t                     m_controllerMoveCount = 0;
     size_t                     m_reverseMoveCount = 0;
@@ -306,6 +308,32 @@ std::vector<std::string> verifyPostconditions(const SMutationState& before, cons
         if (!beforeCounts.contains(identity) || count != 1)
             appendUnique(violations, "membership.exact-once");
 
+    std::map<uint64_t, std::vector<int64_t>> beforeTopology;
+    std::map<uint64_t, std::vector<int64_t>> afterTopology;
+    for (const auto& workspace : before.workspaces)
+        for (const auto& column : workspace.columns)
+            for (const auto& target : column.targets)
+                beforeTopology[target.identity].push_back(workspace.workspaceID);
+    for (const auto& workspace : after.workspaces)
+        for (const auto& column : workspace.columns)
+            for (const auto& target : column.targets)
+                afterTopology[target.identity].push_back(workspace.workspaceID);
+    for (const auto& [identity, owners] : beforeTopology) {
+        const size_t expectedCount = identity == plan.request.targetIdentity && plan.mixedFallback ? 0 : 1;
+        const auto found = afterTopology.find(identity);
+        if (owners.size() != 1 || (found == afterTopology.end() ? 0 : found->second.size()) != expectedCount)
+            appendUnique(violations, "topology.exact-once");
+    }
+    for (const auto& [identity, owners] : afterTopology) {
+        if (!beforeTopology.contains(identity) || owners.size() != 1)
+            appendUnique(violations, "topology.exact-once");
+        const auto memberOwner = std::ranges::find_if(after.workspaces, [&](const auto& workspace) {
+            return std::ranges::find(workspace.members, identity) != workspace.members.end();
+        });
+        if (memberOwner == after.workspaces.end() || owners.front() != memberOwner->workspaceID)
+            appendUnique(violations, "topology.membership-owner");
+    }
+
     for (const auto& oldWorkspace : before.workspaces) {
         const auto* current = workspaceFor(after, oldWorkspace.workspaceID);
         if (!current)
@@ -332,13 +360,36 @@ std::vector<std::string> verifyPostconditions(const SMutationState& before, cons
                 appendUnique(violations, "unaffected.width");
             if (targetOrderWithout(oldColumn, plan.request.targetIdentity) != targetOrderWithout(*currentColumn, plan.request.targetIdentity))
                 appendUnique(violations, "unaffected.order");
-            for (const auto& oldTarget : oldColumn.targets) {
-                if (oldTarget.identity == plan.request.targetIdentity)
-                    continue;
-                const auto currentTarget = std::ranges::find(currentColumn->targets, oldTarget.identity, &SMutationTarget::identity);
-                if (currentTarget == currentColumn->targets.end() || currentTarget->size != oldTarget.size)
-                    appendUnique(violations, "unaffected.size");
+        }
+    }
+
+    for (const auto& workspace : after.workspaces) {
+        if (workspace.kind != EMutationWorkspaceKind::Scrolling)
+            continue;
+        for (const auto& column : workspace.columns) {
+            double sum = 0.0;
+            std::vector<uint64_t> identities;
+            identities.reserve(column.targets.size());
+            for (const auto& target : column.targets) {
+                if (!std::isfinite(target.size) || target.size < 0.0)
+                    appendUnique(violations, "size.aggregate");
+                sum += target.size;
+                identities.push_back(target.identity);
             }
+            if (column.targets.empty() || !std::isfinite(sum) || std::abs(sum - 1.0) > 0.00001)
+                appendUnique(violations, "size.aggregate");
+            const auto expected = expectedCommittedTargetSizes(before, plan, workspace.workspaceID, column.identity, identities);
+            if (expected.size() != column.targets.size())
+                appendUnique(violations, "size.expected");
+            else
+                for (size_t index = 0; index < expected.size(); ++index)
+                    if (std::abs(expected[index] - column.targets[index].size) > 0.00001)
+                        appendUnique(violations, "size.expected");
+            const auto oldWorkspace = workspaceFor(before, workspace.workspaceID);
+            const bool oldColumnExists = oldWorkspace && std::ranges::find(oldWorkspace->columns, column.identity, &SMutationColumn::identity) != oldWorkspace->columns.end();
+            const bool containsMoved = std::ranges::find(identities, plan.request.targetIdentity) != identities.end();
+            if (!oldColumnExists && containsMoved && std::abs(column.width - plan.sourceColumnWidth) > 0.00001)
+                appendUnique(violations, "moved.width");
         }
     }
 
@@ -365,9 +416,14 @@ std::vector<std::string> verifyPostconditions(const SMutationState& before, cons
 
 SMutationResult executeMutation(const SMutationRequest& request, IMutationOperations& operations) {
     SMutationResult result;
+    result.plan.request = request;
     bool controllerMoved = false;
+    bool preStateComplete = false;
     try {
-        operation(operations, EMutationPhase::Apply, EMutationStep::SnapshotPreState, [&] { result.before = operations.snapshotPreState(request); });
+        operations.checkpoint(EMutationPhase::Apply, EMutationStep::SnapshotPreState, EFaultWhen::Before);
+        result.before = operations.snapshotPreState(request);
+        preStateComplete = true;
+        operations.checkpoint(EMutationPhase::Apply, EMutationStep::SnapshotPreState, EFaultWhen::After);
         result.plan = buildMutationPlan(result.before, request);
         if (!result.plan.valid) {
             result.error = result.plan.error;
@@ -405,6 +461,11 @@ SMutationResult executeMutation(const SMutationRequest& request, IMutationOperat
         result.error = "unknown mutation exception";
     }
 
+    if (!preStateComplete) {
+        result.outcome = EMutationOutcome::Rejected;
+        return result;
+    }
+
     try {
         if (controllerMoved) {
             operation(operations, EMutationPhase::Rollback, EMutationStep::ReverseControllerMove, [&] { operations.controllerMove(result.plan, true); });
@@ -439,7 +500,7 @@ SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequ
     CInMemoryOperations operations{std::move(initial), fault};
     operations.setBeforeSnapshot(operations.m_state);
     auto result = executeMutation(request, operations);
-    return {.result = std::move(result), .state = std::move(operations.m_state), .trace = std::move(operations.m_trace),
+    return {.result = std::move(result), .state = std::move(operations.m_state), .boundaries = std::move(operations.m_boundaries),
             .controllerMoveCount = operations.m_controllerMoveCount, .reverseMoveCount = operations.m_reverseMoveCount};
 }
 
@@ -452,6 +513,56 @@ int64_t nextUnusedOrdinaryWorkspaceID(const std::vector<int64_t>& workspaceIDs) 
         if (!used.contains(candidate))
             return candidate;
     return 0;
+}
+
+std::vector<double> expectedCommittedTargetSizes(const SMutationState& before, const SMutationPlan&, int64_t workspaceID, uint64_t columnIdentity,
+                                                 const std::vector<uint64_t>& targetIdentities) {
+    if (targetIdentities.empty())
+        return {};
+    const auto* workspace = workspaceFor(before, workspaceID);
+    const SMutationColumn* oldColumn = nullptr;
+    if (workspace) {
+        const auto found = std::ranges::find(workspace->columns, columnIdentity, &SMutationColumn::identity);
+        if (found != workspace->columns.end())
+            oldColumn = &*found;
+    }
+    if (!oldColumn)
+        return std::vector<double>(targetIdentities.size(), 1.0 / static_cast<double>(targetIdentities.size()));
+
+    const auto oldContainsAll = oldColumn->targets.size() == targetIdentities.size() && std::ranges::all_of(oldColumn->targets, [&](const auto& oldTarget) {
+        return std::ranges::find(targetIdentities, oldTarget.identity) != targetIdentities.end();
+    });
+    if (oldContainsAll) {
+        std::vector<double> exact;
+        exact.reserve(targetIdentities.size());
+        for (const auto identity : targetIdentities)
+            exact.push_back(std::ranges::find(oldColumn->targets, identity, &SMutationTarget::identity)->size);
+        return exact;
+    }
+
+    size_t newTargets = 0;
+    double oldWeight = 0.0;
+    for (const auto identity : targetIdentities) {
+        const auto oldTarget = std::ranges::find(oldColumn->targets, identity, &SMutationTarget::identity);
+        if (oldTarget == oldColumn->targets.end())
+            ++newTargets;
+        else
+            oldWeight += std::max(0.0, oldTarget->size);
+    }
+    const double newShare = newTargets == 0 ? 0.0 : 1.0 / static_cast<double>(targetIdentities.size());
+    const double existingTotal = std::max(0.0, 1.0 - newShare * static_cast<double>(newTargets));
+    std::vector<double> result;
+    result.reserve(targetIdentities.size());
+    for (const auto identity : targetIdentities) {
+        const auto oldTarget = std::ranges::find(oldColumn->targets, identity, &SMutationTarget::identity);
+        if (oldTarget == oldColumn->targets.end())
+            result.push_back(newShare);
+        else if (oldWeight > 0.0)
+            result.push_back(existingTotal * std::max(0.0, oldTarget->size) / oldWeight);
+        else
+            result.push_back(existingTotal / static_cast<double>(targetIdentities.size() - newTargets));
+    }
+    return result;
 }
 
 }

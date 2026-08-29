@@ -179,6 +179,8 @@ void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const S
                 refreshAfterMutation();
             } else {
                 const SMutationRequest request{
+                    .requestID = "scroll-drop-" + std::to_string(m_sessionGeneration) + "-" + std::to_string(++m_mutationRequestSequence),
+                    .sessionGeneration = m_sessionGeneration,
                     .targetIdentity = targetIdentity,
                     .sourceWorkspaceID = source.workspaceID,
                     .destinationWorkspaceID = intent->workspaceID,

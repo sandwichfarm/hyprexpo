@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <format>
 #include <iomanip>
 #include <sstream>
 #include <string_view>
@@ -190,6 +191,43 @@ std::string resultError(const SSnapshotResult& result) {
     return snapshotFailureName(result.failure) + (result.error.empty() ? "" : ": " + result.error);
 }
 
+std::string mutationStateSummary(const SMutationState& state) {
+    size_t columns = 0;
+    size_t targets = 0;
+    size_t members = 0;
+    for (const auto& workspace : state.workspaces) {
+        columns += workspace.columns.size();
+        members += workspace.members.size();
+        for (const auto& column : workspace.columns)
+            targets += column.targets.size();
+    }
+    return std::format("{{\"workspaces\":{},\"columns\":{},\"targets\":{},\"members\":{}}}", state.workspaces.size(), columns, targets, members);
+}
+
+uint64_t mutationStateHash(const SMutationState& state) {
+    std::ostringstream material;
+    for (const auto& workspace : state.workspaces) {
+        material << workspace.workspaceID << ':' << workspace.modelIdentity << ':' << workspace.direction << ':' << workspace.offset << ':'
+                 << workspace.focusedTargetIdentity << ':' << workspace.focusedWindowIdentity << '|';
+        for (const auto& column : workspace.columns) {
+            material << column.identity << ':' << column.width << '[';
+            for (const auto& target : column.targets)
+                material << target.identity << ':' << target.windowIdentity << ':' << target.size << ',';
+            material << ']';
+        }
+        material << '{';
+        for (const auto member : workspace.members)
+            material << member << ',';
+        material << '}';
+    }
+    uint64_t hash = 1469598103934665603ULL;
+    for (const unsigned char byte : material.str()) {
+        hash ^= byte;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
 } // namespace
 
 SDiagnosticRequest parseDiagnosticRequest(const std::string& argument) {
@@ -294,12 +332,15 @@ std::string mutationDiagnosticJson(const SMutationResult& result) {
         return "rejected";
     }();
     std::ostringstream output;
-    output << "{\"schema\":1,\"kind\":\"mutation\",\"mutationOutcome\":" << quoted(outcome)
+    output << "{\"schema\":1,\"kind\":\"mutation\",\"requestId\":" << quoted(result.plan.request.requestID)
+           << ",\"sessionGeneration\":" << result.plan.request.sessionGeneration << ",\"mutationOutcome\":" << quoted(outcome)
            << ",\"rollbackStatus\":" << quoted(result.outcome == EMutationOutcome::RolledBack ? "restored" : result.outcome == EMutationOutcome::RollbackFailed ? "failed" : "not-required")
            << ",\"sourceWorkspaceId\":" << result.plan.request.sourceWorkspaceID
            << ",\"destinationWorkspaceId\":" << result.plan.request.destinationWorkspaceID
            << ",\"targetIdentity\":" << quoted(pointerValue(result.plan.request.targetIdentity))
-           << ",\"violatedInvariantIDs\":[";
+           << ",\"beforeSummary\":" << mutationStateSummary(result.before) << ",\"afterSummary\":" << mutationStateSummary(result.after)
+           << ",\"beforeHash\":" << quoted(pointerValue(mutationStateHash(result.before)))
+           << ",\"afterHash\":" << quoted(pointerValue(mutationStateHash(result.after))) << ",\"violatedInvariantIDs\":[";
     for (size_t index = 0; index < result.violatedInvariantIDs.size(); ++index) {
         if (index)
             output << ',';
