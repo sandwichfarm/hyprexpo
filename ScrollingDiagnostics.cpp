@@ -381,6 +381,13 @@ std::string mutationDiagnosticJson(const SMutationResult& result) {
            << ",\"targetIdentity\":" << quoted(pointerValue(result.plan.request.targetIdentity))
            << ",\"beforeSummary\":" << mutationStateSummary(result.before) << ",\"afterSummary\":" << mutationStateSummary(result.after)
            << ",\"beforeState\":" << mutationStateJson(result.before) << ",\"afterState\":" << mutationStateJson(result.after)
+           << ",\"failedApplyState\":" << mutationStateJson(result.failedApplyState) << ",\"applyViolationIDs\":[";
+    for (size_t index = 0; index < result.applyViolationIDs.size(); ++index) {
+        if (index)
+            output << ',';
+        output << quoted(result.applyViolationIDs[index]);
+    }
+    output << ']'
            << ",\"beforeHash\":" << quoted(pointerValue(mutationStateHash(result.before)))
            << ",\"afterHash\":" << quoted(pointerValue(mutationStateHash(result.after))) << ",\"violatedInvariantIDs\":[";
     for (size_t index = 0; index < result.violatedInvariantIDs.size(); ++index) {

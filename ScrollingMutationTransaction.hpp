@@ -142,6 +142,8 @@ struct SMutationResult {
     SMutationPlan            plan;
     SMutationState           before;
     SMutationState           after;
+    SMutationState           failedApplyState;
+    std::vector<std::string> applyViolationIDs;
     std::vector<std::string> violatedInvariantIDs;
     std::string              error;
 };

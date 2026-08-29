@@ -464,6 +464,9 @@ SMutationResult executeMutation(const SMutationRequest& request, IMutationOperat
         result.error = "unknown mutation exception";
     }
 
+    result.failedApplyState = result.after;
+    result.applyViolationIDs = result.violatedInvariantIDs;
+
     if (!preStateComplete) {
         result.outcome = EMutationOutcome::Rejected;
         return result;
