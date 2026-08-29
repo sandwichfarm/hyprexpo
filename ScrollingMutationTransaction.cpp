@@ -1,5 +1,7 @@
 #include "ScrollingMutationTransaction.hpp"
 
+#include "ScrollingRequestId.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <exception>
@@ -7,6 +9,7 @@
 #include <limits>
 #include <ranges>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -502,6 +505,105 @@ SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequ
     auto result = executeMutation(request, operations);
     return {.result = std::move(result), .state = std::move(operations.m_state), .boundaries = std::move(operations.m_boundaries),
             .controllerMoveCount = operations.m_controllerMoveCount, .reverseMoveCount = operations.m_reverseMoveCount};
+}
+
+std::string_view mutationKindName(EDropKind kind) {
+    switch (kind) {
+        case EDropKind::Invalid: return "invalid";
+        case EDropKind::NoOp: return "no-op-release";
+        case EDropKind::ExistingColumn: return "existing-column";
+        case EDropKind::NewColumnBefore: return "new-column-before";
+        case EDropKind::NewColumnAfter: return "new-column-after";
+        case EDropKind::CrossWorkspace: return "cross-scrolling";
+        case EDropKind::MixedFallback: return "mixed-workspace";
+        case EDropKind::TerminalWorkspace: return "terminal-workspace";
+    }
+    return "invalid";
+}
+
+std::string_view columnPlacementName(EColumnPlacement placement) {
+    switch (placement) {
+        case EColumnPlacement::None: return "none";
+        case EColumnPlacement::Existing: return "existing";
+        case EColumnPlacement::Before: return "before";
+        case EColumnPlacement::After: return "after";
+    }
+    return "none";
+}
+
+SMutationDebugRequest parseMutationDebugRequest(const std::string& argument) {
+    SMutationDebugRequest parsed;
+    std::istringstream input{argument};
+    std::string kind;
+    std::string fault;
+    std::string extra;
+    if (!(input >> parsed.requestID >> parsed.sourceWorkspaceID >> parsed.targetStableID >> kind >> parsed.destinationWorkspaceID >> parsed.destinationColumnIndex >> parsed.destinationRowIndex)) {
+        parsed.error = "expected REQUEST_ID SOURCE_WORKSPACE TARGET_STABLE_ID KIND DESTINATION_WORKSPACE COLUMN ROW [FAULT]";
+        return parsed;
+    }
+    input >> fault;
+    if (input >> extra) {
+        parsed.error = "native mutation request has trailing fields";
+        return parsed;
+    }
+    if (!validRequestID(parsed.requestID)) {
+        parsed.error = "request ID must be 1-64 ASCII letters, digits, dot, underscore, or dash";
+        return parsed;
+    }
+    if (parsed.sourceWorkspaceID <= 0 || parsed.targetStableID == 0 || parsed.destinationWorkspaceID < 0) {
+        parsed.error = "workspace and target identities must be positive";
+        return parsed;
+    }
+
+    if (kind == "same-column" || kind == "existing-column") {
+        parsed.kind = EDropKind::ExistingColumn;
+        parsed.placement = EColumnPlacement::Existing;
+    } else if (kind == "new-before" || kind == "new-column-before") {
+        parsed.kind = EDropKind::NewColumnBefore;
+        parsed.placement = EColumnPlacement::Before;
+    } else if (kind == "new-after" || kind == "new-column-after") {
+        parsed.kind = EDropKind::NewColumnAfter;
+        parsed.placement = EColumnPlacement::After;
+    } else if (kind == "cross-scrolling") {
+        parsed.kind = EDropKind::CrossWorkspace;
+        parsed.placement = EColumnPlacement::Existing;
+    } else if (kind == "mixed-workspace") {
+        parsed.kind = EDropKind::MixedFallback;
+    } else if (kind == "terminal-workspace") {
+        parsed.kind = EDropKind::TerminalWorkspace;
+        parsed.createDestination = true;
+    } else if (kind == "no-op-release") {
+        parsed.kind = EDropKind::NoOp;
+        parsed.placement = EColumnPlacement::Existing;
+    } else {
+        parsed.error = "mutation kind is not supported";
+        return parsed;
+    }
+
+    const bool sameWorkspaceKind = parsed.kind == EDropKind::ExistingColumn || parsed.kind == EDropKind::NewColumnBefore || parsed.kind == EDropKind::NewColumnAfter || parsed.kind == EDropKind::NoOp;
+    if (sameWorkspaceKind && parsed.destinationWorkspaceID != parsed.sourceWorkspaceID) {
+        parsed.error = "same-workspace mutation kind requires matching workspace IDs";
+        return parsed;
+    }
+    if (parsed.kind == EDropKind::TerminalWorkspace) {
+        if (parsed.destinationWorkspaceID != 0) {
+            parsed.error = "terminal mutation destination must be zero before next-empty resolution";
+            return parsed;
+        }
+    } else if (parsed.destinationWorkspaceID <= 0) {
+        parsed.error = "destination workspace must be positive";
+        return parsed;
+    }
+
+    if (!fault.empty()) {
+        if (fault != "apply:add-target:after") {
+            parsed.error = "fault must be apply:add-target:after";
+            return parsed;
+        }
+        parsed.fault = SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::AddTarget, .when = EFaultWhen::After};
+    }
+    parsed.valid = true;
+    return parsed;
 }
 
 int64_t nextUnusedOrdinaryWorkspaceID(const std::vector<int64_t>& workspaceIDs) {

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Hyprexpo::Scrolling {
@@ -121,6 +122,21 @@ struct SFaultInjection {
     EFaultWhen     when = EFaultWhen::Before;
 };
 
+struct SMutationDebugRequest {
+    bool                            valid = false;
+    std::string                     error;
+    std::string                     requestID;
+    int64_t                         sourceWorkspaceID = 0;
+    uint64_t                        targetStableID = 0;
+    EDropKind                       kind = EDropKind::Invalid;
+    EColumnPlacement                placement = EColumnPlacement::None;
+    int64_t                         destinationWorkspaceID = 0;
+    size_t                          destinationColumnIndex = 0;
+    size_t                          destinationRowIndex = 0;
+    bool                            createDestination = false;
+    std::optional<SFaultInjection> fault;
+};
+
 struct SMutationResult {
     EMutationOutcome         outcome = EMutationOutcome::Rejected;
     SMutationPlan            plan;
@@ -160,6 +176,9 @@ struct SMutationSimulation {
 };
 
 SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequest& request, std::optional<SFaultInjection> fault = std::nullopt);
+SMutationDebugRequest parseMutationDebugRequest(const std::string& argument);
+std::string_view       mutationKindName(EDropKind kind);
+std::string_view       columnPlacementName(EColumnPlacement placement);
 int64_t             nextUnusedOrdinaryWorkspaceID(const std::vector<int64_t>& workspaceIDs);
 std::vector<double> expectedCommittedTargetSizes(const SMutationState& before, const SMutationPlan& plan, int64_t workspaceID, uint64_t columnIdentity,
                                                  const std::vector<uint64_t>& targetIdentities);

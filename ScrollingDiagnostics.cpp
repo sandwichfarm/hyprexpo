@@ -199,6 +199,48 @@ std::string mutationStateSummary(const SMutationState& state) {
     return std::format("{{\"workspaces\":{},\"columns\":{},\"targets\":{},\"members\":{}}}", state.workspaces.size(), columns, targets, members);
 }
 
+std::string mutationStateJson(const SMutationState& state) {
+    std::ostringstream output;
+    output << "{\"workspaces\":[";
+    for (size_t workspaceIndex = 0; workspaceIndex < state.workspaces.size(); ++workspaceIndex) {
+        const auto& workspace = state.workspaces[workspaceIndex];
+        if (workspaceIndex)
+            output << ',';
+        output << "{\"workspaceId\":" << workspace.workspaceID
+               << ",\"modelIdentity\":" << quoted(pointerValue(workspace.modelIdentity))
+               << ",\"kind\":" << quoted(workspace.kind == EMutationWorkspaceKind::Scrolling ? "scrolling" : "mixed")
+               << ",\"direction\":" << quoted(workspace.direction) << ",\"offset\":" << workspace.offset
+               << ",\"focusedTargetIdentity\":" << quoted(pointerValue(workspace.focusedTargetIdentity))
+               << ",\"focusedWindowIdentity\":" << quoted(pointerValue(workspace.focusedWindowIdentity))
+               << ",\"columns\":[";
+        for (size_t columnIndex = 0; columnIndex < workspace.columns.size(); ++columnIndex) {
+            const auto& column = workspace.columns[columnIndex];
+            if (columnIndex)
+                output << ',';
+            output << "{\"identity\":" << quoted(pointerValue(column.identity)) << ",\"width\":" << column.width << ",\"targets\":[";
+            for (size_t targetIndex = 0; targetIndex < column.targets.size(); ++targetIndex) {
+                const auto& target = column.targets[targetIndex];
+                if (targetIndex)
+                    output << ',';
+                output << "{\"identity\":" << quoted(pointerValue(target.identity))
+                       << ",\"windowIdentity\":" << quoted(pointerValue(target.windowIdentity))
+                       << ",\"size\":" << target.size << ",\"group\":" << (target.group ? "true" : "false")
+                       << ",\"fullscreen\":" << (target.fullscreen ? "true" : "false") << '}';
+            }
+            output << "]}";
+        }
+        output << "],\"members\":[";
+        for (size_t memberIndex = 0; memberIndex < workspace.members.size(); ++memberIndex) {
+            if (memberIndex)
+                output << ',';
+            output << quoted(pointerValue(workspace.members[memberIndex]));
+        }
+        output << "]}";
+    }
+    output << "]}";
+    return output.str();
+}
+
 uint64_t mutationStateHash(const SMutationState& state) {
     std::ostringstream material;
     for (const auto& workspace : state.workspaces) {
@@ -330,10 +372,15 @@ std::string mutationDiagnosticJson(const SMutationResult& result) {
     output << "{\"schema\":1,\"kind\":\"mutation\",\"requestId\":" << quoted(result.plan.request.requestID)
            << ",\"sessionGeneration\":" << result.plan.request.sessionGeneration << ",\"mutationOutcome\":" << quoted(outcome)
            << ",\"rollbackStatus\":" << quoted(result.outcome == EMutationOutcome::RolledBack ? "restored" : result.outcome == EMutationOutcome::RollbackFailed ? "failed" : "not-required")
+           << ",\"requestKind\":" << quoted(mutationKindName(result.plan.request.kind))
+           << ",\"placement\":" << quoted(columnPlacementName(result.plan.request.placement))
            << ",\"sourceWorkspaceId\":" << result.plan.request.sourceWorkspaceID
            << ",\"destinationWorkspaceId\":" << result.plan.request.destinationWorkspaceID
+           << ",\"destinationColumnIndex\":" << result.plan.request.destinationColumnIndex
+           << ",\"destinationRowIndex\":" << result.plan.request.destinationRowIndex
            << ",\"targetIdentity\":" << quoted(pointerValue(result.plan.request.targetIdentity))
            << ",\"beforeSummary\":" << mutationStateSummary(result.before) << ",\"afterSummary\":" << mutationStateSummary(result.after)
+           << ",\"beforeState\":" << mutationStateJson(result.before) << ",\"afterState\":" << mutationStateJson(result.after)
            << ",\"beforeHash\":" << quoted(pointerValue(mutationStateHash(result.before)))
            << ",\"afterHash\":" << quoted(pointerValue(mutationStateHash(result.after))) << ",\"violatedInvariantIDs\":[";
     for (size_t index = 0; index < result.violatedInvariantIDs.size(); ++index) {

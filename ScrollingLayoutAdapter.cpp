@@ -299,10 +299,15 @@ SMutationWorkspace mutationWorkspace(const SWorkspaceSnapshot& snapshot) {
 
 class CNativeMutationOperations final : public IMutationOperations {
   public:
-    CNativeMutationOperations(PHLWORKSPACE sourceWorkspace, PHLWORKSPACE destinationWorkspace, PHLMONITOR initiatingMonitor) :
-        m_sourceWorkspace(std::move(sourceWorkspace)), m_destinationWorkspace(std::move(destinationWorkspace)), m_monitor(std::move(initiatingMonitor)) {}
+    CNativeMutationOperations(PHLWORKSPACE sourceWorkspace, PHLWORKSPACE destinationWorkspace, PHLMONITOR initiatingMonitor, std::optional<SFaultInjection> fault) :
+        m_sourceWorkspace(std::move(sourceWorkspace)), m_destinationWorkspace(std::move(destinationWorkspace)), m_monitor(std::move(initiatingMonitor)), m_fault(fault) {}
 
-    void checkpoint(EMutationPhase, EMutationStep, EFaultWhen) override {}
+    void checkpoint(EMutationPhase phase, EMutationStep step, EFaultWhen when) override {
+        if (!m_fault || m_fault->phase != phase || m_fault->step != step || m_fault->when != when)
+            return;
+        m_fault.reset();
+        throw std::runtime_error("injected request-scoped native mutation fault");
+    }
 
     SMutationState snapshotPreState(const SMutationRequest& request) override {
         if (m_preState)
@@ -717,6 +722,7 @@ class CNativeMutationOperations final : public IMutationOperations {
     std::unordered_map<int64_t, SNativeWorkspace> m_native;
     std::unordered_map<uint64_t, SP<Layout::ITarget>> m_targets;
     std::unordered_map<const Layout::Tiled::SColumnData*, uint64_t> m_logicalColumnIdentities;
+    std::optional<SFaultInjection> m_fault;
 };
 
 } // namespace
@@ -774,7 +780,7 @@ bool workspaceUsesScrollingLayout(const PHLWORKSPACE& workspace) {
 }
 
 SMutationResult moveScrollingTarget(const PHLWORKSPACE& sourceWorkspace, const PHLWORKSPACE& destinationWorkspace, const PHLMONITOR& initiatingMonitor,
-                                    const SMutationRequest& originalRequest) {
+                                    const SMutationRequest& originalRequest, std::optional<SFaultInjection> fault) {
     auto request = originalRequest;
     const auto failureResult = [&request](EMutationOutcome outcome, std::string error, std::vector<std::string> violations = {}) {
         SMutationResult result;
@@ -803,7 +809,7 @@ SMutationResult moveScrollingTarget(const PHLWORKSPACE& sourceWorkspace, const P
             return failureResult(EMutationOutcome::Rejected, "destination workspace changed before mutation");
         }
 
-        CNativeMutationOperations operations{sourceWorkspace, resolvedDestination, initiatingMonitor};
+        CNativeMutationOperations operations{sourceWorkspace, resolvedDestination, initiatingMonitor, fault};
         SMutationState snapshotPreState;
         try {
             snapshotPreState = operations.snapshotPreState(request);
@@ -827,6 +833,60 @@ SMutationResult moveScrollingTarget(const PHLWORKSPACE& sourceWorkspace, const P
     } catch (...) {
         return failureResult(EMutationOutcome::RollbackFailed, "unknown native mutation exception", {"native.exception-boundary"});
     }
+}
+
+std::expected<SMutationResult, std::string> runNativeMutationTest(const std::string& argument, uint64_t sessionGeneration) {
+    const auto parsed = parseMutationDebugRequest(argument);
+    if (!parsed.valid)
+        return std::unexpected(parsed.error);
+
+    PHLWORKSPACE sourceWorkspace;
+    PHLWORKSPACE destinationWorkspace;
+    for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
+        if (!workspace || workspace->m_isSpecialWorkspace)
+            continue;
+        if (workspace->m_id == parsed.sourceWorkspaceID)
+            sourceWorkspace = workspace;
+        if (workspace->m_id == parsed.destinationWorkspaceID)
+            destinationWorkspace = workspace;
+    }
+    if (!sourceWorkspace)
+        return std::unexpected("source workspace is unavailable");
+    if (parsed.kind != EDropKind::TerminalWorkspace && !destinationWorkspace)
+        return std::unexpected("destination workspace is unavailable");
+
+    const auto sourceSnapshot = snapshotWorkspace(sourceWorkspace);
+    if (!sourceSnapshot.success())
+        return std::unexpected("source snapshot failed: " + sourceSnapshot.error);
+    uint64_t targetIdentity = 0;
+    size_t stableMatches = 0;
+    for (const auto& column : sourceSnapshot.snapshot->columns) {
+        for (const auto& target : column.targets) {
+            if (target.windowStableID != parsed.targetStableID)
+                continue;
+            ++stableMatches;
+            targetIdentity = target.targetFingerprint;
+        }
+    }
+    if (stableMatches != 1 || targetIdentity == 0)
+        return std::unexpected("target stable ID does not resolve exactly once in native scrolling columns");
+
+    const SMutationRequest request{
+        .requestID = parsed.requestID,
+        .sessionGeneration = sessionGeneration,
+        .targetIdentity = targetIdentity,
+        .sourceWorkspaceID = parsed.sourceWorkspaceID,
+        .destinationWorkspaceID = parsed.destinationWorkspaceID,
+        .kind = parsed.kind,
+        .placement = parsed.placement,
+        .destinationColumnIndex = parsed.destinationColumnIndex,
+        .destinationRowIndex = parsed.destinationRowIndex,
+        .createDestination = parsed.createDestination,
+    };
+    const auto monitor = sourceWorkspace->m_monitor.lock();
+    if (!monitor)
+        return std::unexpected("source monitor expired");
+    return moveScrollingTarget(sourceWorkspace, destinationWorkspace, monitor, request, parsed.fault);
 }
 
 }

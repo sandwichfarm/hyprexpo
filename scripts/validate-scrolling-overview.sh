@@ -300,27 +300,131 @@ done
 jq -e '.events[0].consume == true and .events[0].panDelta != 0' "$EVIDENCE_DIR/input-axis-inside.json" >/dev/null || fail 'inside axis was not consumed as pan' input-axis
 record PASS runtime-input 'hover/axis plus pending/pan/drag touch-cancel recovery and immediate reacquisition'
 
-runtime_input new-column-before 'mouse_button:500:80:273:1|mouse_move:513:80|mouse_move:5:80|mouse_button:5:80:273:0'
-awk -v prefix="$MUTATION_PREFIX" '
-    index($0, prefix) && index($0, "\"requestId\":\"scroll-drop-") {
-        print substr($0, index($0, prefix) + length(prefix))
-        exit
-    }
-' "$EVIDENCE_DIR/input-new-column-before.json.follow" > "$EVIDENCE_DIR/mutation-new-column-before.json"
-[[ -s $EVIDENCE_DIR/mutation-new-column-before.json ]] || fail 'runtime drop emitted no mutation diagnostic' runtime-mutation
-jq -e '.mutationOutcome == "committed" and (.requestId | startswith("scroll-drop-")) and (.sessionGeneration > 0) and (.beforeHash != .afterHash)' \
-    "$EVIDENCE_DIR/mutation-new-column-before.json" >/dev/null || fail 'runtime mutation was not a correlated structural commit' runtime-mutation
-hc clients -j > "$EVIDENCE_DIR/clients-after-new-column-before.json"
-record PASS runtime-mutation 'request-correlated native commit with before/after topology hashes and clients readback'
+capture_topology() {
+    local label=$1 workspace=$2 expected_direction=$3
+    local request="native.$label.ws$workspace"
+    local output="$EVIDENCE_DIR/topology-$label-ws$workspace.json"
+    start_record_watcher "$TOPOLOGY_PREFIX" "\"requestId\":\"$request\"" "$output"
+    hc dispatch hyprexpo:scrolling_debug "$request workspace:$workspace" >/dev/null
+    wait_for_watcher "$output" "topology-$label-ws$workspace"
+    jq -e --arg direction "$expected_direction" '.status == "PASS" and .direction == $direction and .topologyEqual and .offsetEqual and .orderEqual and .widthsEqual and .membershipEqual and .sizesEqual' \
+        "$output" >/dev/null || fail "$label workspace $workspace topology readback failed" "topology-$label-ws$workspace"
+}
 
-# These case names are also the exhaustive pure oracle and runtime mutation matrix:
-# same-column new-column-before new-column-after cross-scrolling mixed-workspace
-# terminal-workspace outside-release no-op-release touch-cancel-pending
-# touch-cancel-pan touch-cancel-drag default-grid.
-for destination in same-column new-column-before new-column-after cross-scrolling mixed-workspace terminal-workspace outside-release no-op-release; do
-    rg -Fq "oracle $destination" "$EVIDENCE_DIR/input-oracle.log" || fail "missing deterministic destination $destination" "destination-$destination"
+runtime_mutation() {
+    local name=$1 source_workspace=$2 stable_id=$3 kind=$4 destination_workspace=$5 destination_column=$6 destination_row=$7 expected_outcome=$8
+    local fault=${9:-}
+    local request="native.$name"
+    local output="$EVIDENCE_DIR/mutation-$name.json"
+    hc clients -j > "$EVIDENCE_DIR/clients-$name-before.json"
+    capture_topology "$name-before" "$source_workspace" right
+    if [[ $destination_workspace -ge 1 && $destination_workspace -le 4 && $destination_workspace -ne $source_workspace ]]; then
+        local direction=right
+        [[ $destination_workspace -eq 2 ]] && direction=left
+        [[ $destination_workspace -eq 3 ]] && direction=down
+        [[ $destination_workspace -eq 4 ]] && direction=up
+        capture_topology "$name-before" "$destination_workspace" "$direction"
+    fi
+
+    start_record_watcher "$MUTATION_PREFIX" "\"requestId\":\"$request\"" "$output"
+    hc dispatch hyprexpo:scrolling_mutation_test "$request $source_workspace $stable_id $kind $destination_workspace $destination_column $destination_row${fault:+ $fault}" >/dev/null
+    wait_for_watcher "$output" "mutation-$name"
+    sleep 0.3
+    jq -e --arg request "$request" --arg outcome "$expected_outcome" '
+        .requestId == $request and .sessionGeneration > 0 and .mutationOutcome == $outcome and .status == "PASS" and
+        (.violatedInvariantIDs | length) == 0 and (.beforeState.workspaces | length) > 0 and (.afterState.workspaces | length) > 0
+    ' "$output" >/dev/null || fail "$name native mutation record failed" "mutation-$name"
+    if [[ $expected_outcome == rolled-back ]]; then
+        jq -e '.rollbackStatus == "restored" and .beforeHash == .afterHash and .beforeState == .afterState and (.error | contains("injected request-scoped native mutation fault"))' \
+            "$output" >/dev/null || fail "$name did not restore exact native pre-state" "mutation-$name"
+    elif [[ $kind == no-op-release ]]; then
+        jq -e '.beforeHash == .afterHash and .beforeState == .afterState' "$output" >/dev/null || fail "$name changed native state" "mutation-$name"
+    else
+        jq -e '.beforeHash != .afterHash' "$output" >/dev/null || fail "$name did not change native structure" "mutation-$name"
+    fi
+    hc clients -j > "$EVIDENCE_DIR/clients-$name-after.json"
+    capture_topology "$name-after" "$source_workspace" right
+    if [[ $destination_workspace -ge 1 && $destination_workspace -le 4 && $destination_workspace -ne $source_workspace ]]; then
+        local direction=right
+        [[ $destination_workspace -eq 2 ]] && direction=left
+        [[ $destination_workspace -eq 3 ]] && direction=down
+        [[ $destination_workspace -eq 4 ]] && direction=up
+        capture_topology "$name-after" "$destination_workspace" "$direction"
+    fi
+}
+
+# Loaded outside release: production input owns and cancels the drag without
+# entering the native transaction boundary. Retain exact topology/client pairs.
+capture_topology outside-release-before 1 right
+hc clients -j > "$EVIDENCE_DIR/clients-outside-release-before.json"
+runtime_input outside-release 'mouse_button:500:80:273:1|mouse_move:513:80|mouse_move:-1:0|mouse_button:-1:0:273:0'
+capture_topology outside-release-after 1 right
+hc clients -j > "$EVIDENCE_DIR/clients-outside-release-after.json"
+jq -e '.events[-1].cancelDrag == true and .events[-1].finishDrag == false and .finalState == "Idle"' "$EVIDENCE_DIR/input-outside-release.json" >/dev/null || fail 'outside release did not cancel loaded input ownership' outside-release
+jq -S 'del(.requestId)' "$EVIDENCE_DIR/topology-outside-release-before-ws1.json" > "$EVIDENCE_DIR/outside-before.normalized.json"
+jq -S 'del(.requestId)' "$EVIDENCE_DIR/topology-outside-release-after-ws1.json" > "$EVIDENCE_DIR/outside-after.normalized.json"
+cmp -s "$EVIDENCE_DIR/outside-before.normalized.json" "$EVIDENCE_DIR/outside-after.normalized.json" || fail 'outside release changed native topology' outside-release
+cmp -s "$EVIDENCE_DIR/clients-outside-release-before.json" "$EVIDENCE_DIR/clients-outside-release-after.json" || fail 'outside release changed client ownership or geometry' outside-release
+
+capture_topology matrix-seed 1 right
+matrix_file="$EVIDENCE_DIR/topology-matrix-seed-ws1.json"
+multi_column=$(jq -r '[.columns[] | select((.targets | length) > 1)][0].index' "$matrix_file")
+same_stable=$(jq -r --argjson column "$multi_column" '.columns[] | select(.index == $column) | .targets[-1].windowStableId' "$matrix_file")
+runtime_mutation same-column 1 "$same_stable" same-column 1 "$multi_column" 0 committed
+
+capture_topology no-op-seed 1 right
+matrix_file="$EVIDENCE_DIR/topology-no-op-seed-ws1.json"
+noop_column=$(jq -r --argjson stable "$same_stable" '.columns[] | select(any(.targets[]; .windowStableId == $stable)) | .index' "$matrix_file")
+noop_row=$(jq -r --argjson stable "$same_stable" '.columns[] | .targets | to_entries[] | select(.value.windowStableId == $stable) | .key' "$matrix_file")
+runtime_mutation no-op-release 1 "$same_stable" no-op-release 1 "$noop_column" "$noop_row" committed
+
+capture_topology existing-seed 1 right
+matrix_file="$EVIDENCE_DIR/topology-existing-seed-ws1.json"
+source_column=$(jq -r '[.columns[] | select((.targets | length) == 1)][0].index' "$matrix_file")
+existing_stable=$(jq -r --argjson column "$source_column" '.columns[] | select(.index == $column) | .targets[0].windowStableId' "$matrix_file")
+destination_column=$(jq -r '[.columns[] | select((.targets | length) > 1)][0].index' "$matrix_file")
+if (( source_column < destination_column )); then destination_column=$((destination_column - 1)); fi
+runtime_mutation existing-column 1 "$existing_stable" existing-column 1 "$destination_column" 1 committed
+
+capture_topology rollback-seed 1 right
+matrix_file="$EVIDENCE_DIR/topology-rollback-seed-ws1.json"
+rollback_stable=$(jq -r '[.columns[] | select((.targets | length) > 1)][0].targets[-1].windowStableId' "$matrix_file")
+runtime_mutation native-rollback 1 "$rollback_stable" new-column-before 1 0 0 rolled-back apply:add-target:after
+
+capture_topology before-seed 1 right
+matrix_file="$EVIDENCE_DIR/topology-before-seed-ws1.json"
+before_stable=$(jq -r '[.columns[] | select((.targets | length) > 1)][0].targets[-1].windowStableId' "$matrix_file")
+runtime_mutation new-column-before 1 "$before_stable" new-column-before 1 0 0 committed
+
+capture_topology after-seed 1 right
+matrix_file="$EVIDENCE_DIR/topology-after-seed-ws1.json"
+after_stable=$(jq -r '[.columns[] | select((.targets | length) > 1)][0].targets[-1].windowStableId' "$matrix_file")
+after_column=$(jq -r '.columns | length' "$matrix_file")
+runtime_mutation new-column-after 1 "$after_stable" new-column-after 1 "$after_column" 0 committed
+
+capture_topology cross-seed 1 right
+matrix_file="$EVIDENCE_DIR/topology-cross-seed-ws1.json"
+cross_stable=$(jq -r '.columns[0].targets[0].windowStableId' "$matrix_file")
+runtime_mutation cross-scrolling 1 "$cross_stable" cross-scrolling 2 0 0 committed
+
+capture_topology mixed-seed 1 right
+matrix_file="$EVIDENCE_DIR/topology-mixed-seed-ws1.json"
+mixed_stable=$(jq -r '.columns[0].targets[0].windowStableId' "$matrix_file")
+runtime_mutation mixed-workspace 1 "$mixed_stable" mixed-workspace 5 0 0 committed
+
+capture_topology terminal-seed 1 right
+matrix_file="$EVIDENCE_DIR/topology-terminal-seed-ws1.json"
+terminal_stable=$(jq -r '.columns[0].targets[0].windowStableId' "$matrix_file")
+runtime_mutation terminal-workspace 1 "$terminal_stable" terminal-workspace 0 0 0 committed
+terminal_workspace=$(jq -r '.destinationWorkspaceId' "$EVIDENCE_DIR/mutation-terminal-workspace.json")
+capture_topology terminal-workspace-after "$terminal_workspace" right
+
+for destination in same-column existing-column new-column-before new-column-after cross-scrolling mixed-workspace terminal-workspace outside-release no-op-release; do
+    [[ -s $EVIDENCE_DIR/mutation-$destination.json || $destination == outside-release ]] || fail "missing loaded native artifact for $destination" "destination-$destination"
 done
-record PASS destination-matrix 'all positional destinations and exact consume/effect oracles'
+[[ -s $EVIDENCE_DIR/mutation-native-rollback.json ]] || fail 'missing loaded native rollback artifact' native-rollback
+record PASS runtime-mutation 'loaded exact-ABI native same/existing/new/cross/mixed/terminal/no-op commits plus request-scoped rollback'
+record PASS destination-matrix 'every destination retains correlated mutation, topology, client, identity, width, size, direction, offset, and focus state'
 
 hc clients -j > "$EVIDENCE_DIR/clients-after-input.json"
 hc plugin list -j > "$EVIDENCE_DIR/plugins-final.json"

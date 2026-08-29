@@ -99,6 +99,12 @@ config only, set `scrolling_input_debug = 1`, then use
 per-event state, consumption, pan, selection, drag, reset, and drop effects.
 Native releases emit `HYPREXPO_SCROLLING_MUTATION` with request correlation,
 outcome, rollback status, violated invariants, and secret-free topology hashes.
+The validator also uses the debug-gated `hyprexpo:scrolling_mutation_test`
+dispatcher to execute every destination against the loaded Hyprland model. Its
+records retain exact before/after workspace, column, target, membership, width,
+row-size, direction, offset, focus, and identity state. A single request-scoped
+`apply:add-target:after` fault proves native rollback; it cannot remain armed
+for a later interaction.
 
 Opening, closing, and gesture swipes animate the complete scrolling scene.
 Pointer and touch ownership begins only after the opening transform settles;

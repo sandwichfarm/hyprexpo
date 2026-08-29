@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <optional>
 #include <string>
 #include <vector>
@@ -87,6 +88,7 @@ std::string     snapshotFailureName(ESnapshotFailure failure);
 SSnapshotResult snapshotWorkspace(const PHLWORKSPACE& workspace);
 bool            workspaceUsesScrollingLayout(const PHLWORKSPACE& workspace);
 SMutationResult moveScrollingTarget(const PHLWORKSPACE& sourceWorkspace, const PHLWORKSPACE& destinationWorkspace, const PHLMONITOR& initiatingMonitor,
-                                    const SMutationRequest& request);
+                                    const SMutationRequest& request, std::optional<SFaultInjection> fault = std::nullopt);
+std::expected<SMutationResult, std::string> runNativeMutationTest(const std::string& argument, uint64_t sessionGeneration);
 
 }

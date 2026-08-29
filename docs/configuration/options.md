@@ -107,7 +107,7 @@ plugin {
 | `plugin:hyprexpo:show_cursor` | bool int | keep the cursor visible while overview is open; set `0` for old hidden-cursor behavior | `1` |
 | `plugin:hyprexpo:show_pinned_windows` | bool int | render pinned/PiP windows in workspace preview thumbnails; default `0` hides them from previews only | `0` |
 | `plugin:hyprexpo:scrolling_thumbnail_budget` | int | scrolling thumbnail budget multiplier `m`, clamped to `1..16`; total capture pixels are bounded by `m * W * H` for monitor size `W x H` | `4` |
-| `plugin:hyprexpo:scrolling_input_debug` | bool int | enable the deterministic `hyprexpo:scrolling_input_test` acceptance dispatcher; leave disabled outside disposable testing | `0` |
+| `plugin:hyprexpo:scrolling_input_debug` | bool int | enable deterministic input and loaded native mutation acceptance dispatchers; leave disabled outside disposable testing | `0` |
 
 Pinned windows, including browser Picture-in-Picture windows, stay pinned and visible in normal Hyprland. By default HyprExpo hides them only while capturing workspace preview thumbnails so they do not appear on every tile. Set `show_pinned_windows = 1` to opt in to the old preview behavior.
 
