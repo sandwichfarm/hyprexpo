@@ -226,9 +226,12 @@ int main() {
 
     const auto adapterHeader = readFile("ScrollingLayoutAdapter.hpp");
     const auto adapterSource = readFile("ScrollingLayoutAdapter.cpp");
+    const auto mutationHeader = readFile("ScrollingMutationTransaction.hpp");
+    const auto mutationSource = readFile("ScrollingMutationTransaction.cpp");
     const auto diagnosticSource = readFile("ScrollingDiagnostics.cpp");
     const auto diagnosticScript = readFile("scripts/read-scrolling-diagnostic.sh");
     expect(!adapterHeader.empty() && !adapterSource.empty(), "scrolling adapter source can be read from repo root");
+    expect(!mutationHeader.empty() && !mutationSource.empty(), "scrolling transaction source can be read from repo root");
     expect(!diagnosticSource.empty() && !diagnosticScript.empty(), "scrolling diagnostic source and reader can be read from repo root");
 
     for (const auto& token : {"NullWorkspace", "InertWorkspace", "MissingSpace", "MissingAlgorithm", "MissingTiledAlgorithm", "WrongAlgorithmName", "CastFailure", "ExpiredTarget",
@@ -241,11 +244,30 @@ int main() {
     expectOrder(adapterSource, "algoMatcher()->getNameForTiledAlgo", "dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>", "adapter verifies matcher name before dynamic cast");
     expectOrder(adapterSource, "dataFor(target)", "column->scrollingData.lock()", "adapter locks native ownership hops after resolving target data");
 
+    const auto snapshotImplementation = extractFunction(adapterSource, "SSnapshotResult snapshotWorkspaceImpl(");
     for (const auto& token : {".moveTape(", ".moveTapeNormalized(", ".snapToGrid(", ".setOffset(", ".adjustOffset(", ".centerCol(", ".fitCol(", ".focusColumn(", ".addStrip(",
                               ".insertStrip(", ".removeStrip(", ".swapStrips(", ".setColumnWidth(", ".setTargetSize(", ".recalculate(", "beginDragTarget", "moveWindowToWorkspace", "glReadPixels(",
                               "readPixels(", "std::ofstream", "m_title", "m_class"})
-        expectAbsent(adapterSource + diagnosticSource, token, "read-only adapter/diagnostic forbids " + std::string{token});
+        expectAbsent(snapshotImplementation + diagnosticSource, token, "read-only snapshot/diagnostic forbids " + std::string{token});
     expectAbsent(adapterHeader, "CScrollingAlgorithm*", "adapter DTO/header retains no raw scrolling algorithm pointer");
+
+    for (const auto& token : {"moveScrollingTarget", "SMutationResult", "executeMutation(", "snapshotPreState", "removeTarget", "addTarget", "restorePreState",
+                              "setColumnWidth", "setTargetSize", "recalculate", "verifyPostconditions", "MutationResult"})
+        expectContains(adapterHeader + adapterSource + mutationHeader + mutationSource, token, "native transaction boundary exposes " + std::string{token});
+    const auto nativeMove = extractFunction(adapterSource, "SMutationResult moveScrollingTarget(");
+    expect(!nativeMove.empty(), "same-workspace native transaction entry point exists");
+    expectOrder(nativeMove, "snapshotPreState", "executeMutation(", "native transaction snapshots before the engine can remove a target");
+    expectContains(adapterSource, "catch (const std::exception&", "native mutation catches standard host exceptions");
+    expectContains(adapterSource, "catch (...)", "native mutation catches unknown host exceptions");
+    expectOrder(adapterSource, "restorePreState", "setColumnWidth", "rollback rebuilds structure before restoring exact widths");
+    expectOrder(adapterSource, "setColumnWidth", "setTargetSize", "rollback restores widths before row proportions");
+    expectOrder(adapterSource, "setTargetSize", "recalculate", "native structure and sizes are restored before final recalculation");
+    expectOrder(adapterSource, "recalculate", "verifyPostconditions", "native readback verifies postconditions after final recalculation");
+    const auto nativeClassPosition = adapterSource.find("class CNativeMutationOperations");
+    const auto nativeMutationImplementation = nativeClassPosition == std::string::npos ? std::string{} : adapterSource.substr(nativeClassPosition);
+    for (const auto& token : {"beginDragTarget", "getMouseCoordsInternal", ".moveTape(", ".setOffset(", ".adjustOffset(", ".centerCol(", ".fitCol(", ".focusColumn("})
+        expectAbsent(nativeMove + nativeMutationImplementation, token,
+                     "native transaction forbids cursor/drag/camera operation " + std::string{token});
 
     for (const auto& token : {"requestId", "sessionGeneration", "marker", "hyprlandVersion", "runtimeHash", "clientHash", "monitorId", "workspaceId", "algorithmFingerprint", "dataFingerprint", "direction",
                               "offsetBefore", "offsetAfter", "activeWorkspaceBefore", "activeWorkspaceAfter", "focusedWindowBefore", "focusedWindowAfter", "columns", "targets", "layoutBox", "visible",
@@ -434,6 +456,8 @@ int main() {
     expectContains(makefile, "IOverviewSession.cpp", "Make production sources include the overview factory");
     expectContains(makefile, "ScrollingOverview.cpp", "Make production sources include the scrolling renderer");
     expectContains(makefile, "ScrollingInputState.cpp", "Make production and logic tests include the pure input model");
+    expectContains(makefile, "ScrollingMutationTransaction.cpp", "Make production and logic tests include the pure transaction model");
+    expectContains(makefile, "ScrollingMutationTransaction.hpp", "Make headers include the transaction contract");
     expectContains(makefile, "scripts/inject-scrolling-input.sh", "Make source tests track the deterministic input harness");
     expectContains(makefile, "IOverviewSession.hpp", "Make headers include the overview interface");
     expectContains(makefile, "ScrollingOverview.hpp", "Make headers include the scrolling renderer contract");
