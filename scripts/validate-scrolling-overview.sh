@@ -188,13 +188,27 @@ for _ in $(seq 1 240); do
 done
 hc clients -j > "$EVIDENCE_DIR/clients-fixture.json"
 [[ $(jq '[.[] | select(.class == "hyprexpo-scroll-fixture")] | length' "$EVIDENCE_DIR/clients-fixture.json") -ge 12 ]] || fail 'scrolling fixture clients did not map' fixture
+fixture_settled=false
+for _ in $(seq 1 160); do
+    if hc clients -j | jq -e '
+        any(.[]; .title == "HYPREXPO-PINNED" and .pinned == true) and
+        any(.[]; .title == "HYPREXPO-GROUP" and (.grouped | length) > 0) and
+        any(.[]; .title == "HYPREXPO-FULLSCREEN" and .fullscreen != 0)' >/dev/null; then
+        fixture_settled=true
+        break
+    fi
+    sleep 0.05
+done
+[[ $fixture_settled == true ]] || fail 'special-window fixture bootstrap did not settle' fixture
+hc dispatch workspace 1 >/dev/null
+sleep 0.3
 
 read_topology() {
     local workspace=$1
     local expected_direction=$2
     local request="topology-$workspace"
     hc dispatch hyprexpo:scrolling_debug "$request workspace:$workspace" >/dev/null
-    for _ in $(seq 1 100); do
+    for _ in $(seq 1 500); do
         if ./scripts/read-scrolling-diagnostic.sh "$INSTANCE_LOG" "$request" > "$EVIDENCE_DIR/topology-$workspace.json" 2>/dev/null; then break; fi
         sleep 0.02
     done

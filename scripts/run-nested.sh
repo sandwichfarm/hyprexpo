@@ -56,8 +56,8 @@ exec-once = [workspace 4 silent] kitty --class hyprexpo-scroll-fixture --title H
 exec-once = [workspace 5 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-MIXED
 exec-once = [workspace 1 silent; float] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-FLOATING
 exec-once = [workspace 1 silent; float] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-PINNED
-exec-once = [workspace 1 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-GROUP
-exec-once = [workspace 1 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-FULLSCREEN
+exec-once = [workspace 5 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-GROUP
+exec-once = [workspace 5 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-FULLSCREEN
 exec-once = sh -c 'sleep 2; hyprctl dispatch focuswindow title:HYPREXPO-SCROLL-B; hyprctl dispatch layoutmsg consume; hyprctl dispatch focuswindow title:HYPREXPO-PINNED; hyprctl dispatch pin; hyprctl dispatch focuswindow title:HYPREXPO-GROUP; hyprctl dispatch togglegroup; hyprctl dispatch focuswindow title:HYPREXPO-FULLSCREEN; hyprctl dispatch fullscreen 1; hyprctl dispatch workspace 1'
 EOF
         ;;
