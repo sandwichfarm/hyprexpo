@@ -190,7 +190,9 @@ hc clients -j > "$EVIDENCE_DIR/clients-fixture.json"
 [[ $(jq '[.[] | select(.class == "hyprexpo-scroll-fixture")] | length' "$EVIDENCE_DIR/clients-fixture.json") -ge 12 ]] || fail 'scrolling fixture clients did not map' fixture
 
 read_topology() {
-    local workspace=$1 expected_direction=$2 request="topology-$workspace"
+    local workspace=$1
+    local expected_direction=$2
+    local request="topology-$workspace"
     hc dispatch hyprexpo:scrolling_debug "$request workspace:$workspace" >/dev/null
     for _ in $(seq 1 100); do
         if ./scripts/read-scrolling-diagnostic.sh "$INSTANCE_LOG" "$request" > "$EVIDENCE_DIR/topology-$workspace.json" 2>/dev/null; then break; fi
