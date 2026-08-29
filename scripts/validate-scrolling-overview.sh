@@ -247,7 +247,7 @@ read_topology 1 right
 read_topology 2 left
 read_topology 3 down
 read_topology 4 up
-jq -e '.columns | length == 3 and ([.columns[].targets | length] | any(. > 1))' "$EVIDENCE_DIR/topology-1.json" >/dev/null || fail 'workspace 1 is not the required three-column/multi-target fixture' topology-1
+jq -e '(.columns | length) == 3 and ([.columns[].targets | length] | any(. > 1))' "$EVIDENCE_DIR/topology-1.json" >/dev/null || fail 'workspace 1 is not the required three-column/multi-target fixture' topology-1
 record PASS topology 'right/left/down/up, three columns, multi-target column, stable offsets/order/widths/sizes'
 
 hc dispatch workspace 1 >/dev/null
