@@ -465,6 +465,9 @@ int main() {
     expectContains(scrollingHeader, "PHLANIMVAR<float> m_transitionProgress", "scrolling session owns one compositor-managed transition value");
     expectContains(scrollingSource, "Animation::mgr()->createAnimation", "scrolling overview entry and exit use the compositor animation manager");
     expectContains(scrollingSource, "transitionForSwipe(m_swipeClosing, m_swipeDelta", "scrolling swipe delta drives the visible transition progress");
+    expectContains(scrollingSource, "CompatHyprlandAPI::intValue(\"plugin:hyprexpo:gesture_distance\")",
+                   "scrolling swipe reads gesture distance through the Lua-compatible config boundary");
+    expectAbsent(scrollingSource, "HyprlandAPI::getConfigValue", "scrolling session never uses the legacy config getter");
     expectContains(scrollingSource, "applyOverviewTransition", "scrolling render boxes consume the transition transform");
     expectContains(scrollingSource, "transition.opacity", "scrolling render content consumes transition opacity");
     const auto scrollingClose = extractFunction(scrollingSource, "void CScrollingOverview::close(");
