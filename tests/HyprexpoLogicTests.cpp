@@ -546,6 +546,7 @@ void checkScrollingMutationTransactions() {
                                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1};
     const auto successful = simulateMutation(mutationFixture(), faultRequest);
     expect(successful.result.outcome == EMutationOutcome::Committed && !successful.trace.empty(), "fault fixture has a complete successful operation trace");
+    expect(successful.controllerMoveCount == 1 && successful.reverseMoveCount == 0, "cross-workspace commit invokes the controller exactly once");
     for (const auto step : successful.trace) {
         for (const auto when : {EFaultWhen::Before, EFaultWhen::After}) {
             const auto failed = simulateMutation(mutationFixture(), faultRequest, SFaultInjection{.phase = EMutationPhase::Apply, .step = step, .when = when});
@@ -564,6 +565,22 @@ void checkScrollingMutationTransactions() {
     duplicate.workspaces[1].members.push_back(11);
     const auto duplicateViolations = verifyPostconditions(successful.result.before, duplicate, successful.result.plan, false);
     expect(std::ranges::find(duplicateViolations, "membership.exact-once") != duplicateViolations.end(), "exact-once comparator rejects duplicate targets");
+    auto lost = successful.state;
+    std::erase(lost.workspaces[1].members, 11);
+    const auto lostViolations = verifyPostconditions(successful.result.before, lost, successful.result.plan, false);
+    expect(std::ranges::find(lostViolations, "membership.exact-once") != lostViolations.end(), "exact-once comparator rejects lost targets");
+    auto foreign = successful.state;
+    foreign.workspaces[1].members.push_back(999);
+    const auto foreignViolations = verifyPostconditions(successful.result.before, foreign, successful.result.plan, false);
+    expect(std::ranges::find(foreignViolations, "membership.exact-once") != foreignViolations.end(), "exact-once comparator rejects foreign targets");
+    auto misplaced = successful.state;
+    std::swap(misplaced.workspaces[1].columns[0].targets[0], misplaced.workspaces[1].columns[0].targets[1]);
+    const auto misplacedViolations = verifyPostconditions(successful.result.before, misplaced, successful.result.plan, false);
+    expect(std::ranges::find(misplacedViolations, "moved.expected-location") != misplacedViolations.end(), "postconditions reject a misplaced moved target");
+    auto widened = successful.state;
+    widened.workspaces[1].columns[0].width = 0.25;
+    const auto widthViolations = verifyPostconditions(successful.result.before, widened, successful.result.plan, false);
+    expect(std::ranges::find(widthViolations, "unaffected.width") != widthViolations.end(), "postconditions reject changed unaffected widths");
     auto resized = successful.state;
     resized.workspaces[1].columns[0].targets[0].size = 0.25;
     const auto sizeViolations = verifyPostconditions(successful.result.before, resized, successful.result.plan, false);
