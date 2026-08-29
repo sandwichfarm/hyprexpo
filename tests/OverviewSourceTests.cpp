@@ -311,8 +311,7 @@ int main() {
 
     for (const auto& token : {"requestId", "sessionGeneration", "marker", "hyprlandVersion", "runtimeHash", "clientHash", "monitorId", "workspaceId", "algorithmFingerprint", "dataFingerprint", "direction",
                               "offsetBefore", "offsetAfter", "activeWorkspaceBefore", "activeWorkspaceAfter", "focusedWindowBefore", "focusedWindowAfter", "columns", "targets", "layoutBox", "visible",
-                              "group", "floating", "fullscreen", "pinned", "captureStatus", "retainedFramebuffer", "physicalPresentationBox", "logicalCropBox", "pixelEvidence", "pendingGeneration",
-                              "pendingFramebuffer", "pendingTexture", "pendingOverlay", "pendingPassCount", "acknowledged", "cleanupComplete", "topologyEqual", "directionEqual", "offsetEqual", "orderEqual",
+                              "group", "floating", "fullscreen", "pinned", "topologyEqual", "directionEqual", "offsetEqual", "orderEqual",
                               "widthsEqual", "membershipEqual", "sizesEqual", "specialStateEqual", "algorithmEqual", "dataEqual", "activeWorkspaceEqual", "focusEqual", "mutationOutcome", "rollbackStatus", "status"})
         expectContains(diagnosticSource, token, "diagnostic JSON includes observability field " + std::string{token});
     expectContains(diagnosticSource, "snapshotWorkspace", "diagnostic serializes copied adapter snapshots");

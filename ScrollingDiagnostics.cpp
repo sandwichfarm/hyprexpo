@@ -345,9 +345,7 @@ SDiagnosticEmission buildReadDiagnostic(const std::string& argument) {
             output << targetJson(snapshot->layoutTargets[index]);
         }
     }
-    output << "],\"captureStatus\":\"not-requested\",\"retainedFramebuffer\":false,\"physicalPresentationBox\":null,\"logicalCropBox\":null,\"pixelEvidence\":null"
-           << ",\"pendingGeneration\":0,\"pendingFramebuffer\":false,\"pendingTexture\":false,\"pendingOverlay\":false,\"pendingPassCount\":0,\"acknowledged\":false,\"cleanupComplete\":true"
-           << ",\"topologyEqual\":" << (topologyEqual ? "true" : "false") << ",\"directionEqual\":" << (directionEqual ? "true" : "false")
+    output << "],\"topologyEqual\":" << (topologyEqual ? "true" : "false") << ",\"directionEqual\":" << (directionEqual ? "true" : "false")
            << ",\"offsetEqual\":" << (offsetEqual ? "true" : "false") << ",\"orderEqual\":" << (orderEqual ? "true" : "false")
            << ",\"widthsEqual\":" << (widthsEqual ? "true" : "false") << ",\"membershipEqual\":" << (membershipEqual ? "true" : "false")
            << ",\"sizesEqual\":" << (sizesEqual ? "true" : "false") << ",\"specialStateEqual\":" << (specialStateEqual ? "true" : "false")

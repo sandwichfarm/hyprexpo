@@ -244,7 +244,7 @@ read_topology() {
     start_record_watcher "$TOPOLOGY_PREFIX" "\"requestId\":\"$request\"" "$EVIDENCE_DIR/topology-$workspace.json"
     hc dispatch hyprexpo:scrolling_debug "$request workspace:$workspace" >/dev/null
     wait_for_watcher "$EVIDENCE_DIR/topology-$workspace.json" "topology-$workspace"
-    jq -e --arg direction "$expected_direction" '.status == "PASS" and .direction == $direction and .topologyEqual and .offsetEqual and .orderEqual and .widthsEqual and .membershipEqual and .sizesEqual and .cleanupComplete' \
+    jq -e --arg direction "$expected_direction" '.status == "PASS" and .direction == $direction and .topologyEqual and .offsetEqual and .orderEqual and .widthsEqual and .membershipEqual and .sizesEqual' \
         "$EVIDENCE_DIR/topology-$workspace.json" >/dev/null || fail "workspace $workspace topology/direction mismatch" "topology-$workspace"
 }
 
