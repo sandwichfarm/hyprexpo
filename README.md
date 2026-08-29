@@ -2,6 +2,13 @@
 
 HyprExpo is a maintained Hyprland plugin for expose-style workspace overview with keyboard selection, drag-drop window movement, labels, configurable gaps and borders, multi-monitor placement, and Lua gestures.
 
+Native Hyprland scrolling-layout workspaces open a separate window-level
+scrolling overview. It preserves the full offscreen tape, supports pointer,
+touch, keyboard, panning, and positional window moves, and reuses grid captures
+for mixed-layout rows. This is intentionally not full Niri parity: hot corners,
+dwell activation, layer-shell/wallpaper composition, and arbitrary workspace
+insertion are outside the implemented contract.
+
 If you experience any bugs, you are encouraged to [open an issue](https://github.com/sandwichfarm/hyprexpo/issues/new). Information I can use to reproduce a bug is appreciated. 
 
 [Docs (markdown)](docs/index.md) - [Docs (website)](http://hyprexpo.lol/docs) - [Announcement Post](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
@@ -253,6 +260,7 @@ For more options, see the [configuration options](https://hyprexpo.lol/docs/conf
 - [Multi-monitor placement](https://hyprexpo.lol/docs/guides/multi-monitor/)
 - [Migration from old keyword config](https://hyprexpo.lol/docs/guides/migration/)
 - [Runtime smoke checklist](https://hyprexpo.lol/docs/guides/runtime-smoke/)
+- [Scrolling overview guide](https://hyprexpo.lol/docs/guides/scrolling-overview/)
 - [Compatibility and release provenance](https://hyprexpo.lol/docs/reference/compatibility/)
 - [Dispatcher reference](https://hyprexpo.lol/docs/reference/dispatchers/)
 - [Troubleshooting](https://hyprexpo.lol/docs/troubleshooting/)
