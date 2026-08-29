@@ -73,6 +73,7 @@ cleanup() {
     if [[ -n $INSTANCE ]]; then
         hc dispatch hyprexpo:expo off >/dev/null 2>&1 || true
         hc plugin unload "$(realpath "$REPO_ROOT/hyprexpo.so")" >/dev/null 2>&1 || true
+        sleep 1
         hc plugin list -j > "$EVIDENCE_DIR/plugins-after-unload.json" 2>/dev/null || true
         hc configerrors -j > "$EVIDENCE_DIR/config-errors-after-unload.json" 2>/dev/null || true
     fi
@@ -209,7 +210,14 @@ read_topology() {
     local request="topology-$workspace"
     hc dispatch hyprexpo:scrolling_debug "$request workspace:$workspace" >/dev/null
     for _ in $(seq 1 500); do
-        if ./scripts/read-scrolling-diagnostic.sh "$INSTANCE_LOG" "$request" > "$EVIDENCE_DIR/topology-$workspace.json" 2>/dev/null; then break; fi
+        record_line=$(hc rollinglog 2>/dev/null | awk -v prefix="$TOPOLOGY_PREFIX" -v id="\"requestId\":\"$request\"" '
+            index($0, prefix) && index($0, id) { record = substr($0, index($0, prefix) + length(prefix)) }
+            END { print record }
+        ')
+        if [[ -n $record_line ]]; then
+            printf '%s\n' "$record_line" > "$EVIDENCE_DIR/topology-$workspace.json"
+            break
+        fi
         sleep 0.02
     done
     jq -e --arg direction "$expected_direction" '.status == "PASS" and .direction == $direction and .topologyEqual and .offsetEqual and .orderEqual and .widthsEqual and .membershipEqual and .sizesEqual and .cleanupComplete' \
@@ -235,7 +243,10 @@ runtime_input() {
     local request="runtime-$name"
     hc dispatch hyprexpo:scrolling_input_test "$request|$sequence" >/dev/null
     for _ in $(seq 1 100); do
-        record_line=$(rg -F "HYPREXPO_SCROLLING_INPUT {\"requestId\":\"$request\"" "$INSTANCE_LOG" | tail -1 || true)
+        record_line=$(hc rollinglog 2>/dev/null | awk -v id="\"requestId\":\"$request\"" '
+            index($0, "HYPREXPO_SCROLLING_INPUT ") && index($0, id) { record = $0 }
+            END { print record }
+        ')
         if [[ -n $record_line ]]; then
             printf '%s\n' "${record_line#*HYPREXPO_SCROLLING_INPUT }" > "$EVIDENCE_DIR/input-$name.json"
             return
@@ -257,14 +268,14 @@ done
 jq -e '.events[0].consume == true and .events[0].panDelta != 0' "$EVIDENCE_DIR/input-axis-inside.json" >/dev/null || fail 'inside axis was not consumed as pan' input-axis
 record PASS runtime-input 'hover/axis plus pending/pan/drag touch-cancel recovery and immediate reacquisition'
 
-mutation_count_before=$(rg -c -F "$MUTATION_PREFIX" "$INSTANCE_LOG" || true)
+mutation_count_before=$(hc rollinglog | rg -c -F "$MUTATION_PREFIX" || true)
 runtime_input new-column-before 'mouse_button:210:80:273:1|mouse_move:223:80|mouse_move:5:80|mouse_button:5:80:273:0'
 for _ in $(seq 1 100); do
-    mutation_count_after=$(rg -c -F "$MUTATION_PREFIX" "$INSTANCE_LOG" || true)
+    mutation_count_after=$(hc rollinglog | rg -c -F "$MUTATION_PREFIX" || true)
     [[ $mutation_count_after -gt $mutation_count_before ]] && break
     sleep 0.02
 done
-mutation_line=$(rg -F "$MUTATION_PREFIX" "$INSTANCE_LOG" | tail -1 || true)
+mutation_line=$(hc rollinglog | rg -F "$MUTATION_PREFIX" | tail -1 || true)
 [[ -n $mutation_line ]] || fail 'runtime drop emitted no mutation diagnostic' runtime-mutation
 printf '%s\n' "${mutation_line#*$MUTATION_PREFIX}" > "$EVIDENCE_DIR/mutation-new-column-before.json"
 jq -e '.mutationOutcome == "committed" and (.requestId | startswith("scroll-drop-")) and (.sessionGeneration > 0) and (.beforeHash != .afterHash)' \
