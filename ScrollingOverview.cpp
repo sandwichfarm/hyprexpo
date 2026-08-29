@@ -8,6 +8,8 @@
 
 #define private   public
 #define protected public
+#include <hyprland/src/animation/AnimationManager.hpp>
+#include <hyprland/src/config/shared/animation/AnimationTree.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/debug/log/Logger.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
@@ -48,6 +50,29 @@ CBox sceneBox(const Hyprexpo::SRect& box, double pan) {
     return {box.x, box.y - pan, box.w, box.h};
 }
 
+CBox applyTransition(CBox box, const Hyprexpo::SSize& viewport, const SOverviewTransition& transition) {
+    const auto transformed = applyOverviewTransition({box.x, box.y, box.w, box.h}, viewport, transition);
+    return {transformed.x, transformed.y, transformed.w, transformed.h};
+}
+
+CHyprColor applyTransitionOpacity(const CHyprColor& color, const SOverviewTransition& transition) {
+    return color.modifyA(color.a * transition.opacity);
+}
+
+void scheduleScrollingOverviewRemoval(uint64_t generation) {
+    g_pEventLoopManager->doLater([generation]() {
+        if (!g_pOverview || g_pOverview->sessionGeneration() != generation)
+            return;
+        const auto MON = g_pOverview->monitor();
+        g_pOverview->prepareForTeardown();
+        g_pOverview.reset();
+        if (!MON)
+            return;
+        g_pHyprRenderer->damageMonitor(MON);
+        MON->scheduleFrame();
+    });
+}
+
 EOutputTransform outputTransform(wl_output_transform transform) {
     switch (transform) {
         case WL_OUTPUT_TRANSFORM_90: return EOutputTransform::Rotate90;
@@ -66,9 +91,17 @@ EOutputTransform outputTransform(wl_output_transform transform) {
 CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, bool swipe, uint64_t sessionGeneration, const std::optional<SWorkspaceSnapshot>& initialSnapshot) :
     m_startedOn(startedOn), m_monitor(startedOn ? startedOn->m_monitor : PHLMONITORREF{}), m_sessionGeneration(sessionGeneration), m_isSwiping(swipe),
     m_selectedWorkspaceID(startedOn ? startedOn->m_id : 0) {
+    Animation::mgr()->createAnimation(0.F, m_transitionProgress, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
+    m_transitionProgress->setUpdateCallback([generation = m_sessionGeneration](auto) {
+        if (g_pOverview && g_pOverview->sessionGeneration() == generation)
+            g_pOverview->damage();
+    });
     m_valid = refreshScene(initialSnapshot);
-    if (m_valid)
+    if (m_valid) {
         installInputListeners();
+        if (!swipe)
+            *m_transitionProgress = 1.F;
+    }
 }
 
 CScrollingOverview::~CScrollingOverview() {
@@ -226,7 +259,7 @@ void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const S
 }
 
 SInputEffects CScrollingOverview::processInput(const SInputEvent& event) {
-    if (m_closing || m_closeCommitted)
+    if (m_closing || m_closeCommitted || !m_transitionProgress || m_transitionProgress->value() < 0.999F)
         return {};
     const auto previousState = m_inputState;
     const auto transition = transitionInput(previousState, event, inputContext());
@@ -589,11 +622,13 @@ void CScrollingOverview::fullRender() {
         close(false);
         return;
     }
-    clearWithColor(CHyprColor{0.06, 0.06, 0.06, 1.0});
+    const auto transition = overviewTransition(m_transitionProgress ? m_transitionProgress->value() : 1.0,
+                                               {MON->m_size.x, MON->m_size.y});
+    clearWithColor(applyTransitionOpacity(CHyprColor{0.06, 0.06, 0.06, 1.0}, transition));
     CRegion damageRegion{0, 0, INT16_MAX, INT16_MAX};
 
     for (const auto& workspace : m_scene.workspaces) {
-        CBox box = sceneBox(workspace.box, m_pan);
+        CBox box = applyTransition(sceneBox(workspace.box, m_pan), {MON->m_size.x, MON->m_size.y}, transition);
         box.scale(MON->m_scale).round();
         if (box.y + box.h <= 0 || box.y >= MON->m_pixelSize.y)
             continue;
@@ -601,12 +636,12 @@ void CScrollingOverview::fullRender() {
         switch (workspace.kind) {
             case EWorkspaceKind::Mixed:
                 if (row && row->workspacePreview && row->workspacePreview->getTexture())
-                    Render::GL::g_pHyprOpenGL->renderTextureInternal(row->workspacePreview->getTexture(), box, {.damage = &damageRegion, .a = 1.F, .round = 12});
+                    Render::GL::g_pHyprOpenGL->renderTextureInternal(row->workspacePreview->getTexture(), box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity), .round = 12});
                 else
-                    Render::GL::g_pHyprOpenGL->renderRect(box, CHyprColor{0.14, 0.14, 0.14, 1.0}, {.round = 12});
+                    Render::GL::g_pHyprOpenGL->renderRect(box, applyTransitionOpacity(CHyprColor{0.14, 0.14, 0.14, 1.0}, transition), {.round = 12});
                 break;
-            case EWorkspaceKind::Empty: Render::GL::g_pHyprOpenGL->renderRect(box, CHyprColor{0.10, 0.10, 0.10, 1.0}, {.round = 12}); break;
-            case EWorkspaceKind::Terminal: Render::GL::g_pHyprOpenGL->renderRect(box, CHyprColor{0.08, 0.12, 0.10, 1.0}, {.round = 12}); break;
+            case EWorkspaceKind::Empty: Render::GL::g_pHyprOpenGL->renderRect(box, applyTransitionOpacity(CHyprColor{0.10, 0.10, 0.10, 1.0}, transition), {.round = 12}); break;
+            case EWorkspaceKind::Terminal: Render::GL::g_pHyprOpenGL->renderRect(box, applyTransitionOpacity(CHyprColor{0.08, 0.12, 0.10, 1.0}, transition), {.round = 12}); break;
             case EWorkspaceKind::Scrolling: break;
         }
     }
@@ -614,25 +649,28 @@ void CScrollingOverview::fullRender() {
     for (const auto& target : m_renderTargets) {
         CBox box = target.box;
         box.y -= m_pan;
+        box = applyTransition(box, {MON->m_size.x, MON->m_size.y}, transition);
         box.scale(MON->m_scale).round();
         if (box.y + box.h <= 0 || box.y >= MON->m_pixelSize.y)
             continue;
         const auto entry = cacheEntry(target.workspaceID, target.targetToken);
         if (entry && entry->texture)
-            Render::GL::g_pHyprOpenGL->renderTextureInternal(entry->texture, box, {.damage = &damageRegion, .a = 1.F, .round = target.fullscreen ? 0 : 8});
+            Render::GL::g_pHyprOpenGL->renderTextureInternal(entry->texture, box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity), .round = target.fullscreen ? 0 : 8});
         else
-            Render::GL::g_pHyprOpenGL->renderRect(box, target.pinned ? CHyprColor{0.18, 0.12, 0.12, 1.0} : CHyprColor{0.12, 0.12, 0.12, 1.0}, {.round = 8});
+            Render::GL::g_pHyprOpenGL->renderRect(box, applyTransitionOpacity(target.pinned ? CHyprColor{0.18, 0.12, 0.12, 1.0} : CHyprColor{0.12, 0.12, 0.12, 1.0}, transition), {.round = 8});
         const bool hovered = m_inputState.hover.kind == EHitKind::Target && m_inputState.hover.workspaceID == target.workspaceID && m_inputState.hover.targetToken == target.targetToken;
         const bool dragging = m_inputState.mode == EInputMode::WindowDrag && m_inputState.pressed.workspaceID == target.workspaceID && m_inputState.pressed.targetToken == target.targetToken;
         if (hovered || dragging)
-            Render::GL::g_pHyprOpenGL->renderRect(box, dragging ? CHyprColor{0.20, 0.48, 0.85, 0.20} : CHyprColor{0.85, 0.90, 1.0, 0.12}, {.round = target.fullscreen ? 0 : 8});
+            Render::GL::g_pHyprOpenGL->renderRect(box, applyTransitionOpacity(dragging ? CHyprColor{0.20, 0.48, 0.85, 0.20} : CHyprColor{0.85, 0.90, 1.0, 0.12}, transition), {.round = target.fullscreen ? 0 : 8});
     }
 }
 
 void CScrollingOverview::setClosing(bool closing) {
     m_closing = closing;
-    if (closing)
+    if (closing) {
+        m_swipeClosing = true;
         resetInputState(EResetReason::Close);
+    }
 }
 
 bool CScrollingOverview::closeCommitted() const {
@@ -652,6 +690,7 @@ void CScrollingOverview::onWindowMoveToWorkspace(const PHLWINDOW&, const PHLWORK
 void CScrollingOverview::resetSwipe() {
     m_isSwiping = false;
     m_swipeDelta = 0.0;
+    m_swipeClosing = false;
 }
 
 void CScrollingOverview::onSwipeUpdate(double delta) {
@@ -659,15 +698,28 @@ void CScrollingOverview::onSwipeUpdate(double delta) {
         return;
     m_isSwiping = true;
     m_swipeDelta = delta;
+    static auto* const* PDISTANCE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gesture_distance")->getDataStaticPtr();
+    const double distance = std::max<Hyprlang::INT>(1, **PDISTANCE);
+    const float progress = static_cast<float>(transitionForSwipe(m_swipeClosing, m_swipeDelta, distance));
+    m_transitionProgress->setCallbackOnEnd(nullptr);
+    m_transitionProgress->setValueAndWarp(progress);
+    damage();
 }
 
 void CScrollingOverview::onSwipeEnd() {
+    if (m_closeCommitted)
+        return;
     m_isSwiping = false;
-    if (m_closing) {
+    m_closing = false;
+    const float progress = m_transitionProgress ? m_transitionProgress->value() : 1.F;
+    if (progress < 0.5F) {
         close(false);
         return;
     }
+    m_swipeClosing = false;
     m_swipeDelta = 0.0;
+    *m_transitionProgress = 1.F;
+    damage();
 }
 
 bool CScrollingOverview::commitSelection() {
@@ -712,14 +764,17 @@ void CScrollingOverview::close(bool switchToSelection) {
         return;
     resetInputState(EResetReason::Close);
     m_closeCommitted = true;
+    m_closing = true;
     if (switchToSelection)
         commitSelection();
-    const auto MON = m_monitor.lock();
-    g_pOverview.reset();
-    if (MON) {
-        g_pHyprRenderer->damageMonitor(MON);
-        MON->scheduleFrame();
+    if (!m_transitionProgress || m_transitionProgress->value() <= 0.001F) {
+        scheduleScrollingOverviewRemoval(m_sessionGeneration);
+        return;
     }
+    const auto generation = m_sessionGeneration;
+    m_transitionProgress->setCallbackOnEnd([generation](auto) { scheduleScrollingOverviewRemoval(generation); });
+    *m_transitionProgress = 0.F;
+    damage();
 }
 
 void CScrollingOverview::updateSelectionFromFocus() {

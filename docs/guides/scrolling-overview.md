@@ -100,6 +100,11 @@ per-event state, consumption, pan, selection, drag, reset, and drop effects.
 Native releases emit `HYPREXPO_SCROLLING_MUTATION` with request correlation,
 outcome, rollback status, violated invariants, and secret-free topology hashes.
 
+Opening, closing, and gesture swipes animate the complete scrolling scene.
+Pointer and touch ownership begins only after the opening transform settles;
+closing keeps the session and its capture resources alive until the compositor
+animation ends, then removes it behind a generation fence.
+
 ## Exact ABI and runtime procedure
 
 Scrolling access uses Hyprland internals and is pinned to Hyprland `0.56.1`,

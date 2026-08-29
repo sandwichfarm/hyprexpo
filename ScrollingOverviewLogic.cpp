@@ -432,4 +432,37 @@ SCapturePlan planCaptureBudget(uint32_t monitorWidth, uint32_t monitorHeight, in
     return result;
 }
 
+SOverviewTransition overviewTransition(double progress, SSize viewport) {
+    if (!std::isfinite(progress))
+        progress = 0.0;
+    progress = std::clamp(progress, 0.0, 1.0);
+    const double scale = 0.9 + 0.1 * progress;
+    return {
+        .progress = progress,
+        .opacity = progress,
+        .scale = scale,
+        .offsetY = std::max(0.0, viewport.h) * 0.05 * (1.0 - progress),
+    };
+}
+
+SRect applyOverviewTransition(SRect box, SSize viewport, const SOverviewTransition& transition) {
+    const double viewportWidth = std::max(0.0, viewport.w);
+    const double viewportHeight = std::max(0.0, viewport.h);
+    const double insetX = viewportWidth * (1.0 - transition.scale) / 2.0;
+    const double insetY = viewportHeight * (1.0 - transition.scale) / 2.0;
+    return {
+        .x = insetX + box.x * transition.scale,
+        .y = insetY + transition.offsetY + box.y * transition.scale,
+        .w = box.w * transition.scale,
+        .h = box.h * transition.scale,
+    };
+}
+
+double transitionForSwipe(bool closing, double swipeDelta, double distance) {
+    if (!std::isfinite(swipeDelta) || !std::isfinite(distance) || distance <= 0.0)
+        return closing ? 1.0 : 0.0;
+    const double normalized = std::clamp(swipeDelta / distance, 0.0, 1.0);
+    return closing ? 1.0 - normalized : normalized;
+}
+
 }
