@@ -455,6 +455,16 @@ int main() {
     expectContains(passSource, "sessionGeneration()", "render pass validates the active session identity");
     expectContains(passSource, "m_sessionGeneration", "render pass retains only an immutable generation identity");
     expectOrder(passSource, "if (!g_pOverview", "g_pOverview->fullRender()", "render pass null-checks before virtual rendering");
+    expectContains(scrollingHeader, "PHLANIMVAR<float> m_transitionProgress", "scrolling session owns one compositor-managed transition value");
+    expectContains(scrollingSource, "Animation::mgr()->createAnimation", "scrolling overview entry and exit use the compositor animation manager");
+    expectContains(scrollingSource, "transitionForSwipe(m_swipeClosing, m_swipeDelta", "scrolling swipe delta drives the visible transition progress");
+    expectContains(scrollingSource, "applyOverviewTransition", "scrolling render boxes consume the transition transform");
+    expectContains(scrollingSource, "transition.opacity", "scrolling render content consumes transition opacity");
+    const auto scrollingClose = extractFunction(scrollingSource, "void CScrollingOverview::close(");
+    expectContains(scrollingClose, "scheduleScrollingOverviewRemoval(m_sessionGeneration)", "scrolling close defers owner destruction until transition completion");
+    expectAbsent(scrollingClose, "g_pOverview.reset()", "scrolling close never destroys itself synchronously");
+    expectContains(scrollingSource, "g_pEventLoopManager->doLater", "animation completion leaves its callback before destroying session ownership");
+    expectContains(scrollingSource, "sessionGeneration() == generation", "deferred close cannot remove a replacement overview session");
     expectContains(mainSource, "g_pOverview.reset();", "plugin exit destroys the session owner");
     expectOrder(mainSource, "g_pOverview.reset();", "removeAllOfType", "plugin exit destroys session-owned GPU state before pass removal");
 

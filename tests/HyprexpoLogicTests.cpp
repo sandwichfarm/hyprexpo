@@ -330,6 +330,25 @@ void checkScrollingRequestIds() {
     expect(!validRequestID("slash/not-allowed"), "shared request ID grammar rejects punctuation outside dot, underscore, and dash");
 }
 
+void checkScrollingOverviewTransition() {
+    using namespace Hyprexpo;
+    using namespace Hyprexpo::Scrolling;
+
+    const SSize viewport{1000.0, 500.0};
+    const SRect box{100.0, 50.0, 300.0, 200.0};
+    const auto open = overviewTransition(1.0, viewport);
+    const auto openBox = applyOverviewTransition(box, viewport, open);
+    expect(near(open.progress, 1.0) && near(open.opacity, 1.0) && near(open.scale, 1.0), "completed scrolling overview transition is fully visible and unscaled");
+    expect(near(openBox.x, box.x) && near(openBox.y, box.y) && near(openBox.w, box.w) && near(openBox.h, box.h), "completed transition preserves render geometry");
+
+    const auto closed = overviewTransition(0.0, viewport);
+    const auto closedBox = applyOverviewTransition(box, viewport, closed);
+    expect(near(closed.opacity, 0.0) && closed.scale < 1.0 && closedBox.y > box.y, "closed transition is faded, inset, and visibly displaced");
+    expect(near(transitionForSwipe(false, 50.0, 100.0), 0.5), "opening swipe advances transition progress");
+    expect(near(transitionForSwipe(true, 50.0, 100.0), 0.5), "closing swipe reverses transition progress");
+    expect(near(transitionForSwipe(false, 500.0, 100.0), 1.0) && near(transitionForSwipe(true, 500.0, 100.0), 0.0), "swipe transition progress clamps at both animation endpoints");
+}
+
 void checkScrollingMouseInputState() {
     using namespace Hyprexpo;
     using namespace Hyprexpo::Scrolling;
@@ -877,6 +896,7 @@ int main() {
     checkScrollingCaptureBudget();
     checkScrollingInputCoordinates();
     checkScrollingRequestIds();
+    checkScrollingOverviewTransition();
     checkScrollingMouseInputState();
     checkScrollingTouchAndResetState();
     checkScrollingMutationTransactions();
