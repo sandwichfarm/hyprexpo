@@ -418,6 +418,16 @@ int main() {
         expectContains(inputScript, token, "injection harness covers deterministic case " + std::string{token});
     expectContains(inputScript, "--source-contract", "input harness offers a non-physical source-contract gate");
     expectContains(inputScript, "requestId", "input harness correlates every readback to its request");
+    expectContains(inputScript, "ScrollingInputOracle", "source gate executes the same strict input parser and diagnostic serializer without physical hardware");
+    expectContains(inputScript, "assert_case", "input harness applies case-specific behavioral oracles");
+    for (const auto& token : {"axis-inside", "axis-outside", "axis-clamped", "mouse-canvas-pan", "touch-cancel-pending", "touch-cancel-pan", "touch-cancel-drag",
+                              "touch-reacquire", "mouse-reacquire", "outside-release", "no-op-release"})
+        expectContains(inputScript, token, "input oracle includes missing deterministic case " + std::string{token});
+    for (const auto& token : {".state ==", ".consume ==", ".pan ==", ".panDelta ==", ".select ==", ".beginDrag ==", ".finishDrag ==", ".cancelDrag ==",
+                              ".resetOwnership ==", ".drop =="})
+        expectContains(inputScript, token, "input oracle asserts exact diagnostic field " + std::string{token});
+    expectContains(inputSource, "parseInputSequence", "production and oracle share the strict finite sequence parser");
+    expectContains(inputSource, "inputDiagnosticJson", "production and oracle share request-correlated JSON serialization");
 
     expectContains(makefile, "IOverviewSession.cpp", "Make production sources include the overview factory");
     expectContains(makefile, "ScrollingOverview.cpp", "Make production sources include the scrolling renderer");
