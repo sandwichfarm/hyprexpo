@@ -230,11 +230,15 @@ int main() {
     const auto mutationSource = readFile("ScrollingMutationTransaction.cpp");
     const auto scrollingHeader = readFile("ScrollingOverview.hpp");
     const auto scrollingSource = readFile("ScrollingOverview.cpp");
+    const auto requestIdHeader = readFile("ScrollingRequestId.hpp");
     const auto diagnosticSource = readFile("ScrollingDiagnostics.cpp");
     const auto diagnosticScript = readFile("scripts/read-scrolling-diagnostic.sh");
     expect(!adapterHeader.empty() && !adapterSource.empty(), "scrolling adapter source can be read from repo root");
     expect(!mutationHeader.empty() && !mutationSource.empty(), "scrolling transaction source can be read from repo root");
-    expect(!diagnosticSource.empty() && !diagnosticScript.empty(), "scrolling diagnostic source and reader can be read from repo root");
+    expect(!requestIdHeader.empty() && !diagnosticSource.empty() && !diagnosticScript.empty(), "shared request ID and diagnostic sources can be read from repo root");
+    expectContains(requestIdHeader, "bool validRequestID", "one pure validator owns the request ID grammar");
+    expectContains(requestIdHeader, "c == '.'", "shared request ID grammar accepts dots");
+    expectContains(diagnosticSource, "validRequestID(request.requestID)", "topology diagnostics use the shared request ID validator");
 
     for (const auto& token : {"NullWorkspace", "InertWorkspace", "MissingSpace", "MissingAlgorithm", "MissingTiledAlgorithm", "WrongAlgorithmName", "CastFailure", "ExpiredTarget",
                               "ExpiredColumn", "ExpiredData", "MissingScrollingData", "ColumnCardinalityMismatch", "TargetCardinalityMismatch", "InvalidGeometry"})
@@ -530,6 +534,7 @@ int main() {
                               ".resetOwnership ==", ".drop =="})
         expectContains(inputScript, token, "input oracle asserts exact diagnostic field " + std::string{token});
     expectContains(inputSource, "parseInputSequence", "production and oracle share the strict finite sequence parser");
+    expectContains(inputSource, "validRequestID(specs.front())", "input injection uses the shared request ID validator");
     expectContains(inputSource, "inputDiagnosticJson", "production and oracle share request-correlated JSON serialization");
     expectContains(scrollingSource, "parseInputSequence(sequence)", "runtime injection delegates strict parsing to the pure boundary");
     expectContains(scrollingSource, "inputDiagnosticJson(parsed.requestId", "runtime injection delegates readback serialization to the oracle-covered boundary");

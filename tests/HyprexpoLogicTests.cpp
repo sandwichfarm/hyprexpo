@@ -3,6 +3,7 @@
 #include "../ScrollingOverviewLogic.hpp"
 #include "../ScrollingInputState.hpp"
 #include "../ScrollingMutationTransaction.hpp"
+#include "../ScrollingRequestId.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -317,6 +318,16 @@ void checkScrollingInputCoordinates() {
     const auto touchFlipped = touchToGlobalLogical({0.2, 0.3}, transformed);
     expect(touchFlipped && near(touchFlipped->x, 520.0) && near(touchFlipped->y, -100.0), "flipped rotated touch mapping follows the calibrated transform matrix");
     expect(!touchToGlobalLogical({1.01, 0.5}, transformed), "touch coordinates outside normalized bounds are rejected");
+}
+
+void checkScrollingRequestIds() {
+    using namespace Hyprexpo::Scrolling;
+
+    expect(validRequestID("runtime.case-1_A"), "shared request ID grammar accepts dot, underscore, and dash");
+    expect(parseInputSequence("runtime.case-1_A|mouse_move:1:2").valid, "input injection accepts the shared dotted request ID grammar");
+    expect(!validRequestID(""), "shared request ID grammar rejects empty IDs");
+    expect(!validRequestID(std::string(65, 'a')), "shared request ID grammar rejects IDs longer than 64 bytes");
+    expect(!validRequestID("slash/not-allowed"), "shared request ID grammar rejects punctuation outside dot, underscore, and dash");
 }
 
 void checkScrollingMouseInputState() {
@@ -865,6 +876,7 @@ int main() {
     checkScrollingDropIntents();
     checkScrollingCaptureBudget();
     checkScrollingInputCoordinates();
+    checkScrollingRequestIds();
     checkScrollingMouseInputState();
     checkScrollingTouchAndResetState();
     checkScrollingMutationTransactions();
