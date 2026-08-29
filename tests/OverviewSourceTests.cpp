@@ -277,6 +277,8 @@ int main() {
     expectOrder(adapterSource, "moveWindowToWorkspace", "reResolve", "cross move discards stale ownership before destination positioning");
     expectContains(adapterSource, "if (reverse)", "rollback controller path explicitly reverses ownership");
     expectContains(adapterSource, "m_createdDestination", "terminal rollback tracks the workspace created by this transaction");
+    for (const auto& token : {"proveCreatedDestinationRollback", "stripCount()", "workspacesCopy()", "m_native.erase", "m_createdDestination.reset()"})
+        expectContains(adapterSource, token, "terminal rollback proves empty controller/workspace release via " + std::string{token});
 
     expectContains(scrollingSource, "moveScrollingTarget(", "one validated release enters the native transaction boundary");
     expectContains(scrollingSource, "EMutationOutcome::Committed", "committed mutation refreshes the scrolling session");
@@ -288,6 +290,12 @@ int main() {
     expectLastOrder(applyEffects, "moveScrollingTarget(", "refreshAfterMutation();", "commit/rollback refresh happens after the exact-once transaction result");
     expectContains(diagnosticSource, "mutationDiagnosticJson", "mutation outcomes serialize correlated postcondition evidence");
     expectContains(diagnosticSource, "violatedInvariantIDs", "mutation diagnostics include exact violated invariant IDs");
+    const auto mutationDiagnostic = extractFunction(diagnosticSource, "std::string mutationDiagnosticJson(");
+    for (const auto& token : {"requestId", "sessionGeneration", "beforeSummary", "afterSummary", "beforeHash", "afterHash", "mutationOutcome", "violatedInvariantIDs"})
+        expectContains(mutationDiagnostic, token, "mutation diagnostic carries correlated structural evidence " + std::string{token});
+    for (const auto& token : {"m_title", "m_class", "windowTitle", "windowClass"})
+        expectAbsent(mutationDiagnostic, token, "mutation diagnostic excludes title/class secret surface " + std::string{token});
+    expectContains(scrollingSource, "m_mutationRequestSequence", "release diagnostics allocate a session-local correlation sequence");
 
     for (const auto& token : {"requestId", "sessionGeneration", "marker", "hyprlandVersion", "runtimeHash", "clientHash", "monitorId", "workspaceId", "algorithmFingerprint", "dataFingerprint", "direction",
                               "offsetBefore", "offsetAfter", "activeWorkspaceBefore", "activeWorkspaceAfter", "focusedWindowBefore", "focusedWindowAfter", "columns", "targets", "layoutBox", "visible",

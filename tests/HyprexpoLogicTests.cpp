@@ -549,25 +549,58 @@ void checkScrollingMutationTransactions() {
     const SMutationRequest faultRequest{.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 2, .kind = EDropKind::CrossWorkspace,
                                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1};
     const auto successful = simulateMutation(mutationFixture(), faultRequest);
-    expect(successful.result.outcome == EMutationOutcome::Committed && !successful.trace.empty(), "fault fixture has a complete successful operation trace");
+    expect(successful.result.outcome == EMutationOutcome::Committed && !successful.boundaries.empty(), "fault fixture has a complete successful operation trace");
     expect(successful.controllerMoveCount == 1 && successful.reverseMoveCount == 0, "cross-workspace commit invokes the controller exactly once");
     const auto reversed = simulateMutation(mutationFixture(), faultRequest,
                                            SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::ReResolve, .when = EFaultWhen::After});
     expect(reversed.result.outcome == EMutationOutcome::RolledBack && reversed.controllerMoveCount == 1 && reversed.reverseMoveCount == 1,
            "post-controller failure invokes exactly one reverse move before exact rollback");
-    for (const auto step : successful.trace) {
-        for (const auto when : {EFaultWhen::Before, EFaultWhen::After}) {
-            const auto failed = simulateMutation(mutationFixture(), faultRequest, SFaultInjection{.phase = EMutationPhase::Apply, .step = step, .when = when});
-            expect(failed.result.outcome == EMutationOutcome::RolledBack, "fault before/after each apply boundary reports rollback");
-            expect(failed.state == mutationFixture(), "fault before/after each apply boundary restores byte-for-structure pre-state");
-            expect(failed.result.violatedInvariantIDs.empty(), "fault rollback satisfies exact equality postconditions");
+    const std::vector<std::pair<std::string, SMutationRequest>> matrix{
+        {"same-column", {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
+                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1}},
+        {"existing-column", {.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
+                              .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1}},
+        {"new-before", {.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::NewColumnBefore,
+                         .placement = EColumnPlacement::Before, .destinationColumnIndex = 0}},
+        {"new-after", {.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::NewColumnAfter,
+                        .placement = EColumnPlacement::After, .destinationColumnIndex = 1}},
+        {"cross", faultRequest},
+        {"mixed", {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 3, .kind = EDropKind::MixedFallback}},
+        {"terminal", {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 4, .kind = EDropKind::TerminalWorkspace, .createDestination = true}},
+    };
+    for (const auto& [label, request] : matrix) {
+        const auto committed = simulateMutation(mutationFixture(), request);
+        expect(committed.result.outcome == EMutationOutcome::Committed, label + " baseline commits before fault enumeration");
+        for (const auto& boundary : committed.boundaries) {
+            if (boundary.phase != EMutationPhase::Apply)
+                continue;
+            const auto failed = simulateMutation(mutationFixture(), request, boundary);
+            const bool preSnapshotBefore = boundary.step == EMutationStep::SnapshotPreState && boundary.when == EFaultWhen::Before;
+            expect(failed.result.outcome == (preSnapshotBefore ? EMutationOutcome::Rejected : EMutationOutcome::RolledBack),
+                   label + " apply boundary returns the phase-correct outcome");
+            expect(failed.state == mutationFixture(), label + " apply boundary never mutates or restores exact pre-state");
+        }
+
+        const auto rollbackTrace = simulateMutation(mutationFixture(), request,
+                                                     SFaultInjection{.phase = EMutationPhase::Rollback, .step = EMutationStep::VerifyPostconditions,
+                                                                     .when = EFaultWhen::After});
+        for (const auto& boundary : rollbackTrace.boundaries) {
+            if (boundary.phase != EMutationPhase::Rollback)
+                continue;
+            const auto fatal = simulateMutation(mutationFixture(), request, boundary);
+            expect(fatal.result.outcome == EMutationOutcome::RollbackFailed && !fatal.result.violatedInvariantIDs.empty(),
+                   label + " rollback boundary is fatal-safe with invariant IDs");
         }
     }
 
-    const auto fatal = simulateMutation(mutationFixture(), faultRequest,
-                                        SFaultInjection{.phase = EMutationPhase::Rollback, .step = EMutationStep::RestorePreState, .when = EFaultWhen::Before});
-    expect(fatal.result.outcome == EMutationOutcome::RollbackFailed && !fatal.result.violatedInvariantIDs.empty(),
-           "rollback boundary failure is explicit and carries violated invariant IDs");
+    const auto sameColumn = simulateMutation(mutationFixture(), matrix[0].second);
+    expect(near(sameColumn.state.workspaces[0].columns[0].targets[0].size, 0.65) && near(sameColumn.state.workspaces[0].columns[0].targets[1].size, 0.35),
+           "same-column reorder preserves exact per-target proportions while changing order");
+    const auto existingColumn = simulateMutation(mutationFixture(), matrix[1].second);
+    const auto& inserted = existingColumn.state.workspaces[0].columns[0].targets;
+    const double insertedSum = inserted[0].size + inserted[1].size + inserted[2].size;
+    expect(near(insertedSum, 1.0) && near(inserted[1].size, 1.0 / 3.0), "existing-column insertion allocates one bounded native row share and sums to one");
+    expect(near(inserted[0].size / inserted[2].size, 0.35 / 0.65), "existing destination rows preserve their relative size ratio");
 
     auto duplicate = successful.state;
     duplicate.workspaces[1].members.push_back(11);
@@ -592,7 +625,22 @@ void checkScrollingMutationTransactions() {
     auto resized = successful.state;
     resized.workspaces[1].columns[0].targets[0].size = 0.25;
     const auto sizeViolations = verifyPostconditions(successful.result.before, resized, successful.result.plan, false);
-    expect(std::ranges::find(sizeViolations, "unaffected.size") != sizeViolations.end(), "postconditions reject changed unaffected row sizes");
+    expect(std::ranges::find(sizeViolations, "size.expected") != sizeViolations.end(), "postconditions reject a changed normalized destination row size");
+    auto invalidAggregate = successful.state;
+    invalidAggregate.workspaces[1].columns[0].targets[0].size += 0.1;
+    const auto aggregateViolations = verifyPostconditions(successful.result.before, invalidAggregate, successful.result.plan, false);
+    expect(std::ranges::find(aggregateViolations, "size.aggregate") != aggregateViolations.end(), "postconditions reject non-unit destination row totals");
+    auto staleSource = successful.state;
+    staleSource.workspaces[0].columns[0].targets.push_back({.identity = 11, .windowIdentity = 111, .size = 0.5});
+    const auto staleSourceViolations = verifyPostconditions(successful.result.before, staleSource, successful.result.plan, false);
+    expect(std::ranges::find(staleSourceViolations, "topology.exact-once") != staleSourceViolations.end(),
+           "global exact-once rejects a stale source topology copy plus destination copy");
+
+    const auto terminalRollback = simulateMutation(mutationFixture(), matrix.back().second,
+                                                    SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::SnapshotPostState,
+                                                                    .when = EFaultWhen::Before});
+    expect(terminalRollback.result.outcome == EMutationOutcome::RolledBack && terminalRollback.state == mutationFixture(),
+           "terminal rollback proves and removes the created empty destination from exact readback");
 
     expect(nextUnusedOrdinaryWorkspaceID({1, 3, -99, 4}) == 2, "terminal allocation chooses the first globally unused positive ordinary workspace ID");
     expect(nextUnusedOrdinaryWorkspaceID({1, 2, 3}) == 4, "terminal allocation advances past a dense positive workspace prefix");
