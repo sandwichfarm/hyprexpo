@@ -398,8 +398,8 @@ runtime_mutation new-column-before 1 "$before_stable" new-column-before 1 0 0 co
 
 capture_topology after-seed 1 right
 matrix_file="$EVIDENCE_DIR/topology-after-seed-ws1.json"
-after_stable=$(jq -r '[.columns[] | select((.targets | length) > 1)][0].targets[-1].windowStableId' "$matrix_file")
-after_column=$(jq -r '.columns | length' "$matrix_file")
+after_stable=$(jq -r '[.columns[] | select((.targets | length) == 1)][0].targets[0].windowStableId' "$matrix_file")
+after_column=$(jq -r '(.columns | length) - 1' "$matrix_file")
 runtime_mutation new-column-after 1 "$after_stable" new-column-after 1 "$after_column" 0 committed
 
 capture_topology cross-seed 1 right
