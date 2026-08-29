@@ -472,6 +472,9 @@ int main() {
     expectAbsent(scrollingClose, "g_pOverview.reset()", "scrolling close never destroys itself synchronously");
     expectContains(scrollingSource, "g_pEventLoopManager->doLater", "animation completion leaves its callback before destroying session ownership");
     expectContains(scrollingSource, "sessionGeneration() == generation", "deferred close cannot remove a replacement overview session");
+    expectContains(scrollingHeader, "m_closeAnimationTimer", "scrolling close retains a compositor timer for a visible first exit frame");
+    expectOrder(scrollingClose, "setValueAndWarp", "makeShared<CEventLoopTimer>", "scrolling close presents an initial transformed frame before advancing toward zero");
+    expectOrder(scrollingClose, "makeShared<CEventLoopTimer>", "*m_transitionProgress = 0.F", "scrolling close begins the remaining animation from the timer callback");
     expectContains(mainSource, "g_pOverview.reset();", "plugin exit destroys the session owner");
     expectOrder(mainSource, "g_pOverview.reset();", "removeAllOfType", "plugin exit destroys session-owned GPU state before pass removal");
 
