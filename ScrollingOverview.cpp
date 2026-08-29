@@ -25,6 +25,7 @@
 #undef protected
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <unordered_set>
 
@@ -105,6 +106,9 @@ CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, bool swipe
 }
 
 CScrollingOverview::~CScrollingOverview() {
+    if (m_closeAnimationTimer)
+        m_closeAnimationTimer->cancel();
+    m_closeAnimationTimer.reset();
     resetInputState(EResetReason::Teardown);
     releaseAllCaptureState();
 }
@@ -163,6 +167,9 @@ SInputEffects CScrollingOverview::resetInputState(EResetReason reason) {
 }
 
 void CScrollingOverview::prepareForTeardown() {
+    if (m_closeAnimationTimer)
+        m_closeAnimationTimer->cancel();
+    m_closeAnimationTimer.reset();
     resetInputState(EResetReason::Teardown);
 }
 
@@ -772,9 +779,26 @@ void CScrollingOverview::close(bool switchToSelection) {
         return;
     }
     const auto generation = m_sessionGeneration;
-    m_transitionProgress->setCallbackOnEnd([generation](auto) { scheduleScrollingOverviewRemoval(generation); });
-    *m_transitionProgress = 0.F;
+    m_transitionProgress->setCallbackOnEnd(nullptr);
+    m_transitionProgress->setValueAndWarp(std::min(m_transitionProgress->value(), 0.82F));
     damage();
+    if (const auto MON = m_monitor.lock())
+        MON->scheduleFrame();
+    m_closeAnimationTimer = makeShared<CEventLoopTimer>(
+        std::chrono::milliseconds{50},
+        [this, generation](SP<CEventLoopTimer> self, void*) {
+            if (!g_pOverview || g_pOverview.get() != this || g_pOverview->sessionGeneration() != generation) {
+                self->cancel();
+                return;
+            }
+            self->cancel();
+            m_closeAnimationTimer.reset();
+            m_transitionProgress->setCallbackOnEnd([generation](auto) { scheduleScrollingOverviewRemoval(generation); });
+            *m_transitionProgress = 0.F;
+            damage();
+        },
+        nullptr);
+    g_pEventLoopManager->addTimer(m_closeAnimationTimer);
 }
 
 void CScrollingOverview::updateSelectionFromFocus() {

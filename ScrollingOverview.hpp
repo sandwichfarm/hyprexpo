@@ -7,6 +7,7 @@
 
 #include <hyprland/src/layout/target/Target.hpp>
 #include <hyprland/src/helpers/AnimatedVariable.hpp>
+#include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
 #include <hyprland/src/render/Texture.hpp>
 
@@ -129,6 +130,7 @@ class CScrollingOverview final : public IOverviewSession {
     double                                    m_pan = 0.0;
     double                                    m_swipeDelta = 0.0;
     PHLANIMVAR<float> m_transitionProgress;
+    SP<CEventLoopTimer>                       m_closeAnimationTimer;
     int64_t                                   m_selectedWorkspaceID = 0;
     uint64_t                                  m_selectedStableID = 0;
     WP<Layout::ITarget>                       m_selectedTarget;
