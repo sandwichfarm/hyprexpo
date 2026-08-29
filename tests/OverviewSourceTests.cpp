@@ -271,9 +271,11 @@ int main() {
     expectOrder(adapterSource, "recalculate", "verifyPostconditions", "native readback verifies postconditions after final recalculation");
     const auto nativeClassPosition = adapterSource.find("class CNativeMutationOperations");
     const auto nativeMutationImplementation = nativeClassPosition == std::string::npos ? std::string{} : adapterSource.substr(nativeClassPosition);
-    for (const auto& token : {"beginDragTarget", "getMouseCoordsInternal", ".moveTape(", ".setOffset(", ".adjustOffset(", ".centerCol(", ".fitCol(", ".focusColumn("})
+    for (const auto& token : {"beginDragTarget", "getMouseCoordsInternal", ".moveTape(", ".adjustOffset(", ".centerCol(", ".fitCol(", ".focusColumn("})
         expectAbsent(nativeMove + nativeMutationImplementation, token,
                      "native transaction forbids cursor/drag/camera operation " + std::string{token});
+    expectContains(adapterSource, "controller->setDirection", "native transaction restores the exact pre-state direction after host structure changes");
+    expectContains(adapterSource, "controller->setOffset(workspaceState.offset)", "native transaction restores the exact pre-state offset after host structure changes");
 
     for (const auto& token : {"Desktop::globalWindowController()->moveWindowToWorkspace", "controllerMove", "reverse", "reResolve", "nextUnusedOrdinaryWorkspaceID",
                               "State::workspaceState()->create", "m_monitor", "MixedFallback", "TerminalWorkspace"})
