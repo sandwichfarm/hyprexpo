@@ -26,12 +26,20 @@ src = files(
   'main.cpp',
   'Dispatchers.cpp',
   'PluginConfig.cpp',
+  'IOverviewSession.cpp',
   'Overview.cpp',
   'OverviewInteraction.cpp',
   'OverviewRender.cpp',
+  'OverviewCapture.cpp',
+  'ScrollingOverview.cpp',
+  'ScrollingInputState.cpp',
   'ExpoGesture.cpp',
   'OverviewPassElement.cpp',
   'HyprexpoLogic.cpp',
+  'ScrollingOverviewLogic.cpp',
+  'ScrollingMutationTransaction.cpp',
+  'ScrollingLayoutAdapter.cpp',
+  'ScrollingDiagnostics.cpp',
 )
 
 hyprland = dependency('hyprland')
@@ -56,7 +64,21 @@ shared_module(meson.project_name(), src,
 )
 
 logic_tests = executable('HyprexpoLogicTests',
-  files('HyprexpoLogic.cpp', 'tests/HyprexpoLogicTests.cpp'),
+  files(
+    'HyprexpoLogic.cpp',
+    'ScrollingOverviewLogic.cpp',
+    'ScrollingInputState.cpp',
+    'ScrollingMutationTransaction.cpp',
+    'tests/HyprexpoLogicTests.cpp',
+  ),
 )
 
 test('HyprexpoLogicTests', logic_tests)
+
+source_tests = executable('OverviewSourceTests',
+  files('tests/OverviewSourceTests.cpp'),
+)
+
+test('OverviewSourceTests', source_tests,
+  workdir: meson.current_source_dir(),
+)
