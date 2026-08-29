@@ -113,6 +113,15 @@ HYPREXPO_DEV_LAYOUT=scrolling ./scripts/run-nested.sh
   --evidence .planning/quick/260828-w7w-implement-issue-85-provide-a-niri-like-o/260828-w7w-05-RUNTIME-EVIDENCE.md
 ```
 
+That default command is reusable after merge and does not assume an issue
+branch or remote state. Optional pre-publication fence for issue #85:
+
+```bash
+./scripts/validate-scrolling-overview.sh --all \
+  --evidence /tmp/issue-85-runtime-evidence.md \
+  --issue-85-publication-check
+```
+
 The validator keeps images, checksums, client JSON, native topology, input and
 mutation records, config/plugin state, process health, and attributable logs in
 a per-run `/tmp/hyprexpo-scrolling-acceptance-*` bundle. Physical touch is

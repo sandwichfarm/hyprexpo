@@ -24,6 +24,10 @@ The complete exact-ABI automated gate is:
   --evidence .planning/quick/260828-w7w-implement-issue-85-provide-a-niri-like-o/260828-w7w-05-RUNTIME-EVIDENCE.md
 ```
 
+This command is reusable after merge. Before publishing issue #85 specifically,
+append `--issue-85-publication-check` to also require the approved feature
+branch, base, linear Lore history, and absent remote branch/PR.
+
 Nested test binds:
 
 - `F10` for overview

@@ -11,11 +11,13 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 usage() {
-    printf 'usage: %s --all --evidence PATH\n' "$0" >&2
+    printf 'usage: %s --all --evidence PATH [--issue-85-publication-check]\n' "$0" >&2
     exit 2
 }
 
-[[ ${1:-} == --all && ${2:-} == --evidence && -n ${3:-} && $# -eq 3 ]] || usage
+publication_check=false
+[[ ${1:-} == --all && ${2:-} == --evidence && -n ${3:-} && ( $# -eq 3 || ( $# -eq 4 && ${4:-} == --issue-85-publication-check ) ) ]] || usage
+[[ ${4:-} == --issue-85-publication-check ]] && publication_check=true
 EVIDENCE_FILE=$(realpath -m "$3")
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 EVIDENCE_DIR="/tmp/hyprexpo-scrolling-acceptance-$RUN_ID"
@@ -51,7 +53,7 @@ write_report() {
     finished_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
     {
         printf -- '---\nstatus: %s\nrun_id: %s\nstarted_at: %s\nfinished_at: %s\n' "$STATUS" "$RUN_ID" "$STARTED_AT" "$finished_at"
-        printf 'hyprland_version: %s\nhyprland_hash: %s\nbranch: %s\nhead: %s\nbase: %s\n' "$EXPECTED_VERSION" "$EXPECTED_HASH" "$EXPECTED_BRANCH" "$(git -C "$REPO_ROOT" rev-parse HEAD)" "$EXPECTED_BASE"
+        printf 'hyprland_version: %s\nhyprland_hash: %s\nbranch: %s\nhead: %s\npublication_check: %s\n' "$EXPECTED_VERSION" "$EXPECTED_HASH" "$(git -C "$REPO_ROOT" branch --show-current)" "$(git -C "$REPO_ROOT" rev-parse HEAD)" "$publication_check"
         printf 'evidence_dir: %s\nphysical_touch: unavailable-no-bound-device\n---\n\n' "$EVIDENCE_DIR"
         printf '# Issue #85 Plan 05 Runtime Evidence\n\n'
         printf 'Result: **%s**\n\n' "$STATUS"
@@ -90,38 +92,40 @@ trap cleanup EXIT INT TERM
 trap 'fail "unexpected failure at line $LINENO" "shell-line-$LINENO"' ERR
 
 cd "$REPO_ROOT"
-for command in git jq pkg-config make g++ ldd cmake ctest meson npm grim sha256sum Hyprland hyprctl python rg gh; do
+for command in git jq pkg-config make g++ ldd cmake ctest meson npm grim sha256sum Hyprland hyprctl python rg; do
     command -v "$command" >/dev/null || fail "$command is required" preflight
 done
-record PASS preflight 'all build, runtime, image, JSON, and remote-readback tools present'
+record PASS preflight 'all reusable build, runtime, image, and JSON tools present'
 
 [[ $(pkg-config --modversion hyprland) == "$EXPECTED_VERSION" ]] || fail 'pkg-config Hyprland version mismatch' exact-abi
 hyprctl version > "$EVIDENCE_DIR/host-version.txt"
 rg -Fq "$EXPECTED_HASH" "$EVIDENCE_DIR/host-version.txt" || fail 'running host Hyprland hash mismatch' exact-abi
 record PASS exact-abi "$EXPECTED_VERSION / $EXPECTED_HASH"
 
-[[ $(git branch --show-current) == "$EXPECTED_BRANCH" ]] || fail 'wrong feature branch' ancestry
-[[ $(git rev-parse master) == "$EXPECTED_BASE" ]] || fail 'local master moved from the approved base' ancestry
-[[ $(git rev-parse origin/master) == "$EXPECTED_BASE" ]] || fail 'origin/master moved from the approved base' ancestry
-[[ $(git merge-base origin/master HEAD) == "$EXPECTED_BASE" ]] || fail 'feature merge-base mismatch' ancestry
-[[ -z $(git rev-list --merges origin/master..HEAD) ]] || fail 'feature history contains merge commits' ancestry
 [[ -z $(git status --porcelain --untracked-files=no) ]] || fail 'tracked working tree is dirty' ancestry
-git log --format='%H%n%B%n---' "$EXPECTED_BASE"..HEAD > "$EVIDENCE_DIR/feature-history.txt"
-while read -r commit; do
-    body=$(git show -s --format=%B "$commit")
-    for trailer in 'Confidence:' 'Scope-risk:' 'Tested:'; do
-        rg -Fq "$trailer" <<< "$body" || fail "$commit lacks Lore trailer $trailer" lore-history
-    done
-    if ! rg -Fq 'Not-tested:' <<< "$body"; then
-        printf '%s\n' "$commit" >> "$EVIDENCE_DIR/lore-optional-not-tested-omissions.txt"
-    fi
-done < <(git rev-list "$EXPECTED_BASE"..HEAD)
-record PASS ancestry "linear Lore history from $EXPECTED_BASE; optional omissions are listed separately"
+record PASS worktree 'tracked tree is clean for reproducible runtime validation'
 
-[[ -z $(git ls-remote origin "refs/heads/$EXPECTED_BRANCH") ]] || fail 'remote feature branch already exists' publication-fence
-gh pr list --repo sandwichfarm/hyprexpo --state all --head "$EXPECTED_BRANCH" --json number,state,url > "$EVIDENCE_DIR/preexisting-prs.json"
-jq -e 'length == 0' "$EVIDENCE_DIR/preexisting-prs.json" >/dev/null || fail 'feature PR already exists' publication-fence
-record PASS publication-fence 'no remote feature branch or PR; validator performs no publication'
+if [[ $publication_check == true ]]; then
+    command -v gh >/dev/null || fail 'gh is required for issue-85 publication checks' publication-fence
+    [[ $(git branch --show-current) == "$EXPECTED_BRANCH" ]] || fail 'wrong feature branch' ancestry
+    [[ $(git rev-parse master) == "$EXPECTED_BASE" ]] || fail 'local master moved from the approved base' ancestry
+    [[ $(git rev-parse origin/master) == "$EXPECTED_BASE" ]] || fail 'origin/master moved from the approved base' ancestry
+    [[ $(git merge-base origin/master HEAD) == "$EXPECTED_BASE" ]] || fail 'feature merge-base mismatch' ancestry
+    [[ -z $(git rev-list --merges origin/master..HEAD) ]] || fail 'feature history contains merge commits' ancestry
+    git log --format='%H%n%B%n---' "$EXPECTED_BASE"..HEAD > "$EVIDENCE_DIR/feature-history.txt"
+    while read -r commit; do
+        body=$(git show -s --format=%B "$commit")
+        for trailer in 'Confidence:' 'Scope-risk:' 'Tested:'; do
+            rg -Fq "$trailer" <<< "$body" || fail "$commit lacks Lore trailer $trailer" lore-history
+        done
+    done < <(git rev-list "$EXPECTED_BASE"..HEAD)
+    [[ -z $(git ls-remote origin "refs/heads/$EXPECTED_BRANCH") ]] || fail 'remote feature branch already exists' publication-fence
+    gh pr list --repo sandwichfarm/hyprexpo --state all --head "$EXPECTED_BRANCH" --json number,state,url > "$EVIDENCE_DIR/preexisting-prs.json"
+    jq -e 'length == 0' "$EVIDENCE_DIR/preexisting-prs.json" >/dev/null || fail 'feature PR already exists' publication-fence
+    record PASS publication-fence 'issue-85 branch/base/Lore/remote publication fence'
+else
+    record SKIP publication-fence 'reusable runtime mode; pass --issue-85-publication-check before publication'
+fi
 
 make -B test > "$EVIDENCE_DIR/make-test.log" 2>&1
 g++ -std=c++2b -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
