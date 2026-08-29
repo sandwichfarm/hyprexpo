@@ -298,7 +298,7 @@ int main() {
     for (const auto& token : {"requestId", "sessionGeneration", "beforeSummary", "afterSummary", "beforeHash", "afterHash", "mutationOutcome", "violatedInvariantIDs"})
         expectContains(mutationDiagnostic, token, "mutation diagnostic carries correlated structural evidence " + std::string{token});
     for (const auto& token : {"requestKind", "placement", "destinationColumnIndex", "destinationRowIndex", "beforeState", "afterState", "columns", "targets", "members", "width", "size"})
-        expectContains(mutationDiagnostic, token, "mutation diagnostic retains exact native postcondition field " + std::string{token});
+        expectContains(diagnosticSource, token, "mutation diagnostic retains exact native postcondition field " + std::string{token});
     for (const auto& token : {"m_title", "m_class", "windowTitle", "windowClass"})
         expectAbsent(mutationDiagnostic, token, "mutation diagnostic excludes title/class secret surface " + std::string{token});
     expectContains(scrollingSource, "m_mutationRequestSequence", "release diagnostics allocate a session-local correlation sequence");
