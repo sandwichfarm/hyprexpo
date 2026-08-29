@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ScrollingMutationTransaction.hpp"
+
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/helpers/math/Math.hpp>
 #include <hyprland/src/layout/target/Target.hpp>
@@ -84,5 +86,6 @@ struct SSnapshotResult {
 std::string     snapshotFailureName(ESnapshotFailure failure);
 SSnapshotResult snapshotWorkspace(const PHLWORKSPACE& workspace);
 bool            workspaceUsesScrollingLayout(const PHLWORKSPACE& workspace);
+SMutationResult moveScrollingTarget(const PHLWORKSPACE& sourceWorkspace, const PHLWORKSPACE& destinationWorkspace, const SMutationRequest& request);
 
 }

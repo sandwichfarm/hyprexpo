@@ -250,7 +250,7 @@ SMutationPlan buildMutationPlan(const SMutationState& before, const SMutationReq
             }
         }
     }
-    if (matches != 1 || before.workspaces[plan.sourceWorkspaceIndex].workspaceID != request.sourceWorkspaceID) {
+    if (matches != 1 || plan.sourceWorkspaceIndex >= before.workspaces.size() || before.workspaces[plan.sourceWorkspaceIndex].workspaceID != request.sourceWorkspaceID) {
         plan.error = "source target membership is not exact";
         return plan;
     }

@@ -513,6 +513,10 @@ void expectMutationCommit(const Hyprexpo::Scrolling::SMutationRequest& request, 
 void checkScrollingMutationTransactions() {
     using namespace Hyprexpo::Scrolling;
 
+    const auto emptyPreState = simulateMutation({}, {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
+                                                     .placement = EColumnPlacement::Existing});
+    expect(emptyPreState.result.outcome == EMutationOutcome::Rejected, "missing pre-state rejects without indexing an absent source workspace");
+
     expectMutationCommit({.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
                           .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1},
                          0, 0, 1, "same-column reorder");
