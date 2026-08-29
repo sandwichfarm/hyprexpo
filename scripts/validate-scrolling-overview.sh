@@ -72,17 +72,14 @@ cleanup() {
     set +e
     if [[ -n $INSTANCE ]]; then
         hc dispatch hyprexpo:expo off >/dev/null 2>&1 || true
-        hc plugin unload "$(realpath "$REPO_ROOT/hyprexpo.so")" >/dev/null 2>&1 || true
-        sleep 1
-        hc plugin list -j > "$EVIDENCE_DIR/plugins-after-unload.json" 2>/dev/null || true
-        hc configerrors -j > "$EVIDENCE_DIR/config-errors-after-unload.json" 2>/dev/null || true
+        hc dispatch exit >/dev/null 2>&1 || true
     fi
     if [[ -n $NESTED_PID ]]; then
-        kill "$NESTED_PID" 2>/dev/null || true
         for _ in $(seq 1 40); do
             kill -0 "$NESTED_PID" 2>/dev/null || break
             sleep 0.05
         done
+        kill "$NESTED_PID" 2>/dev/null || true
     fi
     if [[ -n $INSTANCE_LOG && -f $INSTANCE_LOG ]]; then
         cp "$INSTANCE_LOG" "$EVIDENCE_DIR/hyprland-instance.log"
@@ -175,6 +172,32 @@ NESTED_SOCKET=$(hyprctl instances -j | jq -r --argjson pid "$NESTED_PID" '.[] | 
 NESTED_OUTPUT=$(hc monitors -j | jq -r '.[0].name')
 record PASS nested-start "pid=$NESTED_PID instance=$INSTANCE socket=$NESTED_SOCKET output=$NESTED_OUTPUT"
 
+start_record_watcher() {
+    local prefix=$1
+    local correlation=$2
+    local output=$3
+    tail -n0 -F "$INSTANCE_LOG" 2>/dev/null | awk -v prefix="$prefix" -v correlation="$correlation" '
+        index($0, prefix) && index($0, correlation) {
+            print substr($0, index($0, prefix) + length(prefix))
+            fflush()
+            exit
+        }
+    ' > "$output" &
+    WATCHER_PID=$!
+}
+
+wait_for_watcher() {
+    local output=$1
+    local label=$2
+    for _ in $(seq 1 600); do
+        [[ -s $output ]] && break
+        sleep 0.05
+    done
+    kill "$WATCHER_PID" 2>/dev/null || true
+    wait "$WATCHER_PID" 2>/dev/null || true
+    [[ -s $output ]] || fail "timed out waiting for $label" "$label"
+}
+
 hc version -j > "$EVIDENCE_DIR/version.json"
 hc plugin list -j > "$EVIDENCE_DIR/plugins-initial.json"
 hc configerrors -j > "$EVIDENCE_DIR/config-errors-initial.json"
@@ -208,18 +231,9 @@ read_topology() {
     local workspace=$1
     local expected_direction=$2
     local request="topology-$workspace"
+    start_record_watcher "$TOPOLOGY_PREFIX" "\"requestId\":\"$request\"" "$EVIDENCE_DIR/topology-$workspace.json"
     hc dispatch hyprexpo:scrolling_debug "$request workspace:$workspace" >/dev/null
-    for _ in $(seq 1 500); do
-        record_line=$(hc rollinglog 2>/dev/null | awk -v prefix="$TOPOLOGY_PREFIX" -v id="\"requestId\":\"$request\"" '
-            index($0, prefix) && index($0, id) { record = substr($0, index($0, prefix) + length(prefix)) }
-            END { print record }
-        ')
-        if [[ -n $record_line ]]; then
-            printf '%s\n' "$record_line" > "$EVIDENCE_DIR/topology-$workspace.json"
-            break
-        fi
-        sleep 0.02
-    done
+    wait_for_watcher "$EVIDENCE_DIR/topology-$workspace.json" "topology-$workspace"
     jq -e --arg direction "$expected_direction" '.status == "PASS" and .direction == $direction and .topologyEqual and .offsetEqual and .orderEqual and .widthsEqual and .membershipEqual and .sizesEqual and .cleanupComplete' \
         "$EVIDENCE_DIR/topology-$workspace.json" >/dev/null || fail "workspace $workspace topology/direction mismatch" "topology-$workspace"
 }
@@ -241,19 +255,9 @@ env WAYLAND_DISPLAY="$NESTED_SOCKET" grim -o "$NESTED_OUTPUT" -t ppm "$EVIDENCE_
 runtime_input() {
     local name=$1 sequence=$2
     local request="runtime-$name"
+    start_record_watcher 'HYPREXPO_SCROLLING_INPUT ' "\"requestId\":\"$request\"" "$EVIDENCE_DIR/input-$name.json"
     hc dispatch hyprexpo:scrolling_input_test "$request|$sequence" >/dev/null
-    for _ in $(seq 1 100); do
-        record_line=$(hc rollinglog 2>/dev/null | awk -v id="\"requestId\":\"$request\"" '
-            index($0, "HYPREXPO_SCROLLING_INPUT ") && index($0, id) { record = $0 }
-            END { print record }
-        ')
-        if [[ -n $record_line ]]; then
-            printf '%s\n' "${record_line#*HYPREXPO_SCROLLING_INPUT }" > "$EVIDENCE_DIR/input-$name.json"
-            return
-        fi
-        sleep 0.02
-    done
-    fail "missing request-correlated input record $request" "input-$name"
+    wait_for_watcher "$EVIDENCE_DIR/input-$name.json" "input-$name"
 }
 
 runtime_input hover-clear 'mouse_move:210:80|mouse_move:-1:0'
@@ -268,16 +272,11 @@ done
 jq -e '.events[0].consume == true and .events[0].panDelta != 0' "$EVIDENCE_DIR/input-axis-inside.json" >/dev/null || fail 'inside axis was not consumed as pan' input-axis
 record PASS runtime-input 'hover/axis plus pending/pan/drag touch-cancel recovery and immediate reacquisition'
 
-mutation_count_before=$(hc rollinglog | rg -c -F "$MUTATION_PREFIX" || true)
+start_record_watcher "$MUTATION_PREFIX" '"requestId":"scroll-drop-' "$EVIDENCE_DIR/mutation-new-column-before.json"
+mutation_watcher=$WATCHER_PID
 runtime_input new-column-before 'mouse_button:210:80:273:1|mouse_move:223:80|mouse_move:5:80|mouse_button:5:80:273:0'
-for _ in $(seq 1 100); do
-    mutation_count_after=$(hc rollinglog | rg -c -F "$MUTATION_PREFIX" || true)
-    [[ $mutation_count_after -gt $mutation_count_before ]] && break
-    sleep 0.02
-done
-mutation_line=$(hc rollinglog | rg -F "$MUTATION_PREFIX" | tail -1 || true)
-[[ -n $mutation_line ]] || fail 'runtime drop emitted no mutation diagnostic' runtime-mutation
-printf '%s\n' "${mutation_line#*$MUTATION_PREFIX}" > "$EVIDENCE_DIR/mutation-new-column-before.json"
+WATCHER_PID=$mutation_watcher
+wait_for_watcher "$EVIDENCE_DIR/mutation-new-column-before.json" runtime-mutation
 jq -e '.mutationOutcome == "committed" and (.requestId | startswith("scroll-drop-")) and (.sessionGeneration > 0) and (.beforeHash != .afterHash)' \
     "$EVIDENCE_DIR/mutation-new-column-before.json" >/dev/null || fail 'runtime mutation was not a correlated structural commit' runtime-mutation
 hc clients -j > "$EVIDENCE_DIR/clients-after-new-column-before.json"
@@ -311,10 +310,23 @@ rg -Fq "DEV_LAYOUT=\"\${HYPREXPO_DEV_LAYOUT:-grid}\"" scripts/run-nested.sh || f
 record PASS default-grid 'grid remains the default; scrolling is explicit opt-in'
 
 sha256sum "$EVIDENCE_DIR"/*.ppm > "$EVIDENCE_DIR/sha256.txt"
+for _ in $(seq 1 20); do
+    fixture_clients=$(hc clients -j | jq '[.[] | select(.class == "hyprexpo-scroll-fixture")] | length')
+    [[ $fixture_clients -eq 0 ]] && break
+    hc dispatch closewindow 'class:^(hyprexpo-scroll-fixture)$' >/dev/null || true
+    sleep 0.1
+done
+[[ $fixture_clients -eq 0 ]] || fail 'fixture clients did not close before unload' lifecycle
+hc plugin unload "$(realpath "$REPO_ROOT/hyprexpo.so")" >/dev/null
+sleep 1
+hc plugin list -j > "$EVIDENCE_DIR/plugins-after-unload.json"
+hc configerrors -j > "$EVIDENCE_DIR/config-errors-after-unload.json"
+jq -e '[.[] | select(.name == "hyprexpo")] | length == 0' "$EVIDENCE_DIR/plugins-after-unload.json" >/dev/null || fail 'plugin remained loaded after unload' lifecycle
+kill -0 "$NESTED_PID" 2>/dev/null || fail 'nested compositor died during plugin unload' lifecycle
 if rg -i 'assertion|segmentation fault|stack trace|resource leak|use-after-free|double free' "$INSTANCE_LOG" "$EVIDENCE_DIR/nested-stdout.log" > "$EVIDENCE_DIR/fatal-log-matches.txt"; then
     fail 'fatal signature appeared in nested logs' lifecycle
 fi
-record PASS lifecycle 'reload/open/close repeated; plugin/config/PID/log health clean'
+record PASS lifecycle 'reload/open/close repeated; clients closed; plugin unloaded; PID/log health clean'
 
 STATUS=PASS
 FAIL_REASON='none'
