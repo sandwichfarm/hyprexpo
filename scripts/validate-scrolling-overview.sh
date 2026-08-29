@@ -137,7 +137,7 @@ record PASS make-build 'Make suites, ASan/UBSan, forced plugin build, and ldd'
 cmake -S . -B "$EVIDENCE_DIR/cmake" -DBUILD_TESTING=ON > "$EVIDENCE_DIR/cmake-configure.log" 2>&1
 cmake --build "$EVIDENCE_DIR/cmake" > "$EVIDENCE_DIR/cmake-build.log" 2>&1
 ctest --test-dir "$EVIDENCE_DIR/cmake" --output-on-failure > "$EVIDENCE_DIR/ctest.log" 2>&1
-rg -Fq '100% tests passed, 0 tests failed out of 2' "$EVIDENCE_DIR/ctest.log" || fail 'CTest did not run two passing suites' cmake-ctest
+rg -Fq '100% tests passed out of 2' "$EVIDENCE_DIR/ctest.log" || fail 'CTest did not run two passing suites' cmake-ctest
 record PASS cmake-ctest 'HyprexpoLogicTests and OverviewSourceTests 2/2'
 
 meson setup "$EVIDENCE_DIR/meson" . > "$EVIDENCE_DIR/meson-setup.log" 2>&1
