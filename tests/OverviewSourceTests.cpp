@@ -400,6 +400,10 @@ int main() {
                               "same-column", "new-column-before", "new-column-after", "cross-scrolling", "mixed-workspace", "terminal-workspace", "outside-release", "no-op-release",
                               "touch-cancel-pending", "touch-cancel-pan", "touch-cancel-drag", "default-grid"})
         expectContains(validator, token, "validator covers acceptance token " + std::string{token});
+    expectContains(validator, "--issue-85-publication-check", "validator exposes an opt-in issue-85 publication fence");
+    expectContains(validator, "publication_check=false", "reusable runtime validation defaults publication checks off");
+    expectContains(validator, "if [[ $publication_check == true ]]", "branch/base/remote fences execute only when explicitly requested");
+    expectContains(scrollingGuide, "Optional pre-publication fence", "docs separate reusable post-merge validation from issue-85 publication checks");
     for (const auto& token : {"input.mouse.move", "input.mouse.button", "input.mouse.axis", "input.touch.down", "input.touch.motion", "input.touch.up", "input.touch.cancel",
                               "scrolling_thumbnail_budget", "m * W * H", "mixed", "terminal", "next empty", "same-column", "new column", "rollback", "0.56.1",
                               "hyprexpo:scrolling_debug", "hyprexpo:scrolling_input_test", "not full Niri parity"})
