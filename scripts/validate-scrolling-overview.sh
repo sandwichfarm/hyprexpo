@@ -176,7 +176,7 @@ start_record_watcher() {
     local prefix=$1
     local correlation=$2
     local output=$3
-    tail -n0 -F "$INSTANCE_LOG" 2>/dev/null | awk -v prefix="$prefix" -v correlation="$correlation" '
+    hc rollinglog -f 2>/dev/null | awk -v prefix="$prefix" -v correlation="$correlation" '
         index($0, prefix) && index($0, correlation) {
             print substr($0, index($0, prefix) + length(prefix))
             fflush()
@@ -184,7 +184,7 @@ start_record_watcher() {
         }
     ' > "$output" &
     WATCHER_PID=$!
-    # Ensure tail has opened the current end before the dispatcher can emit.
+    # Ensure Hyprland registered the live follow socket before dispatch emits.
     sleep 0.1
 }
 
