@@ -4,6 +4,8 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace Hyprexpo::Scrolling {
 
@@ -107,9 +109,29 @@ struct SInputContext {
     double           dragThreshold = 12.0;
 };
 
+struct SParsedInputStep {
+    std::optional<SInputEvent>  event;
+    std::optional<EResetReason> reset;
+};
+
+struct SParsedInputSequence {
+    bool                          valid = false;
+    std::string                   error;
+    std::string                   requestId;
+    std::vector<SParsedInputStep> steps;
+};
+
+struct SInputDiagnosticRecord {
+    SInputState   state;
+    SInputEffects effects;
+    double        pan = 0.0;
+};
+
 std::optional<SPoint> monitorLocalPoint(SPoint globalLogicalPoint, const SMonitorGeometry& monitor);
 std::optional<SPoint> touchToGlobalLogical(SPoint normalizedPoint, const SMonitorGeometry& monitor);
 SInputTransition      transitionInput(const SInputState& state, const SInputEvent& event, const SInputContext& context);
 SInputTransition      resetInput(const SInputState& state, EResetReason reason);
+SParsedInputSequence  parseInputSequence(const std::string& sequence, size_t maxEvents = 128);
+std::string           inputDiagnosticJson(const std::string& requestId, const std::vector<SInputDiagnosticRecord>& records, const SInputState& finalState, bool hasDropIntent);
 
 }

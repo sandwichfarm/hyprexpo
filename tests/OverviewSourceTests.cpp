@@ -413,7 +413,7 @@ int main() {
     expectContains(dispatchersSource, "g_pOverview->injectScrollingInput", "dispatcher routes synthetic input through the active session interface");
 
     for (const auto& token : {"hover-clear", "non-primary-passthrough", "mouse-click", "same-column", "new-column-before", "new-column-after", "cross-scrolling", "mixed-workspace",
-                              "terminal-workspace", "axis-owned", "touch-pan", "touch-tap", "touch-drag", "touch-cancel", "mismatched-cancel", "post-cancel-reacquire", "stale-target",
+                              "terminal-workspace", "axis-owned", "touch-pan", "touch-tap", "touch-same-column", "touch-cancel", "mismatched-cancel", "touch-reacquire", "mouse-reacquire", "stale-id",
                               "refresh-reset", "teardown-reset"})
         expectContains(inputScript, token, "injection harness covers deterministic case " + std::string{token});
     expectContains(inputScript, "--source-contract", "input harness offers a non-physical source-contract gate");

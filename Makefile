@@ -27,6 +27,7 @@ HEADERS = globals.hpp Dispatchers.hpp PluginConfig.hpp HyprlandConfigCompat.hpp 
 TARGET = hyprexpo.so
 TEST_TARGET = HyprexpoLogicTests
 SOURCE_TEST_TARGET = OverviewSourceTests
+INPUT_ORACLE_TARGET = ScrollingInputOracle
 INSTALL_USER ?= $(if $(SUDO_USER),$(SUDO_USER),$(USER))
 INSTALL_DIR ?= /var/cache/hyprpm/$(INSTALL_USER)/hyprexpo
 INSTALL_NAME = hyprexpo.so
@@ -66,7 +67,7 @@ install: $(TARGET)
 	install -Dm755 $(TARGET) $(INSTALL_DIR)/$(INSTALL_NAME)
 
 clean:
-	rm -f ./$(TARGET) ./$(TEST_TARGET) ./$(SOURCE_TEST_TARGET)
+	rm -f ./$(TARGET) ./$(TEST_TARGET) ./$(SOURCE_TEST_TARGET) ./$(INPUT_ORACLE_TARGET)
 
 test: $(TEST_TARGET) $(SOURCE_TEST_TARGET)
 	./$(TEST_TARGET)
@@ -77,6 +78,9 @@ $(TEST_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp HyprexpoConfig.hpp Scrolling
 
 $(SOURCE_TEST_TARGET): tests/OverviewSourceTests.cpp IOverviewSession.hpp IOverviewSession.cpp Overview.cpp OverviewRender.cpp OverviewCapture.hpp OverviewCapture.cpp ScrollingOverview.hpp ScrollingOverview.cpp ScrollingInputState.hpp ScrollingInputState.cpp Dispatchers.cpp main.cpp ScrollingLayoutAdapter.cpp ScrollingDiagnostics.cpp scripts/read-scrolling-diagnostic.sh scripts/inject-scrolling-input.sh
 	$(CXX) -std=c++2b -Wall -Wextra -Werror tests/OverviewSourceTests.cpp -o $@
+
+$(INPUT_ORACLE_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp ScrollingOverviewLogic.cpp ScrollingOverviewLogic.hpp ScrollingInputState.cpp ScrollingInputState.hpp tests/ScrollingInputOracle.cpp
+	$(CXX) -std=c++2b -Wall -Wextra -Werror HyprexpoLogic.cpp ScrollingOverviewLogic.cpp ScrollingInputState.cpp tests/ScrollingInputOracle.cpp -o $@
 
 # --- Release ceremony -----------------------------------------------------
 # 1. make check-pins          verify hyprpm pins are on the release history

@@ -21,12 +21,7 @@
 #undef protected
 
 #include <algorithm>
-#include <charconv>
-#include <cctype>
 #include <cmath>
-#include <format>
-#include <sstream>
-#include <string_view>
 #include <unordered_set>
 
 using namespace Hyprexpo::Scrolling;
@@ -62,66 +57,6 @@ EOutputTransform outputTransform(wl_output_transform transform) {
         case WL_OUTPUT_TRANSFORM_FLIPPED_270: return EOutputTransform::Flipped270;
         default: return EOutputTransform::Normal;
     }
-}
-
-const char* inputModeName(EInputMode mode) {
-    switch (mode) {
-        case EInputMode::Idle: return "Idle";
-        case EInputMode::MousePressPending: return "MousePressPending";
-        case EInputMode::TouchPressPending: return "TouchPressPending";
-        case EInputMode::CanvasPan: return "CanvasPan";
-        case EInputMode::WindowDrag: return "WindowDrag";
-    }
-    return "Idle";
-}
-
-const char* dropKindName(EDropKind kind) {
-    switch (kind) {
-        case EDropKind::Invalid: return "Invalid";
-        case EDropKind::NoOp: return "NoOp";
-        case EDropKind::ExistingColumn: return "ExistingColumn";
-        case EDropKind::NewColumnBefore: return "NewColumnBefore";
-        case EDropKind::NewColumnAfter: return "NewColumnAfter";
-        case EDropKind::CrossWorkspace: return "CrossWorkspace";
-        case EDropKind::MixedFallback: return "MixedFallback";
-        case EDropKind::TerminalWorkspace: return "TerminalWorkspace";
-    }
-    return "Invalid";
-}
-
-std::vector<std::string> splitInputFields(std::string_view value, char delimiter) {
-    std::vector<std::string> fields;
-    size_t start = 0;
-    while (start <= value.size()) {
-        const auto end = value.find(delimiter, start);
-        fields.emplace_back(value.substr(start, end == std::string_view::npos ? value.size() - start : end - start));
-        if (end == std::string_view::npos)
-            break;
-        start = end + 1;
-    }
-    return fields;
-}
-
-bool validRequestId(const std::string& value) {
-    return !value.empty() && value.size() <= 64 && std::ranges::all_of(value, [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_'; });
-}
-
-template <typename T>
-bool parseInputNumber(const std::string& value, T& out) {
-    const auto result = std::from_chars(value.data(), value.data() + value.size(), out);
-    return result.ec == std::errc{} && result.ptr == value.data() + value.size();
-}
-
-std::optional<EResetReason> parseResetReason(const std::string& value) {
-    if (value == "cancel")
-        return EResetReason::Cancel;
-    if (value == "refresh")
-        return EResetReason::Refresh;
-    if (value == "close")
-        return EResetReason::Close;
-    if (value == "teardown")
-        return EResetReason::Teardown;
-    return std::nullopt;
 }
 
 }
@@ -291,66 +226,20 @@ void CScrollingOverview::installInputListeners() {
 std::expected<std::string, std::string> CScrollingOverview::injectScrollingInput(const std::string& sequence) {
     if (m_closing || m_closeCommitted)
         return std::unexpected("scrolling overview is closing");
-    const auto specs = splitInputFields(sequence, '|');
-    if (specs.size() < 2 || !validRequestId(specs.front()))
-        return std::unexpected("expected requestId followed by one or more strict input events");
-    if (specs.size() > 129)
-        return std::unexpected("input sequence exceeds the 128-event limit");
-
-    std::string eventsJson = "[";
-    for (size_t index = 1; index < specs.size(); ++index) {
-        const auto fields = splitInputFields(specs[index], ':');
-        if (fields.empty() || fields.front().empty())
-            return std::unexpected("input event name is empty");
-
+    const auto parsed = parseInputSequence(sequence);
+    if (!parsed.valid)
+        return std::unexpected(parsed.error);
+    std::vector<SInputDiagnosticRecord> records;
+    records.reserve(parsed.steps.size());
+    for (const auto& step : parsed.steps) {
         SInputEffects effects;
-        if (fields.front() == "reset") {
-            if (fields.size() != 2)
-                return std::unexpected("reset event expects exactly one reason");
-            const auto reason = parseResetReason(fields[1]);
-            if (!reason)
-                return std::unexpected("reset reason must be cancel|refresh|close|teardown");
-            effects = resetInputState(*reason);
-        } else {
-            SInputEvent event;
-            auto parsePoint = [&](size_t xIndex, size_t yIndex) {
-                return fields.size() > yIndex && parseInputNumber(fields[xIndex], event.globalLogicalPoint.x) && parseInputNumber(fields[yIndex], event.globalLogicalPoint.y) &&
-                    std::isfinite(event.globalLogicalPoint.x) && std::isfinite(event.globalLogicalPoint.y);
-            };
-
-            if (fields.front() == "mouse_move" && fields.size() == 3 && parsePoint(1, 2)) {
-                event.kind = EInputKind::MouseMove;
-            } else if (fields.front() == "mouse_button" && fields.size() == 5 && parsePoint(1, 2)) {
-                int pressed = 0;
-                if (!parseInputNumber(fields[3], event.button) || !parseInputNumber(fields[4], pressed) || (pressed != 0 && pressed != 1))
-                    return std::unexpected("mouse_button expects x:y:button:0|1");
-                event.kind = EInputKind::MouseButton;
-                event.pressed = pressed == 1;
-            } else if (fields.front() == "mouse_axis" && fields.size() == 4 && parsePoint(1, 2) && parseInputNumber(fields[3], event.axisDelta) && std::isfinite(event.axisDelta)) {
-                event.kind = EInputKind::MouseAxis;
-            } else if ((fields.front() == "touch_down" || fields.front() == "touch_motion") && fields.size() == 4 && parseInputNumber(fields[1], event.touchId)) {
-                if (!parsePoint(2, 3))
-                    return std::unexpected("touch point must be finite logical x:y");
-                event.kind = fields.front() == "touch_down" ? EInputKind::TouchDown : EInputKind::TouchMotion;
-            } else if ((fields.front() == "touch_up" || fields.front() == "touch_cancel") && fields.size() == 2 && parseInputNumber(fields[1], event.touchId)) {
-                event.kind = fields.front() == "touch_up" ? EInputKind::TouchUp : EInputKind::TouchCancel;
-            } else {
-                return std::unexpected("invalid input event schema at index " + std::to_string(index - 1));
-            }
-            effects = processInput(event);
-        }
-
-        if (index > 1)
-            eventsJson += ',';
-        const auto drop = effects.dropIntent ? dropKindName(effects.dropIntent->kind) : "None";
-        eventsJson += std::format("{{\"index\":{},\"state\":\"{}\",\"consume\":{},\"hoverChanged\":{},\"clearHover\":{},\"panDelta\":{},"
-                                  "\"select\":{},\"beginDrag\":{},\"updateDrag\":{},\"finishDrag\":{},\"cancelDrag\":{},\"resetOwnership\":{},\"drop\":\"{}\"}}",
-                                  index - 1, inputModeName(m_inputState.mode), effects.consume, effects.hoverChanged, effects.clearHover, effects.panDelta,
-                                  effects.selection.has_value(), effects.beginDrag, effects.updateDrag, effects.finishDrag, effects.cancelDrag, effects.resetOwnership, drop);
+        if (step.reset)
+            effects = resetInputState(*step.reset);
+        else
+            effects = processInput(*step.event);
+        records.push_back({.state = m_inputState, .effects = effects, .pan = m_pan});
     }
-    eventsJson += ']';
-    return std::format("{{\"requestId\":\"{}\",\"events\":{},\"finalState\":\"{}\",\"owningTouchId\":{},\"hasDropIntent\":{}}}",
-                       specs.front(), eventsJson, inputModeName(m_inputState.mode), m_inputState.owningTouchId, m_pendingDropIntent.has_value());
+    return inputDiagnosticJson(parsed.requestId, records, m_inputState, m_pendingDropIntent.has_value());
 }
 
 void CScrollingOverview::releaseCacheEntry(SCacheEntry& entry) {
