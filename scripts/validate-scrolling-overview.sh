@@ -243,6 +243,24 @@ read_topology() {
     jq -e --arg direction "$expected_direction" '.status == "PASS" and .direction == $direction and .topologyEqual and .offsetEqual and .orderEqual and .widthsEqual and .membershipEqual and .sizesEqual and .cleanupComplete' \
         "$EVIDENCE_DIR/topology-$workspace.json" >/dev/null || fail "workspace $workspace topology/direction mismatch" "topology-$workspace"
 }
+
+fixture_shape_ready=false
+read_topology 1 right
+if jq -e '(.columns | length) == 3 and ([.columns[].targets | length] | sort) == [1,1,2]' "$EVIDENCE_DIR/topology-1.json" >/dev/null; then
+    fixture_shape_ready=true
+else
+    for fixture_title in HYPREXPO-SCROLL-D HYPREXPO-SCROLL-C HYPREXPO-SCROLL-B HYPREXPO-SCROLL-A; do
+        hc dispatch focuswindow "title:$fixture_title" >/dev/null
+        hc dispatch layoutmsg consume >/dev/null
+        read_topology 1 right
+        if jq -e '(.columns | length) == 3 and ([.columns[].targets | length] | sort) == [1,1,2]' "$EVIDENCE_DIR/topology-1.json" >/dev/null; then
+            fixture_shape_ready=true
+            break
+        fi
+    done
+fi
+[[ $fixture_shape_ready == true ]] || fail 'could not settle the exact three-column/multi-target fixture' topology-1
+
 read_topology 1 right
 read_topology 2 left
 read_topology 3 down
