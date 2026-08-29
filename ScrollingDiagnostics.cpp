@@ -1,5 +1,6 @@
 #include "ScrollingDiagnostics.hpp"
 
+#include "ScrollingRequestId.hpp"
 #include "globals.hpp"
 
 #include <hyprland/src/desktop/state/FocusState.hpp>
@@ -179,12 +180,6 @@ PHLWORKSPACE resolveWorkspace(const std::string& selector) {
             return workspace;
     }
     return {};
-}
-
-bool validRequestID(std::string_view value) {
-    return !value.empty() && value.size() <= 64 && std::all_of(value.begin(), value.end(), [](unsigned char c) {
-        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-';
-    });
 }
 
 std::string resultError(const SSnapshotResult& result) {

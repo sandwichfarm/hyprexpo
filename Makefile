@@ -23,7 +23,7 @@ INCLUDES = $(shell pkg-config --cflags $(PKG_CONFIG_DEPS))
 LIBS = $(shell pkg-config --libs $(LINK_DEPS))
 
 SRC = main.cpp Dispatchers.cpp PluginConfig.cpp IOverviewSession.cpp Overview.cpp OverviewInteraction.cpp OverviewRender.cpp OverviewCapture.cpp ScrollingOverview.cpp ScrollingInputState.cpp ExpoGesture.cpp OverviewPassElement.cpp HyprexpoLogic.cpp ScrollingOverviewLogic.cpp ScrollingMutationTransaction.cpp ScrollingLayoutAdapter.cpp ScrollingDiagnostics.cpp
-HEADERS = globals.hpp Dispatchers.hpp PluginConfig.hpp HyprlandConfigCompat.hpp IOverviewSession.hpp Overview.hpp OverviewInternal.hpp OverviewCapture.hpp ScrollingOverview.hpp ScrollingInputState.hpp ExpoGesture.hpp OverviewPassElement.hpp HyprexpoConfig.hpp HyprexpoLogic.hpp ScrollingOverviewLogic.hpp ScrollingMutationTransaction.hpp ScrollingLayoutAdapter.hpp ScrollingDiagnostics.hpp
+HEADERS = globals.hpp Dispatchers.hpp PluginConfig.hpp HyprlandConfigCompat.hpp IOverviewSession.hpp Overview.hpp OverviewInternal.hpp OverviewCapture.hpp ScrollingOverview.hpp ScrollingInputState.hpp ScrollingRequestId.hpp ExpoGesture.hpp OverviewPassElement.hpp HyprexpoConfig.hpp HyprexpoLogic.hpp ScrollingOverviewLogic.hpp ScrollingMutationTransaction.hpp ScrollingLayoutAdapter.hpp ScrollingDiagnostics.hpp
 TARGET = hyprexpo.so
 TEST_TARGET = HyprexpoLogicTests
 SOURCE_TEST_TARGET = OverviewSourceTests
@@ -73,13 +73,13 @@ test: $(TEST_TARGET) $(SOURCE_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(SOURCE_TEST_TARGET)
 
-$(TEST_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp HyprexpoConfig.hpp ScrollingOverviewLogic.cpp ScrollingOverviewLogic.hpp ScrollingInputState.cpp ScrollingInputState.hpp ScrollingMutationTransaction.cpp ScrollingMutationTransaction.hpp tests/HyprexpoLogicTests.cpp
+$(TEST_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp HyprexpoConfig.hpp ScrollingOverviewLogic.cpp ScrollingOverviewLogic.hpp ScrollingInputState.cpp ScrollingInputState.hpp ScrollingRequestId.hpp ScrollingMutationTransaction.cpp ScrollingMutationTransaction.hpp tests/HyprexpoLogicTests.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror HyprexpoLogic.cpp ScrollingOverviewLogic.cpp ScrollingInputState.cpp ScrollingMutationTransaction.cpp tests/HyprexpoLogicTests.cpp -o $@
 
 $(SOURCE_TEST_TARGET): tests/OverviewSourceTests.cpp IOverviewSession.hpp IOverviewSession.cpp Overview.cpp OverviewRender.cpp OverviewCapture.hpp OverviewCapture.cpp ScrollingOverview.hpp ScrollingOverview.cpp ScrollingInputState.hpp ScrollingInputState.cpp ScrollingMutationTransaction.hpp ScrollingMutationTransaction.cpp Dispatchers.cpp main.cpp ScrollingLayoutAdapter.cpp ScrollingDiagnostics.cpp scripts/read-scrolling-diagnostic.sh scripts/inject-scrolling-input.sh
 	$(CXX) -std=c++2b -Wall -Wextra -Werror tests/OverviewSourceTests.cpp -o $@
 
-$(INPUT_ORACLE_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp ScrollingOverviewLogic.cpp ScrollingOverviewLogic.hpp ScrollingInputState.cpp ScrollingInputState.hpp tests/ScrollingInputOracle.cpp
+$(INPUT_ORACLE_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp ScrollingOverviewLogic.cpp ScrollingOverviewLogic.hpp ScrollingInputState.cpp ScrollingInputState.hpp ScrollingRequestId.hpp tests/ScrollingInputOracle.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror HyprexpoLogic.cpp ScrollingOverviewLogic.cpp ScrollingInputState.cpp tests/ScrollingInputOracle.cpp -o $@
 
 # --- Release ceremony -----------------------------------------------------

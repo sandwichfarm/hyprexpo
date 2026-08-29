@@ -1,8 +1,9 @@
 #include "ScrollingInputState.hpp"
 
+#include "ScrollingRequestId.hpp"
+
 #include <algorithm>
 #include <charconv>
-#include <cctype>
 #include <cmath>
 #include <format>
 #include <string_view>
@@ -102,10 +103,6 @@ std::vector<std::string> splitInputFields(std::string_view value, char delimiter
     return fields;
 }
 
-bool validRequestId(const std::string& value) {
-    return !value.empty() && value.size() <= 64 && std::ranges::all_of(value, [](unsigned char c) { return std::isalnum(c) || c == '-' || c == '_'; });
-}
-
 template <typename T>
 bool parseInputNumber(const std::string& value, T& out) {
     const auto result = std::from_chars(value.data(), value.data() + value.size(), out);
@@ -135,7 +132,7 @@ SInputTransition resetOwned(const SInputState& state, bool consume) {
 SParsedInputSequence parseInputSequence(const std::string& sequence, size_t maxEvents) {
     SParsedInputSequence parsed;
     const auto specs = splitInputFields(sequence, '|');
-    if (specs.size() < 2 || !validRequestId(specs.front())) {
+    if (specs.size() < 2 || !validRequestID(specs.front())) {
         parsed.error = "expected requestId followed by one or more strict input events";
         return parsed;
     }
