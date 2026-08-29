@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <exception>
 #include <map>
+#include <limits>
 #include <ranges>
 #include <set>
 #include <stdexcept>
@@ -309,10 +310,14 @@ std::vector<std::string> verifyPostconditions(const SMutationState& before, cons
         const auto* current = workspaceFor(after, oldWorkspace.workspaceID);
         if (!current)
             continue;
-        if (oldWorkspace.direction != current->direction || oldWorkspace.offset != current->offset)
-            appendUnique(violations, "controller.direction-offset");
-        if (oldWorkspace.focusedTargetIdentity != current->focusedTargetIdentity || oldWorkspace.focusedWindowIdentity != current->focusedWindowIdentity)
-            appendUnique(violations, "focus.identity");
+        if (oldWorkspace.modelIdentity != 0) {
+            if (oldWorkspace.direction != current->direction || oldWorkspace.offset != current->offset)
+                appendUnique(violations, "controller.direction-offset");
+            if (oldWorkspace.modelIdentity != current->modelIdentity)
+                appendUnique(violations, "model.identity");
+            if (oldWorkspace.focusedTargetIdentity != current->focusedTargetIdentity || oldWorkspace.focusedWindowIdentity != current->focusedWindowIdentity)
+                appendUnique(violations, "focus.identity");
+        }
         if (columnOrderWithout(oldWorkspace, plan.request.targetIdentity) != columnOrderWithout(*current, plan.request.targetIdentity))
             appendUnique(violations, "unaffected.order");
         for (const auto& oldColumn : oldWorkspace.columns) {
@@ -374,8 +379,10 @@ SMutationResult executeMutation(const SMutationRequest& request, IMutationOperat
             return result;
         }
         if (result.plan.crossWorkspace) {
-            operation(operations, EMutationPhase::Apply, EMutationStep::ControllerMove, [&] { operations.controllerMove(result.plan, false); });
+            operations.checkpoint(EMutationPhase::Apply, EMutationStep::ControllerMove, EFaultWhen::Before);
+            operations.controllerMove(result.plan, false);
             controllerMoved = true;
+            operations.checkpoint(EMutationPhase::Apply, EMutationStep::ControllerMove, EFaultWhen::After);
             operation(operations, EMutationPhase::Apply, EMutationStep::ReResolve, [&] { operations.reResolve(result.plan, false); });
         } else {
             operation(operations, EMutationPhase::Apply, EMutationStep::RemoveTarget, [&] { operations.removeTarget(result.plan); });
@@ -434,6 +441,17 @@ SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequ
     auto result = executeMutation(request, operations);
     return {.result = std::move(result), .state = std::move(operations.m_state), .trace = std::move(operations.m_trace),
             .controllerMoveCount = operations.m_controllerMoveCount, .reverseMoveCount = operations.m_reverseMoveCount};
+}
+
+int64_t nextUnusedOrdinaryWorkspaceID(const std::vector<int64_t>& workspaceIDs) {
+    std::set<int64_t> used;
+    for (const auto workspaceID : workspaceIDs)
+        if (workspaceID > 0)
+            used.insert(workspaceID);
+    for (int64_t candidate = 1; candidate < std::numeric_limits<int64_t>::max(); ++candidate)
+        if (!used.contains(candidate))
+            return candidate;
+    return 0;
 }
 
 }

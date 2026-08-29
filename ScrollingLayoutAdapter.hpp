@@ -86,6 +86,7 @@ struct SSnapshotResult {
 std::string     snapshotFailureName(ESnapshotFailure failure);
 SSnapshotResult snapshotWorkspace(const PHLWORKSPACE& workspace);
 bool            workspaceUsesScrollingLayout(const PHLWORKSPACE& workspace);
-SMutationResult moveScrollingTarget(const PHLWORKSPACE& sourceWorkspace, const PHLWORKSPACE& destinationWorkspace, const SMutationRequest& request);
+SMutationResult moveScrollingTarget(const PHLWORKSPACE& sourceWorkspace, const PHLWORKSPACE& destinationWorkspace, const PHLMONITOR& initiatingMonitor,
+                                    const SMutationRequest& request);
 
 }

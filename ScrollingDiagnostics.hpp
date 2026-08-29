@@ -24,5 +24,6 @@ struct SDiagnosticEmission {
 SDiagnosticRequest  parseDiagnosticRequest(const std::string& argument);
 bool                snapshotsEquivalent(const SWorkspaceSnapshot& before, const SWorkspaceSnapshot& after);
 SDiagnosticEmission buildReadDiagnostic(const std::string& argument);
+std::string         mutationDiagnosticJson(const SMutationResult& result);
 
 }

@@ -4,10 +4,12 @@
 #include "OverviewCapture.hpp"
 #include "OverviewInternal.hpp"
 #include "OverviewPassElement.hpp"
+#include "ScrollingDiagnostics.hpp"
 
 #define private   public
 #define protected public
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
+#include <hyprland/src/debug/log/Logger.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
@@ -147,6 +149,68 @@ void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const S
         m_touchMonitor.reset();
     if (needsDamage)
         damage();
+
+    if (effects.finishDrag) {
+        const auto source = previousState.dragSource;
+        const auto targetIdentity = previousState.pressed.targetToken;
+        const auto intent = effects.dropIntent ? effects.dropIntent : m_pendingDropIntent;
+        m_pendingDropIntent.reset();
+        m_pendingDropSource = {};
+
+        const auto refreshAfterMutation = [this]() {
+            if (refreshScene()) {
+                damage();
+                return;
+            }
+            const auto generation = m_sessionGeneration;
+            setClosing(true);
+            g_pEventLoopManager->doLater([generation]() {
+                if (g_pOverview && g_pOverview->sessionGeneration() == generation)
+                    g_pOverview->close(false);
+            });
+        };
+
+        if (!intent || targetIdentity == 0 || intent->kind == EDropKind::Invalid || intent->kind == EDropKind::NoOp) {
+            refreshAfterMutation();
+        } else {
+            const auto sourceRow = workspaceRow(source.workspaceID);
+            const auto destinationRow = intent->kind == EDropKind::TerminalWorkspace ? nullptr : workspaceRow(intent->workspaceID);
+            if (!sourceRow || !sourceRow->workspace || (intent->kind != EDropKind::TerminalWorkspace && (!destinationRow || !destinationRow->workspace))) {
+                refreshAfterMutation();
+            } else {
+                const SMutationRequest request{
+                    .targetIdentity = targetIdentity,
+                    .sourceWorkspaceID = source.workspaceID,
+                    .destinationWorkspaceID = intent->workspaceID,
+                    .kind = intent->kind,
+                    .placement = intent->placement,
+                    .destinationColumnIndex = intent->adjustedColumnIndex,
+                    .destinationRowIndex = intent->rowIndex,
+                    .createDestination = intent->kind == EDropKind::TerminalWorkspace,
+                };
+                const auto MON = m_monitor.lock();
+                const auto result = moveScrollingTarget(sourceRow->workspace, destinationRow ? destinationRow->workspace : PHLWORKSPACE{}, MON, request);
+                const auto diagnostic = mutationDiagnosticJson(result);
+                if (result.outcome == EMutationOutcome::RollbackFailed) {
+                    Log::logger->log(Log::ERR, "HYPREXPO_SCROLLING_MUTATION {}", diagnostic);
+                    const auto generation = m_sessionGeneration;
+                    setClosing(true);
+                    g_pEventLoopManager->doLater([generation]() {
+                        if (g_pOverview && g_pOverview->sessionGeneration() == generation)
+                            g_pOverview->close(false);
+                    });
+                } else {
+                    Log::logger->log(Log::INFO, "HYPREXPO_SCROLLING_MUTATION {}", diagnostic);
+                    switch (result.outcome) {
+                        case EMutationOutcome::Committed:
+                        case EMutationOutcome::RolledBack:
+                        case EMutationOutcome::Rejected: refreshAfterMutation(); break;
+                        case EMutationOutcome::RollbackFailed: break;
+                    }
+                }
+            }
+        }
+    }
 
     if (effects.selection) {
         m_focus = {.kind = effects.selection->kind, .workspaceID = effects.selection->workspaceID, .targetToken = effects.selection->targetToken};

@@ -158,5 +158,6 @@ struct SMutationSimulation {
 };
 
 SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequest& request, std::optional<SFaultInjection> fault = std::nullopt);
+int64_t             nextUnusedOrdinaryWorkspaceID(const std::vector<int64_t>& workspaceIDs);
 
 }

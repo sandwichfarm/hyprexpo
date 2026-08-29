@@ -283,4 +283,31 @@ SDiagnosticEmission buildReadDiagnostic(const std::string& argument) {
     return {.validRequest = true, .success = topologyEqual, .requestID = request.requestID, .error = error, .json = output.str()};
 }
 
+std::string mutationDiagnosticJson(const SMutationResult& result) {
+    const auto outcome = [&]() -> std::string_view {
+        switch (result.outcome) {
+            case EMutationOutcome::Committed: return "committed";
+            case EMutationOutcome::RolledBack: return "rolled-back";
+            case EMutationOutcome::RollbackFailed: return "rollback-failed";
+            case EMutationOutcome::Rejected: return "rejected";
+        }
+        return "rejected";
+    }();
+    std::ostringstream output;
+    output << "{\"schema\":1,\"kind\":\"mutation\",\"mutationOutcome\":" << quoted(outcome)
+           << ",\"rollbackStatus\":" << quoted(result.outcome == EMutationOutcome::RolledBack ? "restored" : result.outcome == EMutationOutcome::RollbackFailed ? "failed" : "not-required")
+           << ",\"sourceWorkspaceId\":" << result.plan.request.sourceWorkspaceID
+           << ",\"destinationWorkspaceId\":" << result.plan.request.destinationWorkspaceID
+           << ",\"targetIdentity\":" << quoted(pointerValue(result.plan.request.targetIdentity))
+           << ",\"violatedInvariantIDs\":[";
+    for (size_t index = 0; index < result.violatedInvariantIDs.size(); ++index) {
+        if (index)
+            output << ',';
+        output << quoted(result.violatedInvariantIDs[index]);
+    }
+    output << "],\"error\":" << quoted(result.error) << ",\"status\":"
+           << quoted(result.outcome == EMutationOutcome::Committed || result.outcome == EMutationOutcome::RolledBack ? "PASS" : "FAIL") << '}';
+    return output.str();
+}
+
 }

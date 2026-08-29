@@ -228,6 +228,8 @@ int main() {
     const auto adapterSource = readFile("ScrollingLayoutAdapter.cpp");
     const auto mutationHeader = readFile("ScrollingMutationTransaction.hpp");
     const auto mutationSource = readFile("ScrollingMutationTransaction.cpp");
+    const auto scrollingHeader = readFile("ScrollingOverview.hpp");
+    const auto scrollingSource = readFile("ScrollingOverview.cpp");
     const auto diagnosticSource = readFile("ScrollingDiagnostics.cpp");
     const auto diagnosticScript = readFile("scripts/read-scrolling-diagnostic.sh");
     expect(!adapterHeader.empty() && !adapterSource.empty(), "scrolling adapter source can be read from repo root");
@@ -283,7 +285,7 @@ int main() {
     expectContains(scrollingSource, "Log::logger->log(Log::ERR", "fatal mutation emits a high-severity diagnostic");
     const auto applyEffects = extractFunction(scrollingSource, "void CScrollingOverview::applyInputEffects(");
     expectOrder(applyEffects, "m_pendingDropIntent.reset()", "moveScrollingTarget(", "release consumes the retained transaction intent before native mutation");
-    expectOrder(applyEffects, "moveScrollingTarget(", "refreshScene()", "commit/rollback refresh happens after the exact-once transaction result");
+    expectLastOrder(applyEffects, "moveScrollingTarget(", "refreshAfterMutation();", "commit/rollback refresh happens after the exact-once transaction result");
     expectContains(diagnosticSource, "mutationDiagnosticJson", "mutation outcomes serialize correlated postcondition evidence");
     expectContains(diagnosticSource, "violatedInvariantIDs", "mutation diagnostics include exact violated invariant IDs");
 
@@ -349,8 +351,6 @@ int main() {
 
     const auto sessionHeader   = readFile("IOverviewSession.hpp");
     const auto sessionSource   = readFile("IOverviewSession.cpp");
-    const auto scrollingHeader = readFile("ScrollingOverview.hpp");
-    const auto scrollingSource = readFile("ScrollingOverview.cpp");
     const auto passSource      = readFile("OverviewPassElement.cpp");
     const auto gestureSource   = readFile("ExpoGesture.cpp");
     expect(!sessionHeader.empty() && !sessionSource.empty(), "common overview session interface and factory can be read from repo root");
