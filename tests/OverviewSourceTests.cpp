@@ -365,12 +365,53 @@ int main() {
     expectContains(mainSource, "g_pOverview->onConfigReload()", "config reload invalidates the active session without a concrete downcast");
     expectAbsent(scrollingSource, "g_pHyprRenderer->renderWorkspace(", "scrolling renderer does not duplicate grid/mixed workspace capture");
 
-    for (const auto& token : {"input.mouse.move", "input.mouse.button", "input.mouse.axis", "input.touch.down", "input.touch.motion", "input.touch.up", "input.touch.cancel",
-                              "beginDragTarget", "moveWindowToWorkspace", ".moveTape(", ".setOffset(", ".addStrip(", ".removeStrip(", ".setColumnWidth(", ".setTargetSize(", ".recalculate("})
-        expectAbsent(scrollingSource, token, "Plan 02 scrolling session stays read-only and input-free: " + std::string{token});
+    for (const auto& token : {"beginDragTarget", "moveWindowToWorkspace", ".moveTape(", ".setOffset(", ".addStrip(", ".removeStrip(", ".setColumnWidth(", ".setTargetSize(", ".recalculate("})
+        expectAbsent(scrollingSource, token, "scrolling input emits intents without native mutation: " + std::string{token});
+
+    const auto inputHeader = readFile("ScrollingInputState.hpp");
+    const auto inputSource = readFile("ScrollingInputState.cpp");
+    const auto inputScript = readFile("scripts/inject-scrolling-input.sh");
+    expect(!inputHeader.empty() && !inputSource.empty(), "pure scrolling input state source can be read from repo root");
+    expect(!inputScript.empty(), "deterministic scrolling input injection harness can be read from repo root");
+
+    for (const auto& token : {"m_events.input.mouse.move.listen", "m_events.input.mouse.button.listen", "m_events.input.mouse.axis.listen", "m_events.input.touch.down.listen",
+                              "m_events.input.touch.motion.listen", "m_events.input.touch.up.listen", "m_events.input.touch.cancel.listen"})
+        expectContains(scrollingSource, token, "scrolling session subscribes to exact signal " + std::string{token});
+    for (const auto& token : {"mouseMoveHook", "mouseButtonHook", "mouseAxisHook", "touchDownHook", "touchMotionHook", "touchUpHook", "touchCancelHook"})
+        expectContains(scrollingHeader, "CHyprSignalListener " + std::string{token}, "scrolling session owns listener handle " + std::string{token});
+
+    expectContains(scrollingSource, "transitionInput(", "real and injected scrolling input share the pure transition function");
+    expectContains(scrollingSource, "info.cancelled = effects.consume", "callbacks cancel compositor input only from the pure consume effect");
+    expectContains(scrollingSource, "g_pInputManager->getMouseCoordsInternal()", "mouse signals normalize through current global logical coordinates");
+    expectContains(scrollingSource, "touchToGlobalLogical(", "touch signals normalize through the touched monitor logical geometry");
+    expectContains(scrollingSource, "relativeDirection", "mouse axis honors the Hyprland relative-direction payload");
+    expectContains(scrollingSource, "applyInputEffects", "all runtime input effects use one application path");
+    expectContains(scrollingSource, "resetInputState", "refresh, close, cancel, and teardown share one idempotent reset path");
+    expectOrder(scrollingSource, "resetInputState(EResetReason::Refresh)", "releaseAllCaptureState();", "scene refresh clears input ownership before replacing cache state");
+    expectOrder(scrollingSource, "resetInputState(EResetReason::Teardown)", "releaseAllCaptureState();", "destruction clears listeners/input before capture ownership");
+    expectContains(sessionHeader, "injectScrollingInput", "injection routes through the polymorphic session without a concrete downcast");
+    expectContains(overviewHeader, "injectScrollingInput", "grid session explicitly rejects scrolling-only injection");
+    expectAbsent(source, "m_events.input.mouse.axis.listen", "grid mode does not install scrolling axis ownership");
+    expectAbsent(source, "m_events.input.touch.cancel.listen", "grid mode does not install scrolling cancel ownership");
+
+    expectContains(configHeader, "SCROLLING_INPUT_DEBUG_DEFAULT", "synthetic input is default-disabled");
+    expectContains(configSource, "plugin:hyprexpo:scrolling_input_debug", "synthetic input debug gate is registered");
+    expectContains(dispatchersSource, "hyprexpo:scrolling_input_test", "strict synthetic input dispatcher is registered");
+    expectContains(dispatchersSource, "scrolling_input_debug", "synthetic input dispatcher checks the debug config gate");
+    expectContains(dispatchersSource, "HYPREXPO_SCROLLING_INPUT {}", "request-correlated input diagnostics are emitted to the compositor log");
+    expectContains(dispatchersSource, "g_pOverview->injectScrollingInput", "dispatcher routes synthetic input through the active session interface");
+
+    for (const auto& token : {"hover-clear", "non-primary-passthrough", "mouse-click", "same-column", "new-column-before", "new-column-after", "cross-scrolling", "mixed-workspace",
+                              "terminal-workspace", "axis-owned", "touch-pan", "touch-tap", "touch-drag", "touch-cancel", "mismatched-cancel", "post-cancel-reacquire", "stale-target",
+                              "refresh-reset", "teardown-reset"})
+        expectContains(inputScript, token, "injection harness covers deterministic case " + std::string{token});
+    expectContains(inputScript, "--source-contract", "input harness offers a non-physical source-contract gate");
+    expectContains(inputScript, "requestId", "input harness correlates every readback to its request");
 
     expectContains(makefile, "IOverviewSession.cpp", "Make production sources include the overview factory");
     expectContains(makefile, "ScrollingOverview.cpp", "Make production sources include the scrolling renderer");
+    expectContains(makefile, "ScrollingInputState.cpp", "Make production and logic tests include the pure input model");
+    expectContains(makefile, "scripts/inject-scrolling-input.sh", "Make source tests track the deterministic input harness");
     expectContains(makefile, "IOverviewSession.hpp", "Make headers include the overview interface");
     expectContains(makefile, "ScrollingOverview.hpp", "Make headers include the scrolling renderer contract");
 
