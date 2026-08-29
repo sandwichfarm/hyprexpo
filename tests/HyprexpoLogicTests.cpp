@@ -2,6 +2,7 @@
 #include "../HyprexpoConfig.hpp"
 #include "../ScrollingOverviewLogic.hpp"
 #include "../ScrollingInputState.hpp"
+#include "../ScrollingMutationTransaction.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -466,6 +467,109 @@ void checkScrollingCaptureBudget() {
     expect(!planCaptureBudget(0, 100, 4, requests).valid, "capture budget rejects invalid monitor dimensions");
 }
 
+Hyprexpo::Scrolling::SMutationState mutationFixture() {
+    using namespace Hyprexpo::Scrolling;
+    return {.workspaces = {
+                {.workspaceID = 1,
+                 .modelIdentity = 101,
+                 .kind = EMutationWorkspaceKind::Scrolling,
+                 .direction = "right",
+                 .offset = 37.0,
+                 .focusedTargetIdentity = 12,
+                 .focusedWindowIdentity = 112,
+                 .columns = {{.identity = 201, .width = 0.45, .targets = {{.identity = 11, .windowIdentity = 111, .size = 0.35}, {.identity = 12, .windowIdentity = 112, .size = 0.65}}},
+                             {.identity = 202, .width = 0.70, .targets = {{.identity = 13, .windowIdentity = 113, .size = 1.0}}}},
+                 .members = {11, 12, 13}},
+                {.workspaceID = 2,
+                 .modelIdentity = 102,
+                 .kind = EMutationWorkspaceKind::Scrolling,
+                 .direction = "right",
+                 .offset = 9.0,
+                 .focusedTargetIdentity = 21,
+                 .focusedWindowIdentity = 121,
+                 .columns = {{.identity = 203, .width = 0.55, .targets = {{.identity = 21, .windowIdentity = 121, .size = 1.0}}}},
+                 .members = {21}},
+                {.workspaceID = 3,
+                 .modelIdentity = 0,
+                 .kind = EMutationWorkspaceKind::Mixed,
+                 .direction = {},
+                 .offset = 0.0,
+                 .columns = {},
+                 .members = {31}},
+            }};
+}
+
+void expectMutationCommit(const Hyprexpo::Scrolling::SMutationRequest& request, size_t workspaceIndex, size_t columnIndex, size_t rowIndex, const std::string& label) {
+    using namespace Hyprexpo::Scrolling;
+    const auto simulation = simulateMutation(mutationFixture(), request);
+    expect(simulation.result.outcome == EMutationOutcome::Committed, label + " commits");
+    expect(simulation.result.violatedInvariantIDs.empty(), label + " satisfies exact postconditions");
+    expect(simulation.state.workspaces.at(workspaceIndex).columns.at(columnIndex).targets.at(rowIndex).identity == request.targetIdentity,
+           label + " lands at the exact native position");
+    expect(simulation.state.workspaces.front().direction == "right" && near(simulation.state.workspaces.front().offset, 37.0),
+           label + " preserves controller direction and offset");
+}
+
+void checkScrollingMutationTransactions() {
+    using namespace Hyprexpo::Scrolling;
+
+    expectMutationCommit({.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
+                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1},
+                         0, 0, 1, "same-column reorder");
+    expectMutationCommit({.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
+                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1},
+                         0, 0, 1, "existing-column insertion");
+    expectMutationCommit({.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::NewColumnBefore,
+                          .placement = EColumnPlacement::Before, .destinationColumnIndex = 0, .destinationRowIndex = 0},
+                         0, 0, 0, "new-column before with disappearing source");
+    expectMutationCommit({.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::NewColumnAfter,
+                          .placement = EColumnPlacement::After, .destinationColumnIndex = 1, .destinationRowIndex = 0},
+                         0, 1, 0, "new-column after with disappearing source");
+    expectMutationCommit({.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 2, .kind = EDropKind::CrossWorkspace,
+                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1},
+                         1, 0, 1, "cross-workspace insertion");
+
+    auto mixed = simulateMutation(mutationFixture(), {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 3, .kind = EDropKind::MixedFallback});
+    expect(mixed.result.outcome == EMutationOutcome::Committed && mixed.result.violatedInvariantIDs.empty(), "mixed fallback commits controller ownership only");
+    expect(mixed.state.workspaces[2].members == std::vector<uint64_t>({31, 11}) && mixed.state.workspaces[2].columns.empty(),
+           "mixed fallback never invents native scrolling rows");
+
+    auto terminalState = mutationFixture();
+    auto terminal = simulateMutation(terminalState, {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 4,
+                                                     .kind = EDropKind::TerminalWorkspace, .createDestination = true});
+    expect(terminal.result.outcome == EMutationOutcome::Committed && terminal.state.workspaces.back().workspaceID == 4,
+           "terminal transaction creates the release-time next-empty workspace");
+    expect(terminal.state.workspaces.back().columns.size() == 1 && terminal.state.workspaces.back().columns.front().targets.front().identity == 11,
+           "terminal transaction moves exactly once into one native column");
+
+    const SMutationRequest faultRequest{.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 2, .kind = EDropKind::CrossWorkspace,
+                                         .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1};
+    const auto successful = simulateMutation(mutationFixture(), faultRequest);
+    expect(successful.result.outcome == EMutationOutcome::Committed && !successful.trace.empty(), "fault fixture has a complete successful operation trace");
+    for (const auto step : successful.trace) {
+        for (const auto when : {EFaultWhen::Before, EFaultWhen::After}) {
+            const auto failed = simulateMutation(mutationFixture(), faultRequest, SFaultInjection{.phase = EMutationPhase::Apply, .step = step, .when = when});
+            expect(failed.result.outcome == EMutationOutcome::RolledBack, "fault before/after each apply boundary reports rollback");
+            expect(failed.state == mutationFixture(), "fault before/after each apply boundary restores byte-for-structure pre-state");
+            expect(failed.result.violatedInvariantIDs.empty(), "fault rollback satisfies exact equality postconditions");
+        }
+    }
+
+    const auto fatal = simulateMutation(mutationFixture(), faultRequest,
+                                        SFaultInjection{.phase = EMutationPhase::Rollback, .step = EMutationStep::RestorePreState, .when = EFaultWhen::Before});
+    expect(fatal.result.outcome == EMutationOutcome::RollbackFailed && !fatal.result.violatedInvariantIDs.empty(),
+           "rollback boundary failure is explicit and carries violated invariant IDs");
+
+    auto duplicate = successful.state;
+    duplicate.workspaces[1].members.push_back(11);
+    const auto duplicateViolations = verifyPostconditions(successful.result.before, duplicate, successful.result.plan, false);
+    expect(std::ranges::find(duplicateViolations, "membership.exact-once") != duplicateViolations.end(), "exact-once comparator rejects duplicate targets");
+    auto resized = successful.state;
+    resized.workspaces[1].columns[0].targets[0].size = 0.25;
+    const auto sizeViolations = verifyPostconditions(successful.result.before, resized, successful.result.plan, false);
+    expect(std::ranges::find(sizeViolations, "unaffected.size") != sizeViolations.end(), "postconditions reject changed unaffected row sizes");
+}
+
 }
 
 int main() {
@@ -658,6 +762,7 @@ int main() {
     checkScrollingInputCoordinates();
     checkScrollingMouseInputState();
     checkScrollingTouchAndResetState();
+    checkScrollingMutationTransactions();
 
     if (failures != 0)
         return 1;
