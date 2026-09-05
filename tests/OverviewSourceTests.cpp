@@ -192,24 +192,35 @@ int main() {
     expect(overviewConstructor.find("for (int64_t id = minID; id <= maxID; ++id)") == std::string::npos,
            "dynamic workspace enumeration has no unbounded min-to-max fill loop");
 
-    const auto centerBranchStart = overviewConstructor.find("} else if (methodCenter) {");
-    const auto centerBranchEnd   = overviewConstructor.find("\n    } else {", centerBranchStart);
-    const auto centerBranch      = centerBranchStart == std::string::npos || centerBranchEnd == std::string::npos ? std::string{} :
-                                                                                                                    overviewConstructor.substr(centerBranchStart, centerBranchEnd - centerBranchStart);
-    expect(!centerBranch.empty(), "center-current traversal branch exists");
-
-    const auto boundsGatePos = centerBranch.find("if (!skipEmpty)");
-    const auto boundsScanPos = centerBranch.find("State::workspaceState()->workspacesCopy()");
-    const auto helperPos     = centerBranch.find("Hyprexpo::centeredWorkspaceBacktrack(");
+    const auto boundsGatePos = overviewConstructor.find("if (!skipEmpty)", overviewConstructor.find("auto [methodCenter, methodStartID]"));
+    const auto boundsScanPos = overviewConstructor.find("State::workspaceState()->workspacesCopy()", boundsGatePos);
     expect(boundsGatePos != std::string::npos && boundsScanPos != std::string::npos && boundsGatePos < boundsScanPos,
            "regular workspace bounds are collected only for consecutive traversal");
-    expect(boundsScanPos != std::string::npos && centerBranch.find("!workspace", boundsScanPos) != std::string::npos,
+    expect(boundsScanPos != std::string::npos && overviewConstructor.find("!workspace", boundsScanPos) != std::string::npos,
            "center-current bounds ignore null workspace entries");
-    expect(boundsScanPos != std::string::npos && centerBranch.find("workspace->m_isSpecialWorkspace", boundsScanPos) != std::string::npos,
+    expect(boundsScanPos != std::string::npos && overviewConstructor.find("workspace->m_isSpecialWorkspace", boundsScanPos) != std::string::npos,
            "center-current bounds exclude special workspaces");
-    expect(boundsScanPos != std::string::npos && centerBranch.find("workspace->m_monitor != PMONITOR", boundsScanPos) != std::string::npos,
+    expect(boundsScanPos != std::string::npos && overviewConstructor.find("workspace->m_id <= 0", boundsScanPos) != std::string::npos,
+           "regular bounds exclude named and invalid workspace IDs");
+    expect(boundsScanPos != std::string::npos && overviewConstructor.find("workspace->m_monitor != PMONITOR", boundsScanPos) != std::string::npos,
            "center-current bounds exclude workspaces owned by other monitors");
-    expect(helperPos != std::string::npos && boundsScanPos != std::string::npos && boundsScanPos < helperPos,
+
+    const auto cappedBranchStart = overviewConstructor.find("if (!skipEmpty && maxWorkspace > 0)");
+    const auto centerBranchStart = overviewConstructor.find("} else if (methodCenter) {", cappedBranchStart);
+    const auto centerBranchEnd   = overviewConstructor.find("\n    } else {", centerBranchStart);
+    const auto cappedBranch      = cappedBranchStart == std::string::npos || centerBranchStart == std::string::npos ? std::string{} :
+                                                                                                                       overviewConstructor.substr(cappedBranchStart, centerBranchStart - cappedBranchStart);
+    const auto centerBranch      = centerBranchStart == std::string::npos || centerBranchEnd == std::string::npos ? std::string{} :
+                                                                                                                    overviewConstructor.substr(centerBranchStart, centerBranchEnd - centerBranchStart);
+    expect(!cappedBranch.empty(), "capped regular-grid branch exists");
+    expect(cappedBranch.find("Hyprexpo::cappedWorkspaceIDs(") != std::string::npos,
+           "capped regular grids compose their anchor with cap and monitor-local bounds in the pure helper");
+    expect(cappedBranch.find("maxWorkspace - tileCount + 1") == std::string::npos,
+           "max_workspace no longer back-clamps the configured monitor anchor");
+    expect(!centerBranch.empty(), "center-current traversal branch exists");
+
+    const auto helperPos = centerBranch.find("Hyprexpo::centeredWorkspaceBacktrack(");
+    expect(helperPos != std::string::npos && boundsScanPos != std::string::npos && boundsScanPos < centerBranchStart,
            "center-current traversal uses the pure backtrack helper after collecting bounds");
     expect(centerBranch.find("for (size_t i = 1; i <= backtrackTarget; ++i)") != std::string::npos,
            "center-current lower scan includes the full helper target");

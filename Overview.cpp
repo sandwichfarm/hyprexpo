@@ -777,6 +777,18 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
     const int64_t maxWorkspace = std::max<Hyprlang::INT>(0, **PMAXWS);
     std::string   selector     = skipEmpty ? "m" : "r";
 
+    std::optional<int64_t> lowestExistingID;
+    std::optional<int64_t> highestExistingID;
+    if (!skipEmpty) {
+        for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
+            if (!workspace || workspace->m_isSpecialWorkspace || workspace->m_id <= 0 || workspace->m_monitor != PMONITOR)
+                continue;
+
+            lowestExistingID  = lowestExistingID ? std::min(*lowestExistingID, workspace->m_id) : workspace->m_id;
+            highestExistingID = highestExistingID ? std::max(*highestExistingID, workspace->m_id) : workspace->m_id;
+        }
+    }
+
     if (!methodCenter && !skipEmpty && maxWorkspace <= 0 && startedOn) {
         SIDE_LENGTH = Hyprexpo::gridColumnsToIncludeWorkspace(SIDE_LENGTH, methodStartID, (int)startedOn->m_id, HyprexpoConfig::COLUMNS_MAX);
         gridShape   = {SIDE_LENGTH, SIDE_LENGTH};
@@ -785,29 +797,13 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
     images.resize(SIDE_LENGTH * SIDE_LENGTH);
 
     if (!skipEmpty && maxWorkspace > 0) {
-        const int64_t tileCount = SIDE_LENGTH * SIDE_LENGTH;
-        const int64_t maxStart  = std::max<int64_t>(1, maxWorkspace - tileCount + 1);
-        const int64_t startID   = methodCenter ? std::clamp<int64_t>(methodStartID - tileCount / 2, 1, maxStart) : std::clamp<int64_t>(methodStartID, 1, maxStart);
-
-        for (size_t i = 0; i < images.size(); ++i) {
-            const int64_t workspaceID = startID + i;
-            images[i].workspaceID     = workspaceID <= maxWorkspace ? workspaceID : WORKSPACE_INVALID;
-        }
+        const auto workspaceIDs = Hyprexpo::cappedWorkspaceIDs(images.size(), methodCenter ? Hyprexpo::EWorkspaceMethodMode::Center : Hyprexpo::EWorkspaceMethodMode::First,
+                                                               methodStartID, maxWorkspace, lowestExistingID, highestExistingID);
+        for (size_t i = 0; i < images.size(); ++i)
+            images[i].workspaceID = workspaceIDs[i].value_or(WORKSPACE_INVALID);
     } else if (methodCenter) {
         int currentID = methodStartID;
         int firstID   = currentID;
-
-        std::optional<int64_t> lowestExistingID;
-        std::optional<int64_t> highestExistingID;
-        if (!skipEmpty) {
-            for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-                if (!workspace || workspace->m_isSpecialWorkspace || workspace->m_monitor != PMONITOR)
-                    continue;
-
-                lowestExistingID  = lowestExistingID ? std::min(*lowestExistingID, workspace->m_id) : workspace->m_id;
-                highestExistingID = highestExistingID ? std::max(*highestExistingID, workspace->m_id) : workspace->m_id;
-            }
-        }
 
         const size_t backtrackTarget = Hyprexpo::centeredWorkspaceBacktrack(images.size(), methodStartID, lowestExistingID, highestExistingID);
         int backtracked = 0;
