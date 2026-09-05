@@ -9,7 +9,7 @@ master. Its base is the release-compatible recovery at `eecace3`.
 | --- | --- | --- | --- |
 | 1 | #104 | Monitor-local centered workspace bounds | Merged at `c20e08e` |
 | 2 | #115 | Capped grids preserve anchors and reject padding selection | `89b2285`: tests, sanitizers, both release builds, 54 two-output selections and padding/empty-workspace input checks pass |
-| 3 | #105 | Pinned windows do not interrupt overview close | Pending |
+| 3 | #105 | Pinned windows do not interrupt overview close | `361abbd`: tests, sanitizers, both release builds, repeated range/input checks and pinned-window selection follow-through pass |
 | 4 | #114 | All-monitor overview, input ownership, drag/drop and recapture | Pending |
 | 5 | #107 | Native scrolling overview and mixed-layout sessions | Pending |
 
