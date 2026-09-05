@@ -24,7 +24,7 @@ multi-monitor ownership, preview recapture, pinned windows and scrolling input.
 
 Use master or the release tag for the landed features. The v0.56.1 and v0.56.2
 HyprPM pins select combined source on master at
-`7c5e2ac2524ffa75d077b5785b760ec81edb0cc6`; older release pins are unchanged.
+`5891014c611e1bd56d0121143f0221d46b5c0967`; older release pins are unchanged.
 Compile against the exact Hyprland revision and dependency ABI of the disposable
 compositor. An enabled HyprPM entry is not evidence that the combined artifact
 is loaded: confirm the plugin version and configuration errors in the target
@@ -109,6 +109,27 @@ and provenance are separate from the above binaries. Fresh source tests and
 ASan/UBSan suites passed. Logs/builds are under
 `/var/tmp/hyprexpo-release-0562.6RsFp3`; native acceptance evidence is under
 `/var/tmp/hyprexpo-integration.oc6IUs/native/v0.56.{1,2}-release-0562-pin`.
+
+## v0.56.2+1 release revalidation
+
+After PR #119 and PR #118 merged, pulled master commit
+`5891014c611e1bd56d0121143f0221d46b5c0967` was rebuilt separately for both
+supported Hyprland releases. It passed source tests, ASan/UBSan, and matching
+disposable runtime acceptance before the two current release pins moved.
+
+| Hyprland | Pinned-source build SHA-256 |
+| --- | --- |
+| v0.56.1 | `81427ab6967b0d7bdc1e7909440ef2d3ae4ca3207913be591d234c44aacad58e` |
+| v0.56.2 | `17c86694ef6f68bc0786ad36fd4abf9cb58799f0d613dc39ade57a58364d21cb` |
+
+The runtime matrix covered 5x2, 2x5, single-axis and inherited 3x3 grids on
+landscape and portrait outputs, keyboard and pointer selection, swipe-close,
+first-anchor growth, capped padding, unopened-workspace and cross-output drops,
+and confirmed that dynamic grids ignore fixed `rows`. Evidence is under
+`/var/tmp/hyprexpo-release-0562p1/run.xUZ0gI` and
+`/var/tmp/hyprexpo-issue111-evidence/run.5W2i3c/v0.56.{1,2}-release-0562p1-source`.
+These pre-tag builds report a development version; the release workflow must
+build and publish a clean `v0.56.2+1` artifact from the annotated tag.
 
 ## Test boundaries
 

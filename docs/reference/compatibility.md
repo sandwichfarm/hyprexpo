@@ -38,8 +38,8 @@ on master (including the issue #110 fix and the PR #116 feature integration):
 
 | Hyprland release | Pinned HyprExpo commit |
 | --- | --- |
-| v0.56.1 | `7c5e2ac2524ffa75d077b5785b760ec81edb0cc6` |
-| v0.56.2 | `7c5e2ac2524ffa75d077b5785b760ec81edb0cc6` |
+| v0.56.1 | `5891014c611e1bd56d0121143f0221d46b5c0967` |
+| v0.56.2 | `5891014c611e1bd56d0121143f0221d46b5c0967` |
 
 Changing current source does not update what those pins select. Before moving
 a pin, build and test the proposed plugin commit against that exact tagged
@@ -50,6 +50,9 @@ and validate loading in a disposable matching compositor.
 PR #116 was squash-merged, so its former integration-branch pin was not an
 ancestor of master. Both pins now select the landed version commit after fresh
 separate builds and matching disposable runtime acceptance on both releases.
+The v0.56.2+1 pins additionally include PR #118's rectangular fixed grids and
+PR #119's current HyprPM description. That landed master tree was again built
+and loaded against both supported releases before the pins moved.
 See [feature integration](./feature-integration.md) for the historical integration
 checkpoints, release revalidation and remaining test boundaries.
 
