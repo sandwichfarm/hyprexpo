@@ -430,6 +430,17 @@ int main() {
            "all close inputs reject capped padding while preserving skip-empty creation tiles");
     expect(closeOverview.find("Desktop::focusState()->monitor() != MON") != std::string::npos,
            "selecting an already-active grid workspace also focuses its monitor");
+    expect(closeOverview.find("if (CHANGE && OLDWS != MON->m_activeWorkspace)") != std::string::npos,
+           "focus-only selection cannot apply an OUT animation to its unchanged workspace");
+    expect(closeOverview.find("State::workspaceState()->create(NEWID, MON->m_id") != std::string::npos,
+           "skip-empty creation is bound to the selected overview monitor");
+    expect(closeOverview.find("workspaceIDForMonitor(MON, \"emptynm\")") != std::string::npos,
+           "empty-workspace selection resolves against the selected monitor");
+    const auto selectorHelper = extractFunction(source, "WORKSPACEID workspaceIDForMonitor(");
+    expect(selectorHelper.find("CScopeGuard") != std::string::npos && selectorHelper.find("FOCUS->m_focusMonitor = previousMonitor;") != std::string::npos,
+           "monitor-relative enumeration restores the focus context on every return");
+    expect(overviewConstructor.find("getWorkspaceIDNameFromString(") == std::string::npos && overviewConstructor.find("workspaceIDForMonitor(PMONITOR,") != std::string::npos,
+           "simultaneous grids do not enumerate through another monitor's focus context");
 
     // An anchored grid (workspace_method "<output> first N") lays out
     // max_workspace slots whether or not those workspaces exist. Selecting a

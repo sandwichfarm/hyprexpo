@@ -44,6 +44,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <hyprutils/utils/ScopeGuard.hpp>
 
 using namespace std::chrono_literals;
 
@@ -950,8 +951,19 @@ static void ensureOverviewCursorVisible(bool forceOverviewShape = false, bool re
         g_pInputManager->simulateMouseMovement();
 }
 
-// Get workspace method configuration for a specific monitor
-// Returns pair of {isCenter, startWorkspaceID}
+WORKSPACEID workspaceIDForMonitor(const PHLMONITOR& monitor, const std::string& selector) {
+    const auto FOCUS = Desktop::focusState();
+    if (!FOCUS || !monitor)
+        return WORKSPACE_INVALID;
+
+    const auto previousMonitor = FOCUS->m_focusMonitor;
+    Hyprutils::Utils::CScopeGuard restoreFocus{[&]() { FOCUS->m_focusMonitor = previousMonitor; }};
+    // Hyprland's selector API reads global focus; enumeration must not emit focus events.
+    FOCUS->m_focusMonitor = monitor;
+    return getWorkspaceIDNameFromString(selector).id;
+}
+
+// Returns pair of {isCenter, startWorkspaceID} for the requested monitor.
 static std::pair<bool, int> getWorkspaceMethodForMonitor(PHLMONITOR monitor) {
     static auto const* PMETHOD = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:workspace_method")->getDataStaticPtr();
 
@@ -967,7 +979,7 @@ static std::pair<bool, int> getWorkspaceMethodForMonitor(PHLMONITOR monitor) {
 
     const bool methodCenter = parsed.mode == Hyprexpo::EWorkspaceMethodMode::Center;
     if (parsed.workspace != "current") {
-        methodStartID = getWorkspaceIDNameFromString(parsed.workspace).id;
+        methodStartID = workspaceIDForMonitor(monitor, parsed.workspace);
         if (methodStartID == WORKSPACE_INVALID)
             methodStartID = monitor->activeWorkspaceID();
     }
@@ -1129,7 +1141,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
 
         // Scan through workspaces lower than methodStartID until we wrap; count how many
         for (size_t i = 1; i <= backtrackTarget; ++i) {
-            currentID = getWorkspaceIDNameFromString(selector + "-" + std::to_string(i)).id;
+            currentID = workspaceIDForMonitor(PMONITOR, selector + "-" + std::to_string(i));
             if (currentID >= firstID)
                 break;
 
@@ -1143,9 +1155,9 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
         for (size_t i = 0; i < images.size(); ++i) {
             auto& image = images[i];
             if ((int64_t)i - backtracked < 0) {
-                currentID = getWorkspaceIDNameFromString(selector + std::to_string((int64_t)i - backtracked)).id;
+                currentID = workspaceIDForMonitor(PMONITOR, selector + std::to_string((int64_t)i - backtracked));
             } else {
-                currentID = getWorkspaceIDNameFromString(selector + "+" + std::to_string((int64_t)i - backtracked)).id;
+                currentID = workspaceIDForMonitor(PMONITOR, selector + "+" + std::to_string((int64_t)i - backtracked));
                 if (i > 0 && currentID <= firstID)
                     break;
             }
@@ -1161,7 +1173,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
         // ID's set to WORKSPACE_INVALID
         for (size_t i = 1; i < (size_t)(SIDE_LENGTH * SIDE_LENGTH); ++i) {
             auto& image = images[i];
-            currentID   = getWorkspaceIDNameFromString(selector + "+" + std::to_string(i)).id;
+            currentID   = workspaceIDForMonitor(PMONITOR, selector + "+" + std::to_string(i));
             if (currentID <= methodStartID)
                 break;
             image.workspaceID = currentID;

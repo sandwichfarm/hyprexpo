@@ -163,7 +163,7 @@ void COverview::close(bool switchToSelection) {
         // If this tile's workspace was WORKSPACE_INVALID, move to the next
         // empty workspace. This should only happen if skip_empty is on, in
         // which case some tiles will be left with this ID intentionally.
-        const int  NEWID = TILE.workspaceID == WORKSPACE_INVALID ? getWorkspaceIDNameFromString("emptynm").id : TILE.workspaceID;
+        const WORKSPACEID NEWID = TILE.workspaceID == WORKSPACE_INVALID ? workspaceIDForMonitor(MON, "emptynm") : TILE.workspaceID;
 
         // A tile can name a workspace that does not exist yet -- an anchored
         // grid (workspace_method "<output> first N") lays out max_workspace
@@ -187,12 +187,17 @@ void COverview::close(bool switchToSelection) {
 
         const auto OLDWS = MON->m_activeWorkspace;
 
-        const auto CHANGE = NEWIDWS ? Config::Actions::changeWorkspace(NEWIDWS) : Config::Actions::changeWorkspace(std::to_string(NEWID));
+        if (!NEWIDWS && NEWID != WORKSPACE_INVALID)
+            NEWIDWS = State::workspaceState()->create(NEWID, MON->m_id, std::to_string(NEWID), false);
+
+        const auto CHANGE = Config::Actions::changeWorkspace(NEWIDWS);
         if (!CHANGE)
             Log::logger->log(Log::ERR, "[hyprexpo] failed to change workspace: {}", CHANGE.error().message);
 
-        Animation::Workspace::startAnimation(MON->m_activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
-        Animation::Workspace::startAnimation(OLDWS, Animation::Workspace::ANIMATION_TYPE_OUT, false, true);
+        if (CHANGE && OLDWS != MON->m_activeWorkspace) {
+            Animation::Workspace::startAnimation(MON->m_activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
+            Animation::Workspace::startAnimation(OLDWS, Animation::Workspace::ANIMATION_TYPE_OUT, false, true);
+        }
 
         startedOn = MON->m_activeWorkspace;
     }

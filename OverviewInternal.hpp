@@ -53,6 +53,7 @@ uint32_t framebufferFormatWithAlpha(uint32_t drmFormat);
 bool isTransformRotated(wl_output_transform t);
 
 std::string trimString(std::string value);
+WORKSPACEID workspaceIDForMonitor(const PHLMONITOR& monitor, const std::string& selector);
 std::vector<std::string> splitCommaList(const std::string& value);
 std::string lowerString(std::string value);
 std::string fallbackTokenForVisibleIndex(int visibleIndex);
