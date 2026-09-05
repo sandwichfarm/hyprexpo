@@ -184,6 +184,10 @@ int main() {
            "center-current handles the full signed workspace range without overflow");
 
     expect(HyprexpoConfig::SHOW_PINNED_WINDOWS_DEFAULT == 0, "pinned windows are hidden from previews by default");
+    expect(!shouldAbortOverviewCloseForWorkspaceMove(true, true), "pinned moves on the overview monitor preserve the close animation");
+    expect(shouldAbortOverviewCloseForWorkspaceMove(false, true), "non-pinned moves on the overview monitor abort the close animation");
+    expect(!shouldAbortOverviewCloseForWorkspaceMove(false, false), "non-pinned moves outside the overview monitor are ignored");
+    expect(!shouldAbortOverviewCloseForWorkspaceMove(true, false), "pinned moves outside the overview monitor are ignored");
     expect(std::string{HyprexpoConfig::NUMBER_KEY_MODE_DEFAULT} == "workspace", "raw number keys keep selecting workspace IDs by default");
     expect(numberKeyModeFromString("workspace") == ENumberKeyMode::Workspace, "workspace number-key mode parses");
     expect(numberKeyModeFromString(" INDEX ") == ENumberKeyMode::Index, "index number-key mode is case-insensitive and trimmed");

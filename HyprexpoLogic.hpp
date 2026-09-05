@@ -112,6 +112,7 @@ std::size_t              centeredWorkspaceBacktrack(std::size_t tileCount, int64
 int                      tileIndexFromPoint(double x, double y, double width, double height, int sideLength);
 int                      numberKeyToVisibleIndex(int number);
 ENumberKeyMode           numberKeyModeFromString(const std::string& mode);
+bool                     shouldAbortOverviewCloseForWorkspaceMove(bool windowPinned, bool movedOnOverviewMonitor);
 SDropIntentGeometry      computeDropIntentGeometry(const SDropIntentInput& input);
 
 SGestureSyncDecision     evaluateGestureSync(const SGestureConfig& config);
