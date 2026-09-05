@@ -112,7 +112,10 @@ hl.plugin.hyprexpo.gesture({
 ```
 
 The `expo` action keeps the existing follow-your-finger behavior: it opens the
-overview when closed, and an expo close gesture selects the hovered workspace.
+overview when closed. In grid mode, an expo close gesture selects the hovered
+workspace. In native scrolling mode, both expo-close and cancel swipes keep
+the opening workspace; pointer selection and keyboard confirmation commit the
+chosen target separately.
 The `cancel` action is inert while the overview is closed. While it is open, a
 cancel swipe starts an interactive close without selecting the hovered tile. A
 completed cancel swipe returns to the workspace where the overview opened; an

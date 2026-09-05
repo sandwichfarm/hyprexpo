@@ -50,7 +50,7 @@ Nested test binds:
 9. Move the pointer within the target tile and between target tiles; confirm the landing proxy tracks the pointer position, preserves the original grab offset, and disappears when hovering the source or an invalid target.
 10. Release on a target workspace and confirm the window still moves through the existing safe workspace move behavior. This release is not yet a positional layout insertion.
 11. In Lua config, register distinct `expo` and `cancel` gestures (for example, four-finger up and four-finger down). With the overview closed, begin the cancel gesture and confirm it remains closed.
-12. Complete the expo gesture and confirm its existing open/select behavior is unchanged.
+12. In grid mode, complete the expo gesture and confirm its existing open/select behavior is unchanged. In scrolling mode, confirm both expo-close and cancel swipes keep the opening workspace, then verify pointer selection and keyboard confirmation commit the chosen target separately.
 13. From the workspace where the overview opened, hover a different tile and make a partial cancel swipe. Confirm the animation returns to the same still-open overview and the origin workspace has not changed.
 14. Repeat with a completed cancel swipe. Confirm the overview closes onto the origin workspace rather than the hovered tile.
 15. Open from the origin workspace, hover another tile, begin an expo close, and release below the completion threshold so the overview restores. Without changing the hovered tile, complete cancel and confirm its animation retargets the origin and closes there. Repeat open/completed-cancel once more to catch stale swipe state, then inspect the nested compositor log for crashes, assertions, API/hash mismatches, and stale-callback errors.
@@ -70,15 +70,15 @@ Nested test binds:
 28. With `dynamic_grid = 1` and `fill_gaps = 1`, create distant workspace IDs (for example 1 and 5000). Open the overview; confirm it rejects gap expansion, remains responsive, and shows only the sparse workspaces.
 29. With `dynamic_grid = 1`, set `label_enable = 0`, then `label_show = never`, and set modern `border_color_current` / `border_color_hover` values. Confirm labels stay hidden and the modern border colors win over legacy highlight values.
 
-26. In scrolling mode, prove hover enter/change/clear, click, threshold drag,
+30. In scrolling mode, prove hover enter/change/clear, click, threshold drag,
     real wheel pan, every positional drop zone, cross-workspace and mixed
     fallback moves, terminal next-empty creation, outside/no-op release, and
     rollback diagnostics.
-27. Cancel touch pending, pan, and drag states. Confirm no selection/drop, no
+31. Cancel touch pending, pan, and drag states. Confirm no selection/drop, no
     stuck consumption or proxy, and immediate mouse/touch reacquisition.
-28. Capture topology before and after map/unmap/move/reload/close/unload cycles;
+32. Capture topology before and after map/unmap/move/reload/close/unload cycles;
     confirm offset/order/width/size equality where no mutation was requested.
-29. Repeat on rotated/fractional output settings, then launch the default grid
+33. Repeat on rotated/fractional output settings, then launch the default grid
     fixture and confirm its appearance, selection, drag, cancel, and close paths.
 
 ::: warning

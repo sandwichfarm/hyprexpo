@@ -113,9 +113,19 @@ animation ends, then removes it behind a generation fence.
 
 ## Exact ABI and runtime procedure
 
-Scrolling access uses Hyprland internals and is pinned to Hyprland `0.56.1`,
-commit `5c9377c15f85c50648f35ca5a213754f95b93ca0`. Rebuild and revalidate for any
-other Hyprland version or ABI hash.
+Scrolling access uses Hyprland internals. The release-first source target
+covers tagged Hyprland `v0.56.1` and `v0.56.2`; each artifact must be rebuilt
+against its exact compositor revision and dependencies.
+
+The retained runtime acceptance harness and isolated API probe are pinned to
+Hyprland `0.56.1`, commit `5c9377c15f85c50648f35ca5a213754f95b93ca0`.
+Production scrolling has no version-specific disable switch: plugin loading
+checks the runtime/client ABI match, and native layout observation fails closed
+when a trustworthy snapshot cannot be obtained. Build success on `v0.56.2`
+does not establish runtime acceptance. Before claiming that proof, run the
+same capture, input, mutation, and lifecycle matrix in a nested compositor
+at `efb50993780079460b0cbed1363e2166a2de1d9f`, adapting the harness to check that
+exact tag/hash pair rather than removing its ABI checks.
 
 ```bash
 test "$(pkg-config --modversion hyprland)" = 0.56.1
