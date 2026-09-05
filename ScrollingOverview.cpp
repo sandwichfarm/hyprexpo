@@ -786,7 +786,7 @@ bool CScrollingOverview::commitSelection() {
     const auto MON = m_monitor.lock();
     if (!MON)
         return false;
-    if (MON->m_activeWorkspace != row->workspace) {
+    if (MON->m_activeWorkspace != row->workspace || Desktop::focusState()->monitor() != MON) {
         const auto changed = Config::Actions::changeWorkspace(row->workspace);
         if (!changed)
             return false;

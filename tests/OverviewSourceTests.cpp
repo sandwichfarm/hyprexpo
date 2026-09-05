@@ -428,13 +428,15 @@ int main() {
            "empty tile creation policy is captured when the overview is built");
     expect(closeOverview.find("TILE.workspaceID != WORKSPACE_INVALID || emptyTilesSelectable") != std::string::npos,
            "all close inputs reject capped padding while preserving skip-empty creation tiles");
+    expect(closeOverview.find("Desktop::focusState()->monitor() != MON") != std::string::npos,
+           "selecting an already-active grid workspace also focuses its monitor");
 
     // An anchored grid (workspace_method "<output> first N") lays out
     // max_workspace slots whether or not those workspaces exist. Selecting a
     // tile for one that has never been opened must create it: changeWorkspace()
     // cannot, and the selection used to silently do nothing.
     const auto ensureTileWsPos = closeOverview.find("ensureWorkspaceForTile(SAFEID)");
-    const auto changeWsPos     = closeOverview.find("MON->changeWorkspace(");
+    const auto changeWsPos     = closeOverview.find("Config::Actions::changeWorkspace(");
     expect(ensureTileWsPos != std::string::npos,
            "selection resolves the tile's workspace through the creating helper");
     expect(changeWsPos != std::string::npos && ensureTileWsPos < changeWsPos,
@@ -450,8 +452,8 @@ int main() {
     const auto fullRender = extractFunction(renderSource, "void COverview::fullRender(");
     expect(!fullRender.empty(), "overview fullRender function exists");
     const auto closeFunction = extractFunction(renderSource, "void COverview::close(bool switchToSelection) {");
-    expect(closeFunction.find("MON->changeWorkspace(") != std::string::npos && closeFunction.find("Config::Actions::changeWorkspace(") == std::string::npos,
-           "selection switches the workspace through the overview's owning monitor");
+    expect(closeFunction.find("Config::Actions::changeWorkspace(NEWIDWS)") != std::string::npos,
+           "selection uses the resolved workspace owner and updates compositor focus together");
     expect(fullRender.find("Hyprexpo::shouldShowWorkspaceLabel(") != std::string::npos,
            "runtime label rendering uses modern label_enable and label_show policy in every grid mode");
     expect(fullRender.find("if (!closing && (**PLABELEN || **PSELECTEN || showWorkspaceNumbers))") != std::string::npos,
@@ -645,6 +647,9 @@ int main() {
     const auto mutationSource = readFile("ScrollingMutationTransaction.cpp");
     const auto scrollingHeader = readFile("ScrollingOverview.hpp");
     const auto scrollingSource = readFile("ScrollingOverview.cpp");
+    const auto scrollingCommit = extractFunction(scrollingSource, "bool CScrollingOverview::commitSelection(");
+    expect(scrollingCommit.find("Desktop::focusState()->monitor() != MON") != std::string::npos,
+           "selecting an already-active scrolling workspace also focuses its monitor");
     const auto requestIdHeader = readFile("ScrollingRequestId.hpp");
     const auto diagnosticSource = readFile("ScrollingDiagnostics.cpp");
     const auto diagnosticScript = readFile("scripts/read-scrolling-diagnostic.sh");

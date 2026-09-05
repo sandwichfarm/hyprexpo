@@ -9,6 +9,7 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/ConfigValue.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
+#include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/animation/WorkspaceAnimationController.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
@@ -155,7 +156,8 @@ void COverview::close(bool switchToSelection) {
 
     redrawAll();
 
-    if (switchToSelection && (TILE.workspaceID != WORKSPACE_INVALID || emptyTilesSelectable) && TILE.workspaceID != MON->activeWorkspaceID()) {
+    if (switchToSelection && (TILE.workspaceID != WORKSPACE_INVALID || emptyTilesSelectable) &&
+        (TILE.workspaceID != MON->activeWorkspaceID() || Desktop::focusState()->monitor() != MON)) {
         MON->setSpecialWorkspace(0);
 
         // If this tile's workspace was WORKSPACE_INVALID, move to the next
@@ -185,10 +187,9 @@ void COverview::close(bool switchToSelection) {
 
         const auto OLDWS = MON->m_activeWorkspace;
 
-        if (NEWIDWS)
-            MON->changeWorkspace(NEWIDWS);
-        else
-            MON->changeWorkspace(NEWID);
+        const auto CHANGE = NEWIDWS ? Config::Actions::changeWorkspace(NEWIDWS) : Config::Actions::changeWorkspace(std::to_string(NEWID));
+        if (!CHANGE)
+            Log::logger->log(Log::ERR, "[hyprexpo] failed to change workspace: {}", CHANGE.error().message);
 
         Animation::Workspace::startAnimation(MON->m_activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
         Animation::Workspace::startAnimation(OLDWS, Animation::Workspace::ANIMATION_TYPE_OUT, false, true);
