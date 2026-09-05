@@ -1,13 +1,12 @@
 #include "OverviewPassElement.hpp"
 #include <hyprland/src/render/OpenGL.hpp>
-#include "Overview.hpp"
+#include "IOverviewSession.hpp"
 
-COverviewPassElement::COverviewPassElement(PHLMONITOR monitor) : m_monitor(monitor) {
-    ;
-}
+COverviewPassElement::COverviewPassElement(PHLMONITOR monitor, uint64_t sessionGeneration) :
+    m_monitor(monitor), m_sessionGeneration(sessionGeneration) {}
 
-COverview* COverviewPassElement::overview() const {
-    return overviewForMonitor(m_monitor.lock());
+IOverviewSession* COverviewPassElement::overview() const {
+    return overviewForSession(overviewMonitorKey(m_monitor.lock()), m_sessionGeneration);
 }
 
 std::vector<UP<IPassElement>> COverviewPassElement::draw() {

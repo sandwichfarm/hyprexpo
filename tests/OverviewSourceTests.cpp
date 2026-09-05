@@ -57,6 +57,26 @@ size_t countOccurrences(const std::string& source, const std::string& needle) {
     return count;
 }
 
+void expectContains(const std::string& source, const std::string& token, const std::string& label) {
+    expect(source.find(token) != std::string::npos, label);
+}
+
+void expectAbsent(const std::string& source, const std::string& token, const std::string& label) {
+    expect(source.find(token) == std::string::npos, label);
+}
+
+void expectOrder(const std::string& source, const std::string& first, const std::string& second, const std::string& label) {
+    const auto firstPosition = source.find(first);
+    const auto secondPosition = source.find(second);
+    expect(firstPosition != std::string::npos && secondPosition != std::string::npos && firstPosition < secondPosition, label);
+}
+
+void expectLastOrder(const std::string& source, const std::string& first, const std::string& second, const std::string& label) {
+    const auto firstPosition  = source.find(first);
+    const auto secondPosition = source.rfind(second);
+    expect(firstPosition != std::string::npos && secondPosition != std::string::npos && firstPosition < secondPosition, label);
+}
+
 }
 
 int main() {
@@ -65,12 +85,13 @@ int main() {
                lifecycleSource.find("destroyOverview(OV);") != std::string::npos,
            "disconnecting an output unregisters its overview without waiting for a frame on that output");
     const auto source = readFile("Overview.cpp");
+    const auto overviewHeader = readFile("Overview.hpp");
     expect(!source.empty(), "Overview.cpp can be read from repo root");
 
     const auto function = extractFunction(source, "void removeOverview(");
     expect(!function.empty(), "removeOverview function exists");
 
-    const auto lockPos     = function.find("const auto MON = OV->pMonitor.lock();");
+    const auto lockPos     = function.find("const auto MON = OV->monitor();");
     const auto resetPos    = function.find("destroyOverview(OV);");
     const auto damagePos   = function.find("g_pHyprRenderer->damageMonitor(MON);");
     const auto schedulePos = function.find("MON->scheduleFrame();");
@@ -107,7 +128,6 @@ int main() {
     expect(!gestureHeader.empty(), "ExpoGesture.hpp can be read from repo root");
     const auto gestureSource = readFile("ExpoGesture.cpp");
     expect(!gestureSource.empty(), "ExpoGesture.cpp can be read from repo root");
-    const auto overviewHeader = readFile("Overview.hpp");
     expect(!overviewHeader.empty(), "Overview.hpp can be read from repo root");
     const auto expoDispatcher = extractFunction(dispatchersSource, "static SDispatchResult onExpoDispatcher(std::string arg) {");
     expect(!expoDispatcher.empty(), "expo dispatcher function exists");
@@ -149,28 +169,28 @@ int main() {
     const auto interactionSource = readFile("OverviewInteraction.cpp");
     expect(!interactionSource.empty(), "OverviewInteraction.cpp can be read from repo root");
 
-    const auto enterSubmap = extractFunction(interactionSource, "void COverview::enterSubmapIfEnabled() {");
+    const auto enterSubmap = extractFunction(interactionSource, "void enterOverviewSubmap(bool& submapActive) {");
     expect(!enterSubmap.empty(), "keyboard navigation submap entry function exists");
-    const auto captureSubmapPos = enterSubmap.find("previousSubmap = g_pKeybindManager->getCurrentSubmap().name;");
+    const auto captureSubmapPos = enterSubmap.find("g_previousSubmap = g_pKeybindManager->getCurrentSubmap().name;");
     const auto firstSubmapRef   = enterSubmap.find("if (g_submapRefs++ == 0)");
-    const auto shareSubmapPos   = enterSubmap.find("g_previousSubmap = previousSubmap;", captureSubmapPos);
+    const auto shareSubmapPos   = captureSubmapPos;
     const auto enterSubmapPos   = enterSubmap.find("Config::Actions::setSubmap(\"hyprexpo\");");
     const auto activateGuardPos = enterSubmap.find("submapActive = true;");
     expect(captureSubmapPos != std::string::npos, "submap entry captures the exact active Hyprland submap");
     expect(firstSubmapRef != std::string::npos && firstSubmapRef < captureSubmapPos,
            "only the first overview in a multi-monitor session captures the active submap");
-    expect(shareSubmapPos != std::string::npos && captureSubmapPos < shareSubmapPos,
+    expect(shareSubmapPos != std::string::npos && captureSubmapPos == shareSubmapPos,
            "the first overview publishes the captured submap for the whole overview session");
     expect(enterSubmapPos != std::string::npos, "submap entry switches to the hyprexpo navigation submap");
     expect(activateGuardPos != std::string::npos, "submap entry marks the navigation submap active");
     expect(captureSubmapPos < enterSubmapPos, "active submap capture happens before entering hyprexpo");
     expect(enterSubmapPos < activateGuardPos, "submap-active guard is set only after entering hyprexpo");
 
-    const auto resetSubmap = extractFunction(interactionSource, "void COverview::resetSubmapIfNeeded() {");
+    const auto resetSubmap = extractFunction(interactionSource, "void leaveOverviewSubmap(bool& submapActive) {");
     expect(!resetSubmap.empty(), "keyboard navigation submap reset function exists");
     const auto lastSubmapRef    = resetSubmap.find("if (--g_submapRefs <= 0)");
-    const auto sharedRestorePos = resetSubmap.find("previousSubmap = g_previousSubmap;");
-    const auto restoreSubmapPos = resetSubmap.find("Config::Actions::setSubmap(previousSubmap);");
+    const auto sharedRestorePos = resetSubmap.find("Config::Actions::setSubmap(g_previousSubmap);");
+    const auto restoreSubmapPos = resetSubmap.find("Config::Actions::setSubmap(g_previousSubmap);");
     const auto clearGuardPos    = resetSubmap.find("submapActive = false;");
     expect(lastSubmapRef != std::string::npos && sharedRestorePos != std::string::npos && lastSubmapRef < sharedRestorePos,
            "only the last overview restores the session-global captured submap");
@@ -178,7 +198,7 @@ int main() {
     expect(resetSubmap.find("Config::Actions::setSubmap(\"reset\");") == std::string::npos,
            "submap reset never hardcodes Hyprland's default submap");
     expect(clearGuardPos != std::string::npos, "submap reset clears the active guard");
-    expect(sharedRestorePos < restoreSubmapPos && restoreSubmapPos < clearGuardPos,
+    expect(sharedRestorePos == restoreSubmapPos && restoreSubmapPos < clearGuardPos,
            "shared captured submap restoration happens before clearing the active guard");
 
     const auto numberSelection = extractFunction(interactionSource, "bool COverview::onKbSelectNumber(int num) {");
@@ -235,7 +255,7 @@ int main() {
            "pointer select resolves the overview under the cursor instead of keyboard ownership");
     expect(bringBlock.find("overviewForGlobalPoint(") != std::string::npos && bringBlock.find("activeOverview()") == std::string::npos,
            "pointer bring resolves the overview under the cursor instead of keyboard ownership");
-    expect(bringBlock.find("const auto DESTINATION = OV->pMonitor.lock();") != std::string::npos &&
+    expect(bringBlock.find("const auto DESTINATION = OV->monitor();") != std::string::npos &&
                bringBlock.find("bringWindowFromWorkspace(OV->selectedWorkspaceID(), DESTINATION)") != std::string::npos,
            "bring passes the cursor overview's monitor as the explicit destination");
 
@@ -245,10 +265,10 @@ int main() {
     expect(bringWindow.find("focusState ? focusState->monitor()") == std::string::npos && bringWindow.find("State::monitorState()->query()") == std::string::npos,
            "bring never recomputes its destination from keyboard focus or cursor fallback");
 
-    const auto activeFunction = extractFunction(source, "COverview* activeOverview() {");
+    const auto activeFunction = extractFunction(source, "IOverviewSession* activeOverview() {");
     expect(activeFunction.find("g_keyboardOverviewMonitor.lock()") != std::string::npos && activeFunction.find("overviewForMonitor(KEYBOARD)") != std::string::npos,
            "active overview honors a persistent explicit keyboard owner before compositor focus");
-    expect(source.find("bool overviewRegistered(const COverview* overview)") != std::string::npos,
+    expect(source.find("bool overviewRegistered(const IOverviewSession* overview)") != std::string::npos,
            "registry exposes exact overview liveness for delayed callbacks");
 
     const auto moveFocus = extractFunction(interactionSource, "bool COverview::moveFocus(int dx, int dy) {");
@@ -257,10 +277,10 @@ int main() {
            "local focus movement reports whether it found a tile");
     expect(kbMove.find("moveOverviewFocusAcrossMonitors(this") != std::string::npos,
            "cross-monitor focus runs only after local movement fails");
-    expect(source.find("Hyprexpo::selectDirectionalTile(") != std::string::npos && source.find("g_keyboardOverviewMonitor = TARGET->pMonitor;") != std::string::npos,
+    expect(source.find("Hyprexpo::selectDirectionalTile(") != std::string::npos && source.find("g_keyboardOverviewMonitor = TARGET->monitor();") != std::string::npos,
            "cross-monitor focus uses pure geometry and persists destination keyboard ownership");
 
-    expect(source.find("void closeOverviewsSelecting(COverview* selecting)") != std::string::npos &&
+    expect(source.find("void closeOverviewsSelecting(IOverviewSession* selecting)") != std::string::npos &&
                dispatchersSource.find("static void closeOverviewsSelecting(") == std::string::npos,
            "one registry coordinator owns selector and peer closure");
     expect(interactionSource.find("bool COverview::selectHoveredWorkspace()") != std::string::npos,
@@ -272,7 +292,7 @@ int main() {
            "central drag reset clears pure state, restores left_ptr, and damages affected live monitors");
     expect(resetDrag.find("liveOverviewMonitorKeys()") != std::string::npos,
            "central reset always supplies current registry liveness when a monitor weak reference has expired");
-    const auto destroyOne = extractFunction(source, "void destroyOverview(COverview* overview) {");
+    const auto destroyOne = extractFunction(source, "void destroyOverview(IOverviewSession* overview) {");
     const auto destroyAll = extractFunction(source, "void destroyAllOverviews() {");
     const auto moveOwnerPos   = destroyOne.find("auto OWNER = std::move(*IT);");
     const auto eraseSlotPos   = destroyOne.find("g_overviews.erase(IT);");
@@ -285,25 +305,27 @@ int main() {
     expect(destroyAll.find("resetOverviewDrag(") < swapRegistryPos && swapRegistryPos < clearOwnersPos,
            "all-overview teardown empties the registry before any owner destructor runs");
 
-    const auto byAnimVar  = extractFunction(source, "COverview* overviewForAnimVar(");
-    const auto byMonitor  = extractFunction(source, "COverview* overviewForMonitor(");
-    const auto byKey      = extractFunction(source, "COverview* overviewForMonitorKey(");
-    const auto byPoint    = extractFunction(source, "COverview* overviewForGlobalPoint(");
+    const auto byAnimVar  = extractFunction(source, "IOverviewSession* overviewForAnimVar(");
+    const auto byMonitor  = extractFunction(source, "IOverviewSession* overviewForMonitor(");
+    const auto byKey      = extractFunction(source, "IOverviewSession* overviewForMonitorKey(");
+    const auto byPoint    = extractFunction(source, "IOverviewSession* overviewForGlobalPoint(");
     expect(byAnimVar.find("if (!OV)") < byAnimVar.find("OV->ownsAnimVar("), "animation-owner lookup skips null registry slots before dereference");
-    expect(byMonitor.find("if (!OV)") < byMonitor.find("OV->pMonitor"), "monitor lookup skips null registry slots before dereference");
-    expect(byKey.find("if (!OV)") < byKey.find("OV->pMonitor"), "monitor-key lookup skips null registry slots before dereference");
-    expect(byPoint.find("if (!OV)") < byPoint.find("OV->pMonitor"), "point lookup skips null registry slots before dereference");
-    expect(source.find("if (OV)\n            snapshot.push_back(OV.get());") != std::string::npos,
-           "safe registry snapshots never publish null overview pointers");
+    expect(byMonitor.find("if (!OV)") < byMonitor.find("OV->monitor()"), "monitor lookup skips null registry slots before dereference");
+    expect(byKey.find("if (!OV)") < byKey.find("OV->monitor()"), "monitor-key lookup skips null registry slots before dereference");
+    expect(byPoint.find("if (!OV)") < byPoint.find("OV->monitor()"), "point lookup skips null registry slots before dereference");
+    expect(source.find("if (OV)\n            snapshot.emplace_back(overviewMonitorKey(OV->monitor()), OV->sessionGeneration());") != std::string::npos,
+           "safe registry snapshots record only live monitor and generation identities");
+    expectContains(extractFunction(source, "void forEachOverview("), "overviewForSession(monitorKey, generation)",
+                   "registry iteration rejects replacement sessions created by earlier callbacks");
     expect(interactionSource.find("activeOverview() != this") == std::string::npos,
            "settle timer liveness never depends on whichever overview currently owns keyboard input");
 
     const auto redrawTimer = extractFunction(interactionSource, "void COverview::redrawDraggedWorkspace(int64_t workspaceID) {");
     expect(redrawTimer.find("[this]") == std::string::npos,
            "settle timer callbacks never capture a raw overview pointer");
-    expect(redrawTimer.find("const auto OVERVIEWKEY = overviewMonitorKey(") != std::string::npos && redrawTimer.find("[OVERVIEWKEY]") != std::string::npos &&
-               redrawTimer.find("overviewForMonitorKey(OVERVIEWKEY)") != std::string::npos,
-           "settle timer callbacks re-resolve their overview by stable monitor key on every tick");
+    expect(redrawTimer.find("const auto OVERVIEWKEY = overviewMonitorKey(") != std::string::npos && redrawTimer.find("[OVERVIEWKEY, GENERATION]") != std::string::npos &&
+               redrawTimer.find("overviewForSession(OVERVIEWKEY, GENERATION)") != std::string::npos,
+           "settle timer callbacks re-resolve their overview by monitor and generation on every tick");
     expect(redrawTimer.find("OVERVIEW->redrawSettleTimer.get() != self.get()") != std::string::npos,
            "a timer cannot mutate a replacement overview registered on the same monitor");
     expect(redrawTimer.find("settlingRedrawWorkspaceIDs") != std::string::npos && redrawTimer.find("OVERVIEW->tileForWorkspaceID(workspaceID)") != std::string::npos,
@@ -477,7 +499,7 @@ int main() {
            "gesture construction cannot silently default an action");
     expect(gestureHeader.find("const EExpoGestureAction m_action") != std::string::npos,
            "each gesture retains an immutable action mode");
-    expect(gestureHeader.find("COverview*    overview() const;") != std::string::npos &&
+    expect(gestureHeader.find("IOverviewSession*    overview() const;") != std::string::npos &&
                gestureHeader.find("PHLMONITORREF m_monitor;") != std::string::npos,
            "each gesture retains an origin-monitor lookup instead of a singleton overview pointer");
 
@@ -485,9 +507,9 @@ int main() {
     expect(!gestureBegin.empty(), "gesture begin function exists");
     const auto monitorQueryStart = gestureBegin.find("const auto monitor");
     const auto monitorCapture    = gestureBegin.find("m_monitor = monitor;", monitorQueryStart);
-    const auto overviewResolve   = gestureBegin.find("auto* const OV = overview();", monitorCapture);
+    const auto overviewResolve   = gestureBegin.find("auto* const OV = overviewForMonitor(monitor);", monitorCapture);
     const auto cancelBeginStart = gestureBegin.find("if (m_action == EExpoGestureAction::Cancel)");
-    const auto expoBeginStart   = gestureBegin.find("\n    if (!OV)\n", cancelBeginStart);
+    const auto expoBeginStart   = gestureBegin.find("\n    if (!OV) {", cancelBeginStart);
     const auto cancelBeginBlock = cancelBeginStart == std::string::npos || expoBeginStart == std::string::npos ? std::string{} :
                                                                                                                gestureBegin.substr(cancelBeginStart, expoBeginStart - cancelBeginStart);
     expect(monitorQueryStart != std::string::npos && monitorCapture != std::string::npos && overviewResolve != std::string::npos && cancelBeginStart != std::string::npos &&
@@ -499,7 +521,7 @@ int main() {
            "cancel begin delegates target reset and interactive closing to the overview");
     expect(cancelBeginBlock.find("selectHoveredWorkspace") == std::string::npos && cancelBeginBlock.find("createOverview") == std::string::npos,
            "cancel begin neither selects a hovered workspace nor creates an overview");
-    expect(overviewHeader.find("void beginCancelSwipe();") != std::string::npos,
+    expect(overviewHeader.find("void beginCancelSwipe() override;") != std::string::npos,
            "overview exposes an owned cancel-begin transition");
     const auto cancelSwipeBegin = extractFunction(interactionSource, "void COverview::beginCancelSwipe(");
     expect(!cancelSwipeBegin.empty(), "overview cancel-begin transition exists");
@@ -514,8 +536,8 @@ int main() {
                expoBeginBlock.find("OV->setClosing(true)") != std::string::npos,
            "expo begin retains open and hovered-selection close behavior");
 
-    const auto gestureOverview = extractFunction(gestureSource, "COverview* CExpoGesture::overview() const {");
-    expect(gestureOverview.find("overviewForMonitor(m_monitor.lock())") != std::string::npos,
+    const auto gestureOverview = extractFunction(gestureSource, "IOverviewSession* CExpoGesture::overview() const {");
+    expect(gestureOverview.find("overviewForSession(overviewMonitorKey(m_monitor.lock()), m_sessionGeneration)") != std::string::npos,
            "gesture callbacks re-resolve only the overview owned by the captured origin monitor");
 
     const auto gestureUpdate = extractFunction(gestureSource, "void CExpoGesture::update(");
@@ -617,6 +639,384 @@ int main() {
            "dispatcher reference distinguishes idempotent enabling from toggle close and peer dismissal");
     expect(dispatcherDocs.find("monitor under the pointer") != std::string::npos,
            "dispatcher reference identifies cursor ownership for pointer select and bring");
+    const auto adapterHeader = readFile("ScrollingLayoutAdapter.hpp");
+    const auto adapterSource = readFile("ScrollingLayoutAdapter.cpp");
+    const auto mutationHeader = readFile("ScrollingMutationTransaction.hpp");
+    const auto mutationSource = readFile("ScrollingMutationTransaction.cpp");
+    const auto scrollingHeader = readFile("ScrollingOverview.hpp");
+    const auto scrollingSource = readFile("ScrollingOverview.cpp");
+    const auto requestIdHeader = readFile("ScrollingRequestId.hpp");
+    const auto diagnosticSource = readFile("ScrollingDiagnostics.cpp");
+    const auto diagnosticScript = readFile("scripts/read-scrolling-diagnostic.sh");
+    expect(!adapterHeader.empty() && !adapterSource.empty(), "scrolling adapter source can be read from repo root");
+    expect(!mutationHeader.empty() && !mutationSource.empty(), "scrolling transaction source can be read from repo root");
+    expect(!requestIdHeader.empty() && !diagnosticSource.empty() && !diagnosticScript.empty(), "shared request ID and diagnostic sources can be read from repo root");
+    expectContains(requestIdHeader, "bool validRequestID", "one pure validator owns the request ID grammar");
+    expectContains(requestIdHeader, "c == '.'", "shared request ID grammar accepts dots");
+    expectContains(diagnosticSource, "validRequestID(request.requestID)", "topology diagnostics use the shared request ID validator");
+
+    for (const auto& token : {"NullWorkspace", "InertWorkspace", "MissingSpace", "MissingAlgorithm", "MissingTiledAlgorithm", "WrongAlgorithmName", "CastFailure", "ExpiredTarget",
+                              "ExpiredColumn", "ExpiredData", "MissingScrollingData", "ColumnCardinalityMismatch", "TargetCardinalityMismatch", "InvalidGeometry"})
+        expectContains(adapterHeader, token, "adapter exposes typed fail-closed result " + std::string{token});
+    for (const auto& token : {"workspace->inert()", "workspace->m_space", "algorithm()", "tiledAlgo()", "algoMatcher()->getNameForTiledAlgo", "dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>",
+                              "dataFor(target)", ".lock()", "stripCount()", "getDirection()", "getOffset()", "getStrip(", "targetSizes.size()", "targetDatas.size()", "calculateStripStart(",
+                              "calculateStripSize(", "layoutBox", "windowStableID", "algorithmFingerprint", "dataFingerprint"})
+        expectContains(adapterSource, token, "adapter implements guarded snapshot token " + std::string{token});
+    expectOrder(adapterSource, "algoMatcher()->getNameForTiledAlgo", "dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>", "adapter verifies matcher name before dynamic cast");
+    expectOrder(adapterSource, "dataFor(target)", "column->scrollingData.lock()", "adapter locks native ownership hops after resolving target data");
+
+    const auto snapshotImplementation = extractFunction(adapterSource, "SSnapshotResult snapshotWorkspaceImpl(");
+    for (const auto& token : {".moveTape(", ".moveTapeNormalized(", ".snapToGrid(", ".setOffset(", ".adjustOffset(", ".centerCol(", ".fitCol(", ".focusColumn(", ".addStrip(",
+                              ".insertStrip(", ".removeStrip(", ".swapStrips(", ".setColumnWidth(", ".setTargetSize(", ".recalculate(", "beginDragTarget", "moveWindowToWorkspace", "glReadPixels(",
+                              "readPixels(", "std::ofstream", "m_title", "m_class"})
+        expectAbsent(snapshotImplementation + diagnosticSource, token, "read-only snapshot/diagnostic forbids " + std::string{token});
+    expectAbsent(adapterHeader, "CScrollingAlgorithm*", "adapter DTO/header retains no raw scrolling algorithm pointer");
+
+    for (const auto& token : {"moveScrollingTarget", "SMutationResult", "executeMutation(", "snapshotPreState", "removeTarget", "addTarget", "restorePreState",
+                              "setColumnWidth", "setTargetSize", "recalculate", "verifyPostconditions", "MutationResult"})
+        expectContains(adapterHeader + adapterSource + mutationHeader + mutationSource, token, "native transaction boundary exposes " + std::string{token});
+    const auto nativeMove = extractFunction(adapterSource, "SMutationResult moveScrollingTarget(");
+    expect(!nativeMove.empty(), "same-workspace native transaction entry point exists");
+    expectOrder(nativeMove, "snapshotPreState", "executeMutation(", "native transaction snapshots before the engine can remove a target");
+    expectContains(adapterSource, "catch (const std::exception&", "native mutation catches standard host exceptions");
+    expectContains(adapterSource, "catch (...)", "native mutation catches unknown host exceptions");
+    expectOrder(adapterSource, "restorePreState", "setColumnWidth", "rollback rebuilds structure before restoring exact widths");
+    expectOrder(adapterSource, "setColumnWidth", "setTargetSize", "rollback restores widths before row proportions");
+    expectOrder(adapterSource, "setTargetSize", "recalculate", "native structure and sizes are restored before final recalculation");
+    expectOrder(adapterSource, "recalculate", "verifyPostconditions", "native readback verifies postconditions after final recalculation");
+    const auto nativeClassPosition = adapterSource.find("class CNativeMutationOperations");
+    const auto nativeMutationImplementation = nativeClassPosition == std::string::npos ? std::string{} : adapterSource.substr(nativeClassPosition);
+    for (const auto& token : {"beginDragTarget", "getMouseCoordsInternal", ".moveTape(", ".adjustOffset(", ".centerCol(", ".fitCol(", ".focusColumn("})
+        expectAbsent(nativeMove + nativeMutationImplementation, token,
+                     "native transaction forbids cursor/drag/camera operation " + std::string{token});
+    expectContains(adapterSource, "controller->setDirection", "native transaction restores the exact pre-state direction after host structure changes");
+    expectContains(adapterSource, "controller->setOffset(workspaceState.offset)", "native transaction restores the exact pre-state offset after host structure changes");
+
+    for (const auto& token : {"Desktop::globalWindowController()->moveWindowToWorkspace", "controllerMove", "reverse", "reResolve", "nextUnusedOrdinaryWorkspaceID",
+                              "State::workspaceState()->create", "m_monitor", "MixedFallback", "TerminalWorkspace"})
+        expectContains(adapterSource + mutationSource, token, "cross/terminal transaction exposes " + std::string{token});
+    expectOrder(adapterSource, "moveWindowToWorkspace", "reResolve", "cross move discards stale ownership before destination positioning");
+    expectContains(adapterSource, "if (reverse)", "rollback controller path explicitly reverses ownership");
+    expectContains(adapterSource, "m_createdDestination", "terminal rollback tracks the workspace created by this transaction");
+    for (const auto& token : {"proveCreatedDestinationRollback", "stripCount()", "workspacesCopy()", "m_native.erase", "m_createdDestination.reset()"})
+        expectContains(adapterSource, token, "terminal rollback proves empty controller/workspace release via " + std::string{token});
+
+    expectContains(scrollingSource, "moveScrollingTarget(", "one validated release enters the native transaction boundary");
+    expectContains(scrollingSource, "EMutationOutcome::Committed", "committed mutation refreshes the scrolling session");
+    expectContains(scrollingSource, "EMutationOutcome::RolledBack", "rolled-back mutation refreshes the scrolling session");
+    expectContains(scrollingSource, "EMutationOutcome::RollbackFailed", "fatal rollback failure safe-closes the scrolling session");
+    expectContains(scrollingSource, "Log::logger->log(Log::ERR", "fatal mutation emits a high-severity diagnostic");
+    const auto applyEffects = extractFunction(scrollingSource, "void CScrollingOverview::applyInputEffects(");
+    expectOrder(applyEffects, "m_pendingDropIntent.reset()", "moveScrollingTarget(", "release consumes the retained transaction intent before native mutation");
+    expectLastOrder(applyEffects, "moveScrollingTarget(", "refreshAfterMutation();", "commit/rollback refresh happens after the exact-once transaction result");
+    expectContains(diagnosticSource, "mutationDiagnosticJson", "mutation outcomes serialize correlated postcondition evidence");
+    expectContains(diagnosticSource, "violatedInvariantIDs", "mutation diagnostics include exact violated invariant IDs");
+    const auto mutationDiagnostic = extractFunction(diagnosticSource, "std::string mutationDiagnosticJson(");
+    for (const auto& token : {"requestId", "sessionGeneration", "beforeSummary", "afterSummary", "beforeHash", "afterHash", "mutationOutcome", "violatedInvariantIDs"})
+        expectContains(mutationDiagnostic, token, "mutation diagnostic carries correlated structural evidence " + std::string{token});
+    for (const auto& token : {"requestKind", "placement", "destinationColumnIndex", "destinationRowIndex", "beforeState", "afterState", "columns", "targets", "members", "width", "size"})
+        expectContains(diagnosticSource, token, "mutation diagnostic retains exact native postcondition field " + std::string{token});
+    for (const auto& token : {"m_title", "m_class", "windowTitle", "windowClass"})
+        expectAbsent(mutationDiagnostic, token, "mutation diagnostic excludes title/class secret surface " + std::string{token});
+    expectContains(scrollingSource, "m_mutationRequestSequence", "release diagnostics allocate a session-local correlation sequence");
+    expectContains(adapterHeader + adapterSource, "runNativeMutationTest", "debug acceptance resolves and executes the loaded native transaction boundary");
+    expectContains(adapterSource, "m_fault", "native mutation operations retain only request-scoped fault injection");
+    expectContains(adapterSource, "checkpoint(EMutationPhase phase, EMutationStep step, EFaultWhen when)", "native operations evaluate exact transaction fault boundaries");
+    expectContains(dispatchersSource, "hyprexpo:scrolling_mutation_test", "loaded native mutation acceptance dispatcher is registered");
+
+    for (const auto& token : {"requestId", "sessionGeneration", "marker", "hyprlandVersion", "runtimeHash", "clientHash", "monitorId", "workspaceId", "algorithmFingerprint", "dataFingerprint", "direction",
+                              "offsetBefore", "offsetAfter", "activeWorkspaceBefore", "activeWorkspaceAfter", "focusedWindowBefore", "focusedWindowAfter", "columns", "targets", "layoutBox", "visible",
+                              "group", "floating", "fullscreen", "pinned", "topologyEqual", "directionEqual", "offsetEqual", "orderEqual",
+                              "widthsEqual", "membershipEqual", "sizesEqual", "specialStateEqual", "algorithmEqual", "dataEqual", "activeWorkspaceEqual", "focusEqual", "mutationOutcome", "rollbackStatus", "status"})
+        expectContains(diagnosticSource, token, "diagnostic JSON includes observability field " + std::string{token});
+    expectContains(diagnosticSource, "snapshotWorkspace", "diagnostic serializes copied adapter snapshots");
+    expectContains(diagnosticSource, "snapshotsEquivalent", "diagnostic performs before/after readback equality");
+    expectContains(dispatchersSource, "hyprexpo:scrolling_debug", "read-only scrolling diagnostic dispatcher is registered");
+    expectContains(dispatchersSource, "HYPREXPO_SCROLLING_DIAGNOSTIC {}", "dispatcher emits one structured diagnostic log record");
+    expectContains(diagnosticScript, "expected exactly one diagnostic record", "reader rejects missing or duplicate request records");
+    expectContains(diagnosticScript, "valid_request_id", "reader validates the request ID before filtering logs");
+
+    const auto captureHeader = readFile("OverviewCapture.hpp");
+    const auto captureSource = readFile("OverviewCapture.cpp");
+    const auto configHeader  = readFile("HyprexpoConfig.hpp");
+    const auto makefile      = readFile("Makefile");
+    const auto cmake         = readFile("CMakeLists.txt");
+    const auto meson         = readFile("meson.build");
+    expect(!captureHeader.empty() && !captureSource.empty(), "shared overview capture source can be read from repo root");
+    expectContains(captureHeader, "captureWorkspacePreview", "shared capture API exposes the grid and mixed-row workspace boundary");
+    expectContains(captureHeader, "captureWindowPreview", "shared capture API exposes tight scrolling-target capture");
+    expectContains(captureHeader, "completed", "tight capture result distinguishes completed textures from failed attempts");
+
+    const auto workspaceCapture = extractFunction(captureSource, "bool captureWorkspacePreview(");
+    expect(!workspaceCapture.empty(), "shared workspace capture implementation exists");
+    for (const auto& token : {"beginRender(", "clearWithColor(", "applyExclusiveWorkspacePreviewState(", "applyWorkspaceWindowGoalState(", "CPinnedWindowPreviewGuard",
+                              "renderWorkspace(", "restoreWorkspaceWindowGoalState(", "restoreWorkspacePreviewStates(", "restoreActiveWorkspaceAfterPreview(", "rendererState.finish()"})
+        expectContains(workspaceCapture, token, "shared workspace capture preserves grid operation " + std::string{token});
+    expectOrder(workspaceCapture, "beginRender(", "clearWithColor(", "workspace capture begins before clearing");
+    expectOrder(workspaceCapture, "clearWithColor(", "applyExclusiveWorkspacePreviewState(", "workspace capture clears before temporary workspace state");
+    expectOrder(workspaceCapture, "applyWorkspaceWindowGoalState(", "renderWorkspace(", "workspace goal state is applied before rendering");
+    expectLastOrder(workspaceCapture, "renderWorkspace(", "restoreWorkspaceWindowGoalState(", "workspace goal state is restored after rendering");
+    expectLastOrder(workspaceCapture, "renderWorkspace(", "restoreWorkspacePreviewStates(", "workspace preview state restores after rendering");
+    expectLastOrder(workspaceCapture, "renderWorkspace(", "restoreActiveWorkspaceAfterPreview(", "active workspace restores after rendering");
+    expectLastOrder(workspaceCapture, "restoreActiveWorkspaceAfterPreview(", "rendererState.finish()", "workspace capture ends only after workspace restoration");
+    expectContains(overviewConstructor, "captureWorkspacePreview(", "initial grid capture uses the shared workspace helper");
+    const auto redrawID = extractFunction(renderSource, "void COverview::redrawID(");
+    expectContains(redrawID, "captureWorkspacePreview(", "grid redraw uses the shared workspace helper");
+    expectAbsent(source, "g_pHyprRenderer->renderWorkspace(", "grid construction no longer duplicates workspace snapshot rendering");
+    expectAbsent(renderSource, "g_pHyprRenderer->renderWorkspace(", "grid redraw no longer duplicates workspace snapshot rendering");
+
+    const auto windowCapture = extractFunction(captureSource, "SWindowCaptureResult captureWindowPreview(");
+    expect(!windowCapture.empty(), "tight scrolling-target capture implementation exists");
+    for (const auto& token : {"createFB(", "beginFullFakeRender(", "m_bBlockSurfaceFeedback = true", "m_bRenderingSnapshot = true", "startRenderPass()", "renderWindow(",
+                              "Render::RENDER_PASS_ALL, true, true", "blockScreenShader = true", "rendererState.finish()", "getTexture()", "result.completed"})
+        expectContains(windowCapture, token, "tight target capture uses approved GPU operation " + std::string{token});
+    expectOrder(windowCapture, "beginFullFakeRender(", "renderWindow(", "target capture begins fake rendering before the window draw");
+    expectOrder(windowCapture, "renderWindow(", "rendererState.finish()", "target capture balances the renderer after drawing");
+    expectOrder(windowCapture, "rendererState.finish()", "result.completed", "target capture publishes only after balanced completion");
+    for (const auto& token : {"glReadPixels(", "readPixels(", "std::ofstream", ".ppm", "sha256", "SHA256"})
+        expectAbsent(captureSource, token, "production capture forbids plugin-side pixel evidence path " + std::string{token});
+
+    for (const auto& token : {"SCROLLING_THUMBNAIL_BUDGET_DEFAULT", "SCROLLING_THUMBNAIL_BUDGET_MIN", "SCROLLING_THUMBNAIL_BUDGET_MAX"})
+        expectContains(configHeader, token, "thumbnail budget exposes bounded config constant " + std::string{token});
+    expectContains(configSource, "plugin:hyprexpo:scrolling_thumbnail_budget", "scrolling thumbnail budget configuration is registered");
+    expectContains(configSource, "HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_DEFAULT", "scrolling thumbnail budget registration uses the resolved default");
+    expectContains(configSource, ".min = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN", "scrolling thumbnail budget registration enforces the minimum");
+    expectContains(configSource, ".max = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MAX", "scrolling thumbnail budget registration enforces the maximum");
+    expectContains(makefile, "OverviewCapture.cpp", "Make production sources include the shared capture boundary");
+    expectContains(makefile, "OverviewCapture.hpp", "Make headers include the shared capture boundary");
+
+    const std::string buildDefinitions = makefile + cmake + meson;
+    expect(!cmake.empty() && !meson.empty(), "CMake and Meson build definitions can be read from repo root");
+    for (const auto& productionSource : {"main.cpp", "Dispatchers.cpp", "PluginConfig.cpp", "IOverviewSession.cpp", "Overview.cpp", "OverviewInteraction.cpp",
+                                         "OverviewRender.cpp", "OverviewCapture.cpp", "ScrollingOverview.cpp", "ScrollingInputState.cpp", "ExpoGesture.cpp",
+                                         "OverviewPassElement.cpp", "HyprexpoLogic.cpp", "ScrollingOverviewLogic.cpp", "ScrollingMutationTransaction.cpp",
+                                         "ScrollingLayoutAdapter.cpp", "ScrollingDiagnostics.cpp"}) {
+        expectContains(makefile, productionSource, "Make includes production source " + std::string{productionSource});
+        expectContains(cmake, productionSource, "CMake includes production source " + std::string{productionSource});
+        expectContains(meson, productionSource, "Meson includes production source " + std::string{productionSource});
+    }
+
+    for (const auto& pureSource : {"HyprexpoLogic.cpp", "ScrollingOverviewLogic.cpp", "ScrollingInputState.cpp", "ScrollingMutationTransaction.cpp"}) {
+        expectContains(cmake, pureSource, "CMake logic tests include pure source " + std::string{pureSource});
+        expectContains(meson, pureSource, "Meson logic tests include pure source " + std::string{pureSource});
+    }
+
+    for (const auto& suite : {"HyprexpoLogicTests", "OverviewSourceTests"}) {
+        expectContains(makefile, suite, "Make registers test suite " + std::string{suite});
+        expectContains(cmake, "add_executable(" + std::string{suite}, "CMake creates test executable " + std::string{suite});
+        expectContains(cmake, "add_test(NAME " + std::string{suite}, "CTest registers test suite " + std::string{suite});
+        expectContains(meson, "executable('" + std::string{suite} + "'", "Meson creates test executable " + std::string{suite});
+        expectContains(meson, "test('" + std::string{suite} + "'", "Meson registers test suite " + std::string{suite});
+    }
+    expectContains(buildDefinitions, "tests/OverviewSourceTests.cpp", "build definitions include the source-contract suite");
+
+    const auto nestedFixture = readFile("scripts/run-nested.sh");
+    const auto validator = readFile("scripts/validate-scrolling-overview.sh");
+    const auto scrollingGuide = readFile("docs/guides/scrolling-overview.md");
+    const auto runtimeGuide = readFile("docs/guides/runtime-smoke.md");
+    const auto optionsGuide = readFile("docs/configuration/options.md");
+    const auto keyboardGuide = readFile("docs/configuration/keyboard.md");
+    const auto dispatcherGuide = readFile("docs/reference/dispatchers.md");
+    const auto readme = readFile("README.md");
+    const auto publicDocs = scrollingGuide + runtimeGuide + optionsGuide + keyboardGuide + dispatcherGuide + readme;
+    for (const auto& token : {"HYPREXPO_DEV_LAYOUT", "layout:scrolling", "layout:dwindle", "layoutmsg", "consume", "expel", "fit"})
+        expectContains(nestedFixture, token, "nested fixture exposes scrolling contract token " + std::string{token});
+    for (const auto& token : {"--all", "--evidence", "0.56.1", "5c9377c15f85c50648f35ca5a213754f95b93ca0", "f3ed01d3b024e404563e7ce18efdf1583aaa8cba",
+                              "HYPREXPO_SCROLLING_DIAGNOSTIC", "HYPREXPO_SCROLLING_INPUT", "HYPREXPO_SCROLLING_MUTATION", "clients -j", "configerrors", "plugin list", "grim",
+                              "same-column", "existing-column", "new-column-before", "new-column-after", "cross-scrolling", "mixed-workspace", "terminal-workspace", "outside-release", "no-op-release",
+                              "touch-cancel-pending", "touch-cancel-pan", "touch-cancel-drag", "default-grid"})
+        expectContains(validator, token, "validator covers acceptance token " + std::string{token});
+    expectContains(validator, "--issue-85-publication-check", "validator exposes an opt-in issue-85 publication fence");
+    expectContains(validator, "publication_check=false", "reusable runtime validation defaults publication checks off");
+    expectContains(validator, "if [[ $publication_check == true ]]", "branch/base/remote fences execute only when explicitly requested");
+    expectContains(scrollingGuide, "Optional pre-publication fence", "docs separate reusable post-merge validation from issue-85 publication checks");
+    for (const auto& token : {"input.mouse.move", "input.mouse.button", "input.mouse.axis", "input.touch.down", "input.touch.motion", "input.touch.up", "input.touch.cancel",
+                              "scrolling_thumbnail_budget", "m * W * H", "mixed", "terminal", "next empty", "same-column", "new column", "rollback", "0.56.1",
+                              "hyprexpo:scrolling_debug", "hyprexpo:scrolling_input_test", "not full Niri parity"})
+        expectContains(publicDocs, token, "public docs describe scrolling contract token " + std::string{token});
+
+    const auto sessionHeader   = readFile("IOverviewSession.hpp");
+    const auto sessionSource   = readFile("IOverviewSession.cpp");
+    const auto passSource      = readFile("OverviewPassElement.cpp");
+    expect(!sessionHeader.empty() && !sessionSource.empty(), "common overview session interface and factory can be read from repo root");
+    expect(!scrollingHeader.empty() && !scrollingSource.empty(), "read-only scrolling session source can be read from repo root");
+
+    for (const auto& token : {"class IOverviewSession", "virtual ~IOverviewSession", "virtual void render()", "virtual void damage()", "virtual void onDamageReported()",
+                              "virtual void onPreRender()", "virtual void fullRender()", "virtual void close(", "virtual bool closeCommitted()", "virtual void setClosing(",
+                              "virtual void resetSwipe()", "virtual void onSwipeUpdate(", "virtual void onSwipeEnd(bool switchToSelection)", "virtual void onWindowMoveToWorkspace(",
+                              "virtual bool selectHoveredWorkspace()", "virtual bool onKbMoveFocus(", "virtual bool onKbConfirm()", "virtual bool onKbSelectNumber(",
+                              "virtual bool onKbSelectToken(", "virtual bool selectVisibleToken(", "virtual int64_t selectedWorkspaceID()", "virtual bool selectWorkspaceByID(",
+                              "virtual bool selectVisibleIndex(", "virtual bool moveWindowBetweenVisibleIndices(", "virtual bool blocksOverviewRendering()",
+                              "virtual bool blocksDamageReporting()", "virtual bool isSwiping()", "virtual PHLMONITOR monitor()", "virtual uint64_t sessionGeneration()"})
+        expectContains(sessionHeader, token, "session interface covers caller surface " + std::string{token});
+    expectContains(sessionHeader, "virtual void onConfigReload()", "session interface refreshes caches through the polymorphic boundary");
+    expectContains(sessionHeader, "std::vector<std::unique_ptr<IOverviewSession>> g_overviews", "one polymorphic registry owns each monitor session");
+    expectContains(sessionHeader, "createOverviewSession", "session factory is declared beside the polymorphic owner");
+    expectContains(overviewHeader, "class COverview final : public IOverviewSession", "existing grid overview implements the common interface without mode branches");
+    expectAbsent(overviewHeader, "inline std::unique_ptr<COverview> g_pOverview", "grid header no longer owns a concrete global session");
+
+    for (const auto& token : {"workspaceUsesScrollingLayout(startedOn)", "snapshotWorkspace(startedOn)", "CScrollingOverview", "COverview", "std::make_unique<CScrollingOverview>", "std::make_unique<COverview>"})
+        expectContains(sessionSource, token, "factory implements guarded selection token " + std::string{token});
+    expectOrder(sessionSource, "snapshotWorkspace(startedOn)", "std::make_unique<CScrollingOverview>", "factory snapshots live native state before selecting scrolling");
+    expectContains(sessionSource, "notifyScrollingFailure", "detected scrolling initialization failure is operator-visible");
+    expectContains(sessionSource, "return nullptr", "detected scrolling initialization failure returns no session");
+    expectAbsent(sessionSource, "using grid fallback", "detected scrolling never silently falls back to grid");
+    expectOrder(sessionSource, "if (detectedScrolling)", "return std::make_unique<COverview>", "grid construction is reachable only after the detected-scrolling branch");
+    expectContains(dispatchersSource, "createOverview(monitor)", "dispatcher creates sessions through the monitor registry");
+    expectContains(source, "createOverviewSession(monitor->m_activeWorkspace, monitor, swipe)", "registry passes the explicit monitor to the sole session factory");
+    expectContains(dispatchersSource, "failed to initialize native scrolling overview", "dispatcher reports fail-closed scrolling creation");
+    expectContains(gestureSource, "createOverview(monitor, true)", "gesture creates sessions through the monitor registry and sole factory");
+    expectAbsent(dispatchersSource + gestureSource, "std::make_unique<COverview>", "callers never instantiate the concrete grid implementation");
+
+    for (const auto& token : {"->pMonitor", "->m_isSwiping", "->blockOverviewRendering", "->blockDamageReporting"})
+        expectAbsent(mainSource + dispatchersSource + passSource + gestureSource, token, "external callers avoid concrete session field " + std::string{token});
+    for (const auto& token : {"blocksOverviewRendering()", "blocksDamageReporting()", "isSwiping()", "monitor()"})
+        expectContains(mainSource + dispatchersSource + passSource, token, "external callers use virtual accessor " + std::string{token});
+    expectAbsent(mainSource + dispatchersSource + passSource + gestureSource, "dynamic_cast<COverview", "session callers contain no concrete overview downcast");
+
+    expectContains(passSource, "overviewForSession(overviewMonitorKey(m_monitor.lock()), m_sessionGeneration)", "render pass validates monitor and generation identity");
+    expectContains(passSource, "m_sessionGeneration", "render pass retains only an immutable generation identity");
+    expectOrder(passSource, "if (auto* const OV = overview())", "OV->fullRender()", "render pass null-checks before virtual rendering");
+    expectContains(scrollingHeader, "PHLANIMVAR<float> m_transitionProgress", "scrolling session owns one compositor-managed transition value");
+    expectContains(scrollingSource, "Animation::mgr()->createAnimation", "scrolling overview entry and exit use the compositor animation manager");
+    expectContains(scrollingSource, "transitionForSwipe(m_swipeClosing, m_swipeDelta", "scrolling swipe delta drives the visible transition progress");
+    expectContains(scrollingSource, "CompatHyprlandAPI::intValue(\"plugin:hyprexpo:gesture_distance\")",
+                   "scrolling swipe reads gesture distance through the Lua-compatible config boundary");
+    expectAbsent(scrollingSource, "HyprlandAPI::getConfigValue", "scrolling session never uses the legacy config getter");
+    expectContains(sessionHeader, "virtual void beginCancelSwipe() = 0", "cancel gesture dispatches through the session interface");
+    expectContains(sessionHeader, "virtual void onSwipeEnd(bool switchToSelection) = 0", "session interface retains action-specific swipe completion");
+    const auto scrollingCancelBegin = extractFunction(scrollingSource, "void CScrollingOverview::beginCancelSwipe(");
+    expectContains(scrollingCancelBegin, "setClosing(true)", "scrolling cancel begins the existing input-fenced close transition");
+    expectAbsent(scrollingCancelBegin, "commitSelection", "scrolling cancel never commits a hovered selection");
+    const auto scrollingSwipeEnd = extractFunction(scrollingSource, "void CScrollingOverview::onSwipeEnd(");
+    expectContains(scrollingSwipeEnd, "close(false)", "scrolling swipe completion retains the opening workspace for both gesture actions");
+    expectAbsent(scrollingSwipeEnd, "close(true)", "scrolling swipe completion never commits selection implicitly");
+    expectContains(scrollingSource, "applyOverviewTransition", "scrolling render boxes consume the transition transform");
+    expectContains(scrollingSource, "transition.opacity", "scrolling render content consumes transition opacity");
+    const auto scrollingClose = extractFunction(scrollingSource, "void CScrollingOverview::close(");
+    expectContains(scrollingClose, "scheduleScrollingOverviewRemoval(overviewMonitorKey(m_monitor.lock()), m_sessionGeneration)", "scrolling close defers owner destruction until transition completion");
+    expectAbsent(scrollingClose, "g_pOverview.reset()", "scrolling close never destroys itself synchronously");
+    expectContains(scrollingSource, "g_pEventLoopManager->doLater", "animation completion leaves its callback before destroying session ownership");
+    expectContains(scrollingSource, "overviewForSession(monitorKey, generation)", "deferred close cannot remove a replacement overview session");
+    expectContains(scrollingHeader, "m_closeAnimationTimer", "scrolling close retains a compositor timer for a visible first exit frame");
+    expectOrder(scrollingClose, "setValueAndWarp", "makeShared<CEventLoopTimer>", "scrolling close presents an initial transformed frame before advancing toward zero");
+    expectOrder(scrollingClose, "makeShared<CEventLoopTimer>", "*m_transitionProgress = 0.F", "scrolling close begins the remaining animation from the timer callback");
+    expectContains(mainSource, "destroyAllOverviews();", "plugin exit destroys the session owner");
+    expectOrder(mainSource, "destroyAllOverviews();", "removeAllOfType", "plugin exit destroys session-owned GPU state before pass removal");
+
+    for (const auto& token : {"class CScrollingOverview final : public IOverviewSession", "SCacheKey", "sessionGeneration", "workspaceID", "targetToken",
+                              "contentDamageGeneration", "captureWidth", "captureHeight", "budgetGeneration", "PHLWINDOWREF", "WP<Layout::ITarget>", "releaseCacheEntry"})
+        expectContains(scrollingHeader + scrollingSource, token, "scrolling session exposes bounded cache/lifetime token " + std::string{token});
+    for (const auto& token : {"snapshotWorkspace(", "buildScene(", "initialPan(", "planCaptureBudget(", "captureWindowPreview(", "captureWorkspacePreview(",
+                              "EWorkspaceKind::Scrolling", "EWorkspaceKind::Mixed", "EWorkspaceKind::Empty", "EWorkspaceKind::Terminal", "group", "floating", "fullscreen", "pinned"})
+        expectContains(scrollingSource, token, "scrolling renderer covers full read-only scene token " + std::string{token});
+    expectOrder(scrollingSource, "releaseCacheEntry", "captureWindowPreview(", "stale cache ownership is released before replacement capture");
+    expectContains(scrollingSource, "scrollingThumbnailBudgetMultiplier", "scrolling renderer reads the bounded monitor-relative config");
+    expectContains(scrollingSource, "captureWorkspacePreview(", "mixed-layout rows reuse the sole workspace capture boundary");
+    expectContains(scrollingSource, "m_blockOverviewRendering = true", "mixed-layout capture forces the original grid render path");
+    expectContains(scrollingSource, "m_blockDamageReporting   = true", "mixed-layout capture suppresses recursive damage feedback");
+    expectContains(mainSource, "forEachOverview([](IOverviewSession& overview) { overview.onConfigReload(); })", "config reload invalidates the active session without a concrete downcast");
+    expectAbsent(scrollingSource, "g_pHyprRenderer->renderWorkspace(", "scrolling renderer does not duplicate grid/mixed workspace capture");
+
+    for (const auto& token : {"beginDragTarget", "moveWindowToWorkspace", ".moveTape(", ".setOffset(", ".addStrip(", ".removeStrip(", ".setColumnWidth(", ".setTargetSize(", ".recalculate("})
+        expectAbsent(scrollingSource, token, "scrolling input emits intents without native mutation: " + std::string{token});
+
+    const auto inputHeader = readFile("ScrollingInputState.hpp");
+    const auto inputSource = readFile("ScrollingInputState.cpp");
+    const auto inputScript = readFile("scripts/inject-scrolling-input.sh");
+    expect(!inputHeader.empty() && !inputSource.empty(), "pure scrolling input state source can be read from repo root");
+    expect(!inputScript.empty(), "deterministic scrolling input injection harness can be read from repo root");
+
+    for (const auto& token : {"m_events.input.mouse.move.listen", "m_events.input.mouse.button.listen", "m_events.input.mouse.axis.listen", "m_events.input.touch.down.listen",
+                              "m_events.input.touch.motion.listen", "m_events.input.touch.up.listen", "m_events.input.touch.cancel.listen"})
+        expectContains(scrollingSource, token, "scrolling session subscribes to exact signal " + std::string{token});
+    for (const auto& token : {"mouseMoveHook", "mouseButtonHook", "mouseAxisHook", "touchDownHook", "touchMotionHook", "touchUpHook", "touchCancelHook"})
+        expectContains(scrollingHeader, token, "scrolling session owns listener handle " + std::string{token});
+
+    expectContains(scrollingSource, "transitionInput(", "real and injected scrolling input share the pure transition function");
+    expectContains(scrollingSource, "info.cancelled = info.cancelled || effects.consume", "callbacks preserve cancellation while applying the pure consume effect");
+    expectContains(scrollingSource, "g_pInputManager->getMouseCoordsInternal()", "mouse signals normalize through current global logical coordinates");
+    expectContains(scrollingSource, "touchToGlobalLogical(", "touch signals normalize through the touched monitor logical geometry");
+    expectContains(scrollingSource, "relativeDirection", "mouse axis honors the Hyprland relative-direction payload");
+    expectContains(scrollingSource, "applyInputEffects", "all runtime input effects use one application path");
+    expectContains(scrollingSource, "resetInputState", "refresh, close, cancel, and teardown share one idempotent reset path");
+    const auto scrollingProcessInput = extractFunction(scrollingSource, "SInputEffects CScrollingOverview::processInput(");
+    expectContains(scrollingProcessInput, "m_closing || m_closeCommitted", "closing scrolling sessions reject fresh mouse and touch ownership");
+    const auto scrollingKbMove = extractFunction(scrollingSource, "bool CScrollingOverview::onKbMoveFocus(");
+    const auto scrollingKbConfirm = extractFunction(scrollingSource, "bool CScrollingOverview::onKbConfirm(");
+    expectContains(scrollingKbMove, "m_closing || m_closeCommitted", "closing scrolling sessions reject fresh keyboard navigation");
+    expectContains(scrollingKbConfirm, "m_closing || m_closeCommitted", "closing scrolling sessions reject fresh keyboard selection");
+    const auto scrollingInstallInput = extractFunction(scrollingSource, "void CScrollingOverview::installInputListeners(");
+    expectContains(scrollingInstallInput, "event.device->m_boundOutput.empty()", "touch ownership requires an explicitly bound output");
+    expectAbsent(scrollingInstallInput, ": m_monitor.lock()", "unbound touch devices are not guessed onto the overview monitor");
+    const auto scrollingRefresh = extractFunction(scrollingSource, "bool CScrollingOverview::refreshScene(");
+    const auto scrollingDestructor = extractFunction(scrollingSource, "CScrollingOverview::~CScrollingOverview(");
+    expectOrder(scrollingRefresh, "resetInputState(EResetReason::Refresh)", "releaseAllCaptureState();", "scene refresh clears input ownership before replacing cache state");
+    expectOrder(scrollingDestructor, "resetInputState(EResetReason::Teardown)", "releaseAllCaptureState();", "destruction clears listeners/input before capture ownership");
+    expectContains(sessionHeader, "injectScrollingInput", "injection routes through the polymorphic session without a concrete downcast");
+    expectContains(overviewHeader, "injectScrollingInput", "grid session explicitly rejects scrolling-only injection");
+    expectAbsent(source, "m_events.input.mouse.axis.listen", "grid mode does not install scrolling axis ownership");
+    expectAbsent(source, "m_events.input.touch.cancel.listen", "grid mode does not install scrolling cancel ownership");
+
+    expectContains(configHeader, "SCROLLING_INPUT_DEBUG_DEFAULT", "synthetic input is default-disabled");
+    expectContains(configSource, "plugin:hyprexpo:scrolling_input_debug", "synthetic input debug gate is registered");
+    expectContains(dispatchersSource, "hyprexpo:scrolling_input_test", "strict synthetic input dispatcher is registered");
+    expectContains(dispatchersSource, "scrolling_input_debug", "synthetic input dispatcher checks the debug config gate");
+    expectContains(dispatchersSource, "HYPREXPO_SCROLLING_INPUT {}", "request-correlated input diagnostics are emitted to the compositor log");
+    expectContains(dispatchersSource, "OV->injectScrollingInput", "dispatcher routes synthetic input through the active session interface");
+
+    const auto generationLookup = extractFunction(source, "IOverviewSession* overviewForSession(");
+    expectContains(generationLookup, "overviewForMonitorKey(monitorKey)", "session identity first resolves its owning monitor");
+    expectContains(generationLookup, "session->sessionGeneration() == generation", "session identity rejects a replacement on the same monitor");
+    expectAbsent(scrollingSource + mainSource + dispatchersSource + gestureSource + passSource, "g_pOverview",
+                 "all session consumers resolve the polymorphic registry without a singleton escape hatch");
+    expectContains(sessionSource, "startedOn, monitor, swipe, generation", "both session constructors receive explicit monitor and generation");
+    expectContains(source, "OWNER->prepareForTeardown();", "single removal releases polymorphic input and capture lifecycle");
+    expectOrder(destroyOne, "g_overviews.erase(IT);", "OWNER->prepareForTeardown();", "single teardown callbacks see an already-unregistered owner");
+    expectOrder(destroyAll, "OWNERS.swap(g_overviews);", "owner->prepareForTeardown();", "bulk teardown callbacks see an empty registry");
+    expectContains(scrollingSource, "enterOverviewSubmap(m_submapActive)", "scrolling joins the exact shared navigation submap");
+    expectContains(scrollingClose, "leaveOverviewSubmap(m_submapActive)", "scrolling close releases only its own submap reference");
+    expectContains(scrollingInstallInput, "info.cancelled || pointerOverview() != this", "scrolling pointer input requires the owning monitor or retained drag owner");
+    expectOrder(scrollingInstallInput, "resetInputState(EResetReason::Cancel)", "info.cancelled || pointerOverview() != this",
+                "moving onto another output clears stale hover even when its session already consumed the event");
+    expectContains(source, "dynamic_cast<COverview*>(pointerOverview())", "grid input leaves a scrolling drag's ownership intact across monitor edges");
+    expectContains(scrollingInstallInput, "!ownsTouchInput(event.touchID)", "touch follow-up events route only to the session that acquired the touch");
+    expectAbsent(scrollingKbConfirm, "close(", "scrolling keyboard confirmation stages selection before coordinated close");
+    expectContains(scrollingSource, "closeOverviewsSelecting(OV)", "scrolling pointer selection commits only the selected monitor");
+    expectContains(scrollingKbMove, "moveOverviewFocusAcrossMonitors(this, across)", "scrolling edge navigation composes with monitor geometry");
+    expectContains(scrollingSource, "CScrollingOverview::globalTiles() const", "scrolling publishes visible native targets to cross-monitor navigation");
+    const auto scrollingRender = extractFunction(scrollingSource, "void CScrollingOverview::fullRender(");
+    expectOrder(scrollingRender, "target.pinned && !m_showPinnedWindows", "CBox box = target.box",
+                "hidden pinned windows cannot paint fallback rectangles over selectable scrolling targets");
+
+    for (const auto& token : {"hover-clear", "non-primary-passthrough", "mouse-click", "same-column", "new-column-before", "new-column-after", "cross-scrolling", "mixed-workspace",
+                              "terminal-workspace", "axis-owned", "touch-pan", "touch-tap", "touch-same-column", "touch-cancel", "mismatched-cancel", "touch-reacquire", "mouse-reacquire", "stale-id",
+                              "refresh-reset", "teardown-reset"})
+        expectContains(inputScript, token, "injection harness covers deterministic case " + std::string{token});
+    expectContains(inputScript, "--source-contract", "input harness offers a non-physical source-contract gate");
+    expectContains(inputScript, "requestId", "input harness correlates every readback to its request");
+    expectContains(inputScript, "ScrollingInputOracle", "source gate executes the same strict input parser and diagnostic serializer without physical hardware");
+    expectContains(inputScript, "assert_case", "input harness applies case-specific behavioral oracles");
+    for (const auto& token : {"axis-inside", "axis-outside", "axis-clamped", "mouse-canvas-pan", "touch-cancel-pending", "touch-cancel-pan", "touch-cancel-drag",
+                              "touch-reacquire", "mouse-reacquire", "outside-release", "no-op-release"})
+        expectContains(inputScript, token, "input oracle includes missing deterministic case " + std::string{token});
+    for (const auto& token : {".state ==", ".consume ==", ".pan ==", ".panDelta ==", ".select ==", ".beginDrag ==", ".finishDrag ==", ".cancelDrag ==",
+                              ".resetOwnership ==", ".drop =="})
+        expectContains(inputScript, token, "input oracle asserts exact diagnostic field " + std::string{token});
+    expectContains(inputSource, "parseInputSequence", "production and oracle share the strict finite sequence parser");
+    expectContains(inputSource, "validRequestID(specs.front())", "input injection uses the shared request ID validator");
+    expectContains(inputSource, "inputDiagnosticJson", "production and oracle share request-correlated JSON serialization");
+    expectContains(scrollingSource, "parseInputSequence(sequence)", "runtime injection delegates strict parsing to the pure boundary");
+    expectContains(scrollingSource, "inputDiagnosticJson(parsed.requestId", "runtime injection delegates readback serialization to the oracle-covered boundary");
+
+    expectContains(makefile, "IOverviewSession.cpp", "Make production sources include the overview factory");
+    expectContains(makefile, "ScrollingOverview.cpp", "Make production sources include the scrolling renderer");
+    expectContains(makefile, "ScrollingInputState.cpp", "Make production and logic tests include the pure input model");
+    expectContains(makefile, "ScrollingMutationTransaction.cpp", "Make production and logic tests include the pure transaction model");
+    expectContains(makefile, "ScrollingMutationTransaction.hpp", "Make headers include the transaction contract");
+    expectContains(makefile, "scripts/inject-scrolling-input.sh", "Make source tests track the deterministic input harness");
+    expectContains(makefile, "IOverviewSession.hpp", "Make headers include the overview interface");
+    expectContains(makefile, "ScrollingOverview.hpp", "Make headers include the scrolling renderer contract");
 
     if (failures != 0)
         return 1;

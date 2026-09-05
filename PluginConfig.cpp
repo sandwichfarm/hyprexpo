@@ -60,6 +60,13 @@ void registerHyprexpoConfigValues() {
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:show_cursor", "show cursor during overview", HyprexpoConfig::SHOW_CURSOR_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:show_pinned_windows", "show pinned windows in previews", HyprexpoConfig::SHOW_PINNED_WINDOWS_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:drag_drop_enable", "enable drag/drop window movement", HyprexpoConfig::DRAG_DROP_ENABLE_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:scrolling_thumbnail_budget", "monitor-relative scrolling thumbnail pixel budget",
+                                                         HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_DEFAULT,
+                                                         Config::Values::SIntValueOptions{.min = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN,
+                                                                                         .max = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MAX}));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:scrolling_input_debug", "enable deterministic scrolling input injection diagnostics",
+                                                         HyprexpoConfig::SCROLLING_INPUT_DEBUG_DEFAULT,
+                                                         Config::Values::SIntValueOptions{.min = 0, .max = 1}));
 
     // keyboard navigation + styling
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:keynav_enable", "key navigation enable", HyprexpoConfig::KEYNAV_ENABLE_DEFAULT));

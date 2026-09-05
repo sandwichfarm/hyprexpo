@@ -183,7 +183,8 @@ void COverview::beginWindowDrag() {
         return;
 
     std::vector<Hyprexpo::SGlobalTile> tiles;
-    for (const auto& OV : g_overviews) {
+    for (const auto& session : g_overviews) {
+        auto* const OV = dynamic_cast<COverview*>(session.get());
         if (!OV)
             continue;
         auto overviewTiles = OV->globalTiles();
@@ -242,7 +243,8 @@ void COverview::updateWindowDrag() {
     }
 
     std::vector<Hyprexpo::SGlobalTile> tiles;
-    for (const auto& OV : g_overviews) {
+    for (const auto& session : g_overviews) {
+        auto* const OV = dynamic_cast<COverview*>(session.get());
         if (!OV)
             continue;
         auto overviewTiles = OV->globalTiles();
@@ -301,8 +303,8 @@ bool COverview::finishWindowDrag() {
     const bool CONSUMED   = STATE.moved;
 
     if (TRANSITION.drop && g_overviewDrag.window && reinterpret_cast<uint64_t>(g_overviewDrag.window.get()) == TRANSITION.drop->windowKey) {
-        auto* const SOURCEOV  = overviewForMonitorKey(TRANSITION.drop->sourceMonitorKey);
-        auto* const TARGETOV  = overviewForMonitorKey(TRANSITION.drop->targetMonitorKey);
+        auto* const SOURCEOV  = gridOverviewForMonitorKey(TRANSITION.drop->sourceMonitorKey);
+        auto* const TARGETOV  = gridOverviewForMonitorKey(TRANSITION.drop->targetMonitorKey);
         const auto  TARGETMON = TARGETOV ? TARGETOV->pMonitor.lock() : PHLMONITOR{};
         const int   SOURCE    = TRANSITION.drop->sourceTileIndex;
         const int   TARGET    = TRANSITION.drop->targetTileIndex;
@@ -408,13 +410,14 @@ void COverview::redrawDraggedWorkspace(int64_t workspaceID) {
         return;
 
     const auto OVERVIEWKEY = overviewMonitorKey(pMonitor.lock());
+    const auto GENERATION = m_sessionGeneration;
     if (OVERVIEWKEY == 0)
         return;
 
     redrawSettleTimer = makeShared<CEventLoopTimer>(
         75ms,
-        [OVERVIEWKEY](SP<CEventLoopTimer> self, void*) {
-            auto* const OVERVIEW = overviewForMonitorKey(OVERVIEWKEY);
+        [OVERVIEWKEY, GENERATION](SP<CEventLoopTimer> self, void*) {
+            auto* const OVERVIEW = dynamic_cast<COverview*>(overviewForSession(OVERVIEWKEY, GENERATION));
             if (!OVERVIEW || OVERVIEW->redrawSettleTimer.get() != self.get()) {
                 self->cancel();
                 return;
@@ -743,7 +746,7 @@ void COverview::onSwipeEnd(bool switchToSelection) {
 static int         g_submapRefs     = 0;
 static std::string g_previousSubmap = "";
 
-void COverview::enterSubmapIfEnabled() {
+void enterOverviewSubmap(bool& submapActive) {
     static auto* const* PKEYNAV = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_enable")->getDataStaticPtr();
     if (!**PKEYNAV || submapActive)
         return;
@@ -757,15 +760,14 @@ void COverview::enterSubmapIfEnabled() {
         //
         // The capture is global, not per-overview: only the first overview to open sees
         // the user's real submap. The others would capture "hyprexpo" and restore that.
-        previousSubmap = g_pKeybindManager->getCurrentSubmap().name;
-        g_previousSubmap = previousSubmap;
+        g_previousSubmap = g_pKeybindManager->getCurrentSubmap().name;
         // switch to a dedicated submap for hyprexpo navigation
         (void)Config::Actions::setSubmap("hyprexpo");
     }
     submapActive = true;
 }
 
-void COverview::resetSubmapIfNeeded() {
+void leaveOverviewSubmap(bool& submapActive) {
     if (!submapActive)
         return;
 
@@ -773,8 +775,15 @@ void COverview::resetSubmapIfNeeded() {
         g_submapRefs = 0;
         // Restore what was captured on the way in, not this instance's copy: the overview
         // that closes last is not necessarily the one that opened first.
-        previousSubmap = g_previousSubmap;
-        (void)Config::Actions::setSubmap(previousSubmap);
+        (void)Config::Actions::setSubmap(g_previousSubmap);
     }
     submapActive = false;
+}
+
+void COverview::enterSubmapIfEnabled() {
+    enterOverviewSubmap(submapActive);
+}
+
+void COverview::resetSubmapIfNeeded() {
+    leaveOverviewSubmap(submapActive);
 }

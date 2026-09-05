@@ -105,3 +105,13 @@ plugin {
 ```
 
 Set `cancel_key = none` or `cancel_key = off` to disable key-based cancel matching.
+
+## Scrolling overview arbitration
+
+The same focus and confirm dispatchers operate on individual scrolling targets.
+Keyboard input never shares pointer/touch ownership: closing, canceling,
+refreshing, or confirming first clears a pending press, pan, drag proxy, and
+drop intent. This prevents a later pointer release from applying a stale move.
+Arrow focus is spatial across target windows and mixed workspace rows; confirm
+selects the focused target or row. The existing default grid keeps its original
+workspace-tile behavior.

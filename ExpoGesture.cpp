@@ -1,6 +1,6 @@
 #include "ExpoGesture.hpp"
 
-#include "Overview.hpp"
+#include "IOverviewSession.hpp"
 
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
@@ -12,6 +12,8 @@ void CExpoGesture::begin(const ITrackpadGesture::STrackpadGestureBegin& e) {
 
     m_lastDelta   = 0.F;
     m_firstUpdate = true;
+    m_monitor.reset();
+    m_sessionGeneration = 0;
 
     const auto monitor = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
     if (!monitor || !monitor->m_activeWorkspace)
@@ -19,7 +21,8 @@ void CExpoGesture::begin(const ITrackpadGesture::STrackpadGestureBegin& e) {
 
     m_monitor = monitor;
 
-    auto* const OV = overview();
+    auto* const OV = overviewForMonitor(monitor);
+    m_sessionGeneration = OV ? OV->sessionGeneration() : 0;
     if (m_action == EExpoGestureAction::Cancel) {
         if (!OV || OV->closeCommitted())
             return;
@@ -28,16 +31,18 @@ void CExpoGesture::begin(const ITrackpadGesture::STrackpadGestureBegin& e) {
         return;
     }
 
-    if (!OV)
-        createOverview(monitor, true);
+    if (!OV) {
+        if (auto* const CREATED = createOverview(monitor, true))
+            m_sessionGeneration = CREATED->sessionGeneration();
+    }
     else if (!OV->closeCommitted()) {
         OV->selectHoveredWorkspace();
         OV->setClosing(true);
     }
 }
 
-COverview* CExpoGesture::overview() const {
-    return overviewForMonitor(m_monitor.lock());
+IOverviewSession* CExpoGesture::overview() const {
+    return overviewForSession(overviewMonitorKey(m_monitor.lock()), m_sessionGeneration);
 }
 
 void CExpoGesture::update(const ITrackpadGesture::STrackpadGestureUpdate& e) {

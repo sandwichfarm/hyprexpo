@@ -3,7 +3,7 @@
 #include <hyprland/src/managers/input/trackpad/gestures/ITrackpadGesture.hpp>
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 
-class COverview;
+class IOverviewSession;
 
 enum class EExpoGestureAction {
     Expo,
@@ -20,11 +20,12 @@ class CExpoGesture : public ITrackpadGesture {
     virtual void end(const ITrackpadGesture::STrackpadGestureEnd& e);
 
   private:
-    COverview*    overview() const;
+    IOverviewSession*    overview() const;
 
     // Monitor the gesture started on, so update/end keep driving the same
     // overview even when other monitors have one open too.
     PHLMONITORREF m_monitor;
+    uint64_t m_sessionGeneration = 0;
     const EExpoGestureAction m_action;
     float                    m_lastDelta   = 0.F;
     bool                     m_firstUpdate = false;

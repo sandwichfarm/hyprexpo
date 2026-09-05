@@ -1,5 +1,9 @@
 #include "../HyprexpoLogic.hpp"
 #include "../HyprexpoConfig.hpp"
+#include "../ScrollingOverviewLogic.hpp"
+#include "../ScrollingInputState.hpp"
+#include "../ScrollingMutationTransaction.hpp"
+#include "../ScrollingRequestId.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -151,6 +155,569 @@ void checkGeometryForMonitor(const Hyprexpo::SSize& total) {
             expect(near(layouts[0].box.y, (total.h - tile.h) / 2.0), "count 2 row is vertically centered");
         }
     }
+}
+
+Hyprexpo::Scrolling::STapeSpec scrollingTape(Hyprexpo::Scrolling::EDirection direction) {
+    using namespace Hyprexpo::Scrolling;
+    return {
+        .direction = direction,
+        .columns = {
+            {.token = 10, .extent = 300.0, .targets = {{.token = 101, .proportion = 1.0}}},
+            {.token = 20, .extent = 200.0, .targets = {{.token = 201, .proportion = 1.0}, {.token = 202, .proportion = 3.0}}},
+            {.token = 30, .extent = 400.0, .targets = {{.token = 301, .proportion = 1.0}}},
+        },
+    };
+}
+
+Hyprexpo::Scrolling::SScene scrollingScene() {
+    using namespace Hyprexpo::Scrolling;
+    return buildScene(
+        {
+            {.workspaceID = 1, .kind = EWorkspaceKind::Scrolling, .tape = scrollingTape(EDirection::Right)},
+            {.workspaceID = 2, .kind = EWorkspaceKind::Empty, .tape = {}},
+            {.workspaceID = 3, .kind = EWorkspaceKind::Mixed, .tape = {}},
+        },
+        2,
+        {.viewportWidth = 1000.0, .viewportHeight = 500.0, .rowHeight = 300.0, .rowGap = 40.0, .columnGap = 10.0, .terminalWorkspaceID = 4});
+}
+
+void checkScrollingTapeDirections() {
+    using namespace Hyprexpo::Scrolling;
+
+    for (const auto direction : {EDirection::Right, EDirection::Left, EDirection::Down, EDirection::Up}) {
+        const auto layout = layoutTape(scrollingTape(direction), {25.0, 50.0}, 600.0, 10.0);
+        expect(layout.valid, "scrolling tape accepts complete positive topology");
+        expect(layout.targets.size() == 4, "scrolling tape retains every offscreen target");
+        expect(layout.targets[0].token == 101 && layout.targets[1].token == 201 && layout.targets[2].token == 202 && layout.targets[3].token == 301,
+               "scrolling tape output preserves native target identity/order");
+        expect(layout.targets[1].nativeColumnIndex == 1 && layout.targets[2].nativeRowIndex == 1,
+               "scrolling tape retains native column/row indices");
+
+        for (size_t i = 0; i < layout.targets.size(); ++i) {
+            const auto& box = layout.targets[i].box;
+            expect(box.w > 0.0 && box.h > 0.0 && std::isfinite(box.x) && std::isfinite(box.y), "scrolling target boxes are finite and positive");
+            for (size_t j = i + 1; j < layout.targets.size(); ++j) {
+                const auto& other = layout.targets[j].box;
+                const bool overlap = box.x < other.x + other.w && box.x + box.w > other.x && box.y < other.y + other.h && box.y + box.h > other.y;
+                expect(!overlap, "scrolling target boxes never overlap");
+            }
+        }
+
+        const auto& firstColumn = layout.targets[0].box;
+        const auto& lastColumn  = layout.targets[3].box;
+        if (direction == EDirection::Right)
+            expect(firstColumn.x < lastColumn.x, "right direction places native order left-to-right");
+        else if (direction == EDirection::Left)
+            expect(firstColumn.x > lastColumn.x, "left direction reverses presentation without reversing identity order");
+        else if (direction == EDirection::Down)
+            expect(firstColumn.y < lastColumn.y, "down direction places native order top-to-bottom");
+        else
+            expect(firstColumn.y > lastColumn.y, "up direction reverses presentation without reversing identity order");
+
+        const auto& upper = layout.targets[1].box;
+        const auto& lower = layout.targets[2].box;
+        const double firstShare = direction == EDirection::Right || direction == EDirection::Left ? upper.h / (upper.h + lower.h) : upper.w / (upper.w + lower.w);
+        expect(near(firstShare, 0.25), "target row proportions are preserved on the cross axis");
+    }
+
+    auto invalid = scrollingTape(EDirection::Right);
+    invalid.columns[0].extent = std::numeric_limits<double>::infinity();
+    expect(!layoutTape(invalid, {}, 600.0, 10.0).valid, "scrolling tape rejects non-finite column extent");
+    invalid = scrollingTape(EDirection::Right);
+    invalid.columns[1].targets[0].proportion = 0.0;
+    expect(!layoutTape(invalid, {}, 600.0, 10.0).valid, "scrolling tape rejects non-positive target proportion");
+}
+
+void checkScrollingSceneAndInputMath() {
+    using namespace Hyprexpo::Scrolling;
+
+    const auto scene = scrollingScene();
+    expect(scene.valid && scene.workspaces.size() == 4, "scene includes scrolling, empty, mixed, and terminal rows");
+    expect(scene.targets.size() == 4, "scene retains the full native tape");
+
+    const double initial = initialPan(scene, 2, 500.0);
+    expect(near(initial, 240.0), "active workspace row is initially centered");
+    expect(near(panBy(scene, initial, -10000.0, 500.0), 0.0), "mouse-axis pan clamps at the first row");
+    expect(near(panBy(scene, initial, 10000.0, 500.0), scene.contentHeight - 500.0), "touch pan clamps at the terminal row");
+
+    const auto& target = scene.targets.front();
+    const auto targetHit = hitTest(scene, {target.box.x + target.box.w / 2.0, target.box.y + target.box.h / 2.0 - initial}, initial);
+    expect(targetHit.kind == EHitKind::Target && targetHit.targetToken == target.token, "hit test returns the exact target");
+    const auto emptyHit = hitTest(scene, {500.0, scene.workspaces[1].box.y + 20.0 - initial}, initial);
+    expect(emptyHit.kind == EHitKind::EmptyWorkspace && emptyHit.workspaceID == 2, "hit test returns an ordinary empty row");
+    const auto mixedHit = hitTest(scene, {500.0, scene.workspaces[2].box.y + 20.0 - initial}, initial);
+    expect(mixedHit.kind == EHitKind::MixedWorkspace && mixedHit.workspaceID == 3, "hit test returns an ordinary mixed row");
+    const auto terminalHit = hitTest(scene, {500.0, scene.workspaces[3].box.y + 20.0 - initial}, initial);
+    expect(terminalHit.kind == EHitKind::TerminalWorkspace && terminalHit.workspaceID == 4, "hit test returns the terminal next-empty row");
+    expect(hitTest(scene, {-1.0, 20.0}, initial).kind == EHitKind::Outside, "hit test rejects points outside all rows");
+
+    const SFocusRef first{.kind = EHitKind::Target, .workspaceID = 1, .targetToken = 101};
+    const auto right = moveFocus(scene, first, EFocusDirection::Right);
+    expect(right.kind == EHitKind::Target && right.targetToken == 202, "spatial focus chooses the closest aligned target across columns deterministically");
+    const auto down = moveFocus(scene, first, EFocusDirection::Down);
+    expect(down.kind == EHitKind::EmptyWorkspace && down.workspaceID == 2, "spatial focus moves deterministically across rows");
+    expect(moveFocus(scene, first, EFocusDirection::Left).targetToken == 101, "spatial focus stays put when no candidate exists");
+}
+
+void checkScrollingDropIntents() {
+    using namespace Hyprexpo::Scrolling;
+
+    const auto scene = scrollingScene();
+    const auto& target = scene.targets[1];
+    const auto& rowTarget = scene.targets[2];
+    const SDropSource source{.workspaceID = 1, .columnIndex = 1, .rowIndex = 0, .sourceColumnWillDisappear = false};
+
+    auto intent = resolveDrop(scene, source, {rowTarget.box.x + rowTarget.box.w / 2.0, rowTarget.box.y + rowTarget.box.h * 0.9}, 0.0);
+    expect(intent.kind == EDropKind::ExistingColumn && intent.placement == EColumnPlacement::Existing && intent.rowIndex == 1,
+           "drop center resolves same-column row reorder");
+
+    intent = resolveDrop(scene, {.workspaceID = 1, .columnIndex = 0, .rowIndex = 0}, {target.box.x + 1.0, target.box.y + target.box.h / 2.0}, 0.0);
+    expect(intent.kind == EDropKind::NewColumnBefore && intent.placement == EColumnPlacement::Before, "primary start edge creates a column before");
+    intent = resolveDrop(scene, {.workspaceID = 1, .columnIndex = 0, .rowIndex = 0}, {target.box.x + target.box.w - 1.0, target.box.y + target.box.h / 2.0}, 0.0);
+    expect(intent.kind == EDropKind::NewColumnAfter && intent.placement == EColumnPlacement::After, "primary end edge creates a column after");
+
+    const auto emptyY = scene.workspaces[1].box.y + 20.0;
+    intent = resolveDrop(scene, source, {500.0, emptyY}, 0.0);
+    expect(intent.kind == EDropKind::CrossWorkspace && intent.workspaceID == 2, "empty scrolling destination resolves cross-workspace drop");
+    intent = resolveDrop(scene, source, {500.0, scene.workspaces[2].box.y + 20.0}, 0.0);
+    expect(intent.kind == EDropKind::MixedFallback && intent.workspaceID == 3, "mixed destination resolves fallback drop");
+    intent = resolveDrop(scene, source, {500.0, scene.workspaces[3].box.y + 20.0}, 0.0);
+    expect(intent.kind == EDropKind::TerminalWorkspace && intent.workspaceID == 4, "terminal row resolves next-empty workspace drop");
+    expect(resolveDrop(scene, source, {-1.0, -1.0}, 0.0).kind == EDropKind::Invalid, "outside release is invalid/no-op");
+
+    intent = resolveDrop(scene, source, {target.box.x + target.box.w / 2.0, target.box.y + target.box.h * 0.25}, 0.0);
+    expect(intent.kind == EDropKind::NoOp, "same-column same-row release is an explicit no-op");
+    expect(adjustDestinationColumnIndex(1, 4, true) == 3, "destination index adjusts after an earlier source column disappears");
+    expect(adjustDestinationColumnIndex(4, 1, true) == 1, "destination index is stable when source follows destination");
+}
+
+void checkScrollingInputCoordinates() {
+    using namespace Hyprexpo;
+    using namespace Hyprexpo::Scrolling;
+
+    const SMonitorGeometry monitor{
+        .position = {-1920.0, 120.0},
+        .logicalSize = {1280.0, 720.0},
+        .pixelSize = {1920.0, 1080.0},
+        .scale = 1.5,
+        .transform = EOutputTransform::Normal,
+    };
+    const auto local = monitorLocalPoint({-1280.0, 480.0}, monitor);
+    expect(local && near(local->x, 640.0) && near(local->y, 360.0), "global pointer converts once to monitor-local logical coordinates at fractional scale");
+    expect(!monitorLocalPoint({-640.0, 480.0}, monitor), "monitor right edge is outside the half-open logical box");
+    expect(!monitorLocalPoint({-1920.0, 840.0}, monitor), "monitor bottom edge is outside the half-open logical box");
+
+    const auto touchNormal = touchToGlobalLogical({0.25, 0.75}, monitor);
+    expect(touchNormal && near(touchNormal->x, -1600.0) && near(touchNormal->y, 660.0), "normal touch coordinates use logical monitor geometry rather than pixels");
+
+    auto transformed = monitor;
+    transformed.position = {100.0, -900.0};
+    transformed.logicalSize = {600.0, 1000.0};
+    transformed.pixelSize = {1200.0, 2000.0};
+    transformed.scale = 2.0;
+    transformed.transform = EOutputTransform::Rotate90;
+    const auto touchRotated = touchToGlobalLogical({0.2, 0.3}, transformed);
+    expect(touchRotated && near(touchRotated->x, 520.0) && near(touchRotated->y, -700.0), "rotated touch coordinates map through the output transform exactly once");
+    transformed.transform = EOutputTransform::Flipped270;
+    const auto touchFlipped = touchToGlobalLogical({0.2, 0.3}, transformed);
+    expect(touchFlipped && near(touchFlipped->x, 520.0) && near(touchFlipped->y, -100.0), "flipped rotated touch mapping follows the calibrated transform matrix");
+    expect(!touchToGlobalLogical({1.01, 0.5}, transformed), "touch coordinates outside normalized bounds are rejected");
+}
+
+void checkScrollingRequestIds() {
+    using namespace Hyprexpo::Scrolling;
+
+    expect(validRequestID("runtime.case-1_A"), "shared request ID grammar accepts dot, underscore, and dash");
+    expect(parseInputSequence("runtime.case-1_A|mouse_move:1:2").valid, "input injection accepts the shared dotted request ID grammar");
+    expect(!validRequestID(""), "shared request ID grammar rejects empty IDs");
+    expect(!validRequestID(std::string(65, 'a')), "shared request ID grammar rejects IDs longer than 64 bytes");
+    expect(!validRequestID("slash/not-allowed"), "shared request ID grammar rejects punctuation outside dot, underscore, and dash");
+}
+
+void checkScrollingOverviewTransition() {
+    using namespace Hyprexpo;
+    using namespace Hyprexpo::Scrolling;
+
+    const SSize viewport{1000.0, 500.0};
+    const SRect box{100.0, 50.0, 300.0, 200.0};
+    const auto open = overviewTransition(1.0, viewport);
+    const auto openBox = applyOverviewTransition(box, viewport, open);
+    expect(near(open.progress, 1.0) && near(open.opacity, 1.0) && near(open.scale, 1.0), "completed scrolling overview transition is fully visible and unscaled");
+    expect(near(openBox.x, box.x) && near(openBox.y, box.y) && near(openBox.w, box.w) && near(openBox.h, box.h), "completed transition preserves render geometry");
+
+    const auto closed = overviewTransition(0.0, viewport);
+    const auto closedBox = applyOverviewTransition(box, viewport, closed);
+    expect(near(closed.opacity, 0.0) && closed.scale < 1.0 && closedBox.y > box.y, "closed transition is faded, inset, and visibly displaced");
+    expect(near(transitionForSwipe(false, 50.0, 100.0), 0.5), "opening swipe advances transition progress");
+    expect(near(transitionForSwipe(true, 50.0, 100.0), 0.5), "closing swipe reverses transition progress");
+    expect(near(transitionForSwipe(false, 500.0, 100.0), 1.0) && near(transitionForSwipe(true, 500.0, 100.0), 0.0), "swipe transition progress clamps at both animation endpoints");
+}
+
+void checkScrollingMouseInputState() {
+    using namespace Hyprexpo;
+    using namespace Hyprexpo::Scrolling;
+
+    const auto scene = scrollingScene();
+    const SMonitorGeometry monitor{.position = {100.0, -50.0}, .logicalSize = {1000.0, 500.0}, .pixelSize = {1500.0, 750.0}, .scale = 1.5};
+    SInputContext context{.scene = &scene, .monitor = monitor, .pan = 0.0, .viewportHeight = 500.0, .dragThreshold = 12.0};
+    SInputState state;
+    const auto& target = scene.targets[1];
+    const SPoint targetGlobal{monitor.position.x + target.box.x + target.box.w / 2.0, monitor.position.y + target.box.y + target.box.h / 2.0};
+
+    auto result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = targetGlobal}, context);
+    expect(!result.effects.consume && result.effects.hoverChanged && result.state.hover.targetToken == target.token, "idle mouse hover changes exact target without consuming cursor motion");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {monitor.position.x - 1.0, monitor.position.y}}, context);
+    expect(!result.effects.consume && result.effects.clearHover && result.state.hover.kind == EHitKind::Outside, "outside hover clears and passes through");
+    state = result.state;
+
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context);
+    expect(result.effects.consume && result.state.mode == EInputMode::MousePressPending && result.state.pressed.targetToken == target.token,
+           "primary mouse down owns one exact target");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 6.0, targetGlobal.y + 6.0}}, context);
+    expect(result.effects.consume && result.state.mode == EInputMode::MousePressPending && !result.effects.beginDrag, "under-threshold mouse motion stays click-pending");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {targetGlobal.x + 6.0, targetGlobal.y + 6.0}, .button = 0x111, .pressed = false}, context);
+    expect(result.effects.consume && result.effects.selection && result.effects.selection->targetToken == target.token && result.effects.resetOwnership,
+           "under-threshold primary release selects exactly the pressed target once");
+    state = result.state;
+    expect(state.mode == EInputMode::Idle, "click release returns input ownership to idle");
+
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x110, .pressed = true}, context);
+    expect(!result.effects.consume && result.state.mode == EInputMode::Idle, "non-primary mouse button passes through");
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {monitor.position.x - 2.0, monitor.position.y}, .button = 0x111, .pressed = true}, context);
+    expect(!result.effects.consume && result.state.mode == EInputMode::Idle, "outside primary mouse button passes through");
+
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context);
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 13.0, targetGlobal.y}}, context);
+    expect(result.effects.consume && result.effects.beginDrag && result.state.mode == EInputMode::WindowDrag && result.effects.dropIntent.has_value(),
+           "threshold crossing begins exactly one window drag and resolves an intent");
+    state = result.state;
+    const auto mixed = scene.workspaces[2];
+    context.pan = 340.0;
+    const SPoint mixedGlobal{monitor.position.x + 500.0, monitor.position.y + mixed.box.y + 20.0 - context.pan};
+    result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = mixedGlobal}, context);
+    expect(result.effects.consume && result.effects.updateDrag && !result.effects.beginDrag && result.effects.dropIntent && result.effects.dropIntent->kind == EDropKind::MixedFallback,
+           "owned drag motion updates one mixed-workspace pure intent");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = mixedGlobal, .button = 0x111, .pressed = false}, context);
+    expect(result.effects.consume && result.effects.finishDrag && result.effects.dropIntent && result.effects.dropIntent->kind == EDropKind::MixedFallback,
+           "drag release emits one finish effect and does not mutate topology");
+
+    context.pan = 0.0;
+    state = transitionInput({}, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context).state;
+    state = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 20.0, targetGlobal.y}}, context).state;
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {monitor.position.x - 10.0, monitor.position.y}, .button = 0x111, .pressed = false}, context);
+    expect(result.effects.consume && result.effects.cancelDrag && !result.effects.finishDrag, "outside drag release cancels without a drop");
+
+    result = transitionInput({}, {.kind = EInputKind::MouseAxis, .globalLogicalPoint = targetGlobal, .axisDelta = 300.0}, context);
+    expect(result.effects.consume && near(result.effects.panDelta, 300.0), "idle mouse axis over the scene emits clamped pan and consumes");
+    result = transitionInput({}, {.kind = EInputKind::MouseAxis, .globalLogicalPoint = {monitor.position.x - 1.0, monitor.position.y}, .axisDelta = 10.0}, context);
+    expect(!result.effects.consume && near(result.effects.panDelta, 0.0), "outside mouse axis passes through");
+    state = transitionInput({}, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context).state;
+    result = transitionInput(state, {.kind = EInputKind::MouseAxis, .globalLogicalPoint = targetGlobal, .axisDelta = 50.0}, context);
+    expect(result.effects.consume && near(result.effects.panDelta, 0.0), "axis during owned press is consumed without simultaneous pan");
+}
+
+void checkScrollingTouchAndResetState() {
+    using namespace Hyprexpo;
+    using namespace Hyprexpo::Scrolling;
+
+    const auto scene = scrollingScene();
+    const SMonitorGeometry monitor{.position = {}, .logicalSize = {1000.0, 500.0}, .pixelSize = {1000.0, 500.0}, .scale = 1.0};
+    SInputContext context{.scene = &scene, .monitor = monitor, .pan = 0.0, .viewportHeight = 500.0, .dragThreshold = 12.0};
+    const auto& target = scene.targets.front();
+    const SPoint targetPoint{target.box.x + target.box.w / 2.0, target.box.y + target.box.h / 2.0};
+    const SPoint background{900.0, 320.0};
+
+    auto result = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = background, .touchId = 7}, context);
+    expect(result.effects.consume && result.state.mode == EInputMode::CanvasPan && result.state.owningTouchId == 7, "touch background down owns canvas pan");
+    auto state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = {900.0, 200.0}, .touchId = 7}, context);
+    expect(result.effects.consume && near(result.effects.panDelta, 120.0) && !result.effects.beginDrag, "matching touch background motion pans without dragging");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::TouchUp, .globalLogicalPoint = {}, .touchId = 7}, context);
+    expect(result.effects.consume && result.effects.resetOwnership && !result.effects.selection, "touch canvas up ends without selection");
+
+    result = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 9}, context);
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = {targetPoint.x + 4.0, targetPoint.y}, .touchId = 9}, context);
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::TouchUp, .globalLogicalPoint = {}, .touchId = 9}, context);
+    expect(result.effects.consume && result.effects.selection && result.effects.selection->targetToken == target.token, "touch target tap selects exact pressed window");
+
+    state = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 11}, context).state;
+    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .globalLogicalPoint = {}, .touchId = 12}, context);
+    expect(!result.effects.consume && result.state.mode == EInputMode::TouchPressPending, "mismatched touch cancel passes through without releasing ownership");
+    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .globalLogicalPoint = {}, .touchId = 11}, context);
+    expect(result.effects.consume && result.effects.cancelDrag && result.effects.resetOwnership && result.state.mode == EInputMode::Idle,
+           "matching touch cancel clears pending ownership deterministically");
+    state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetPoint, .button = 0x111, .pressed = true}, context);
+    expect(result.effects.consume && result.state.mode == EInputMode::MousePressPending, "mouse immediately reacquires after touch cancellation");
+
+    state = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 13}, context).state;
+    state = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = {targetPoint.x + 20.0, targetPoint.y}, .touchId = 13}, context).state;
+    result = transitionInput(state, {.kind = EInputKind::TouchCancel, .globalLogicalPoint = {}, .touchId = 13}, context);
+    expect(result.effects.consume && result.effects.cancelDrag && result.state.mode == EInputMode::Idle, "touch cancel tears down an active drag");
+
+    state = transitionInput({}, {.kind = EInputKind::MouseMove, .globalLogicalPoint = targetPoint}, context).state;
+    auto reset = resetInput(state, EResetReason::Refresh);
+    expect(reset.effects.resetOwnership && reset.effects.clearHover && reset.state.mode == EInputMode::Idle && reset.state.hover.kind == EHitKind::Outside,
+           "refresh reset clears hover and ownership");
+    auto repeated = resetInput(reset.state, EResetReason::Teardown);
+    expect(repeated.effects.resetOwnership && repeated.state.mode == EInputMode::Idle, "repeated teardown reset remains idempotent");
+
+    auto staleScene = scene;
+    staleScene.targets.erase(staleScene.targets.begin());
+    context.scene = &staleScene;
+    state = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 15}, SInputContext{.scene = &scene, .monitor = monitor, .pan = 0.0, .viewportHeight = 500.0, .dragThreshold = 12.0}).state;
+    result = transitionInput(state, {.kind = EInputKind::TouchMotion, .globalLogicalPoint = targetPoint, .touchId = 15}, context);
+    expect(result.effects.consume && result.effects.cancelDrag && result.effects.resetOwnership && result.state.mode == EInputMode::Idle,
+           "stale pressed target resets owned input instead of dereferencing it");
+}
+
+void checkScrollingCaptureBudget() {
+    using namespace Hyprexpo::Scrolling;
+
+    const std::vector<SCaptureRequest> requests{{.token = 1, .width = 3840, .height = 2160}, {.token = 2, .width = 1920, .height = 1080}};
+    const auto defaults = planCaptureBudget(1920, 1080, 4, requests);
+    expect(defaults.valid && defaults.multiplier == 4, "capture budget keeps the default multiplier");
+    expect(defaults.budgetPixels == 4ULL * 1920ULL * 1080ULL, "capture budget is multiplier times monitor pixels");
+    expect(defaults.allocations[0].width == 1920 && defaults.allocations[0].height == 1080, "each target is capped independently to monitor pixels");
+    expect(near(defaults.scale, 1.0), "capture budget keeps full scale when capped requests fit");
+
+    const auto constrained = planCaptureBudget(100, 100, 1, {{.token = 1, .width = 100, .height = 100}, {.token = 2, .width = 100, .height = 100}});
+    expect(near(constrained.scale, std::sqrt(0.5)), "capture budget applies one shared square-root scale");
+    expect(constrained.allocations[0].width == constrained.allocations[1].width, "shared scale produces equal dimensions for equal requests");
+
+    expect(planCaptureBudget(100, 100, -9, {}).multiplier == 1, "capture multiplier clamps to one");
+    expect(planCaptureBudget(100, 100, 99, {}).multiplier == 16, "capture multiplier clamps to sixteen");
+    const auto tiny = planCaptureBudget(100, 100, 1, {{.token = 9, .width = 15, .height = 100}});
+    expect(!tiny.allocations[0].capture && tiny.allocations[0].width == 0 && tiny.allocations[0].height == 0,
+           "scaled dimensions below sixteen use a non-textured fallback");
+    expect(!planCaptureBudget(0, 100, 4, requests).valid, "capture budget rejects invalid monitor dimensions");
+}
+
+Hyprexpo::Scrolling::SMutationState mutationFixture() {
+    using namespace Hyprexpo::Scrolling;
+    return {.workspaces = {
+                {.workspaceID = 1,
+                 .modelIdentity = 101,
+                 .kind = EMutationWorkspaceKind::Scrolling,
+                 .direction = "right",
+                 .offset = 37.0,
+                 .focusedTargetIdentity = 12,
+                 .focusedWindowIdentity = 112,
+                 .columns = {{.identity = 201, .width = 0.45, .targets = {{.identity = 11, .windowIdentity = 111, .size = 0.35}, {.identity = 12, .windowIdentity = 112, .size = 0.65}}},
+                             {.identity = 202, .width = 0.70, .targets = {{.identity = 13, .windowIdentity = 113, .size = 1.0}}}},
+                 .members = {11, 12, 13}},
+                {.workspaceID = 2,
+                 .modelIdentity = 102,
+                 .kind = EMutationWorkspaceKind::Scrolling,
+                 .direction = "right",
+                 .offset = 9.0,
+                 .focusedTargetIdentity = 21,
+                 .focusedWindowIdentity = 121,
+                 .columns = {{.identity = 203, .width = 0.55, .targets = {{.identity = 21, .windowIdentity = 121, .size = 1.0}}}},
+                 .members = {21}},
+                {.workspaceID = 3,
+                 .modelIdentity = 0,
+                 .kind = EMutationWorkspaceKind::Mixed,
+                 .direction = {},
+                 .offset = 0.0,
+                 .columns = {},
+                 .members = {31}},
+            }};
+}
+
+void expectMutationCommit(const Hyprexpo::Scrolling::SMutationRequest& request, size_t workspaceIndex, size_t columnIndex, size_t rowIndex, const std::string& label) {
+    using namespace Hyprexpo::Scrolling;
+    const auto simulation = simulateMutation(mutationFixture(), request);
+    expect(simulation.result.outcome == EMutationOutcome::Committed, label + " commits");
+    expect(simulation.result.violatedInvariantIDs.empty(), label + " satisfies exact postconditions");
+    expect(simulation.state.workspaces.at(workspaceIndex).columns.at(columnIndex).targets.at(rowIndex).identity == request.targetIdentity,
+           label + " lands at the exact native position");
+    expect(simulation.state.workspaces.front().direction == "right" && near(simulation.state.workspaces.front().offset, 37.0),
+           label + " preserves controller direction and offset");
+}
+
+void checkScrollingMutationTransactions() {
+    using namespace Hyprexpo::Scrolling;
+
+    const auto emptyPreState = simulateMutation({}, {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
+                                                     .placement = EColumnPlacement::Existing});
+    expect(emptyPreState.result.outcome == EMutationOutcome::Rejected, "missing pre-state rejects without indexing an absent source workspace");
+
+    const auto debugRequest = parseMutationDebugRequest("native.case-1 1 402653184 existing-column 1 2 1");
+    expect(debugRequest.valid && debugRequest.requestID == "native.case-1" && debugRequest.targetStableID == 402653184 && debugRequest.kind == EDropKind::ExistingColumn,
+           "native mutation debug request accepts the shared dotted ID and exact destination");
+    const auto debugFault = parseMutationDebugRequest("rollback.case 1 402653184 new-before 1 0 0 apply:add-target:after");
+    expect(debugFault.valid && debugFault.fault && debugFault.fault->phase == EMutationPhase::Apply && debugFault.fault->step == EMutationStep::AddTarget &&
+               debugFault.fault->when == EFaultWhen::After,
+           "native mutation debug request admits one bounded post-add rollback fault");
+    expect(!parseMutationDebugRequest("bad/id 1 1 same-column 1 0 0").valid, "native mutation debug request shares the safe request ID grammar");
+    expect(!parseMutationDebugRequest("case 1 1 unknown 1 0 0").valid, "native mutation debug request rejects unknown destination kinds");
+    expect(!parseMutationDebugRequest("case 1 1 same-column 1 0 0 apply:remove-target:before").valid, "native mutation debug request rejects unapproved fault surfaces");
+
+    expectMutationCommit({.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
+                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1},
+                         0, 0, 1, "same-column reorder");
+    expectMutationCommit({.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
+                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1},
+                         0, 0, 1, "existing-column insertion");
+    expectMutationCommit({.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::NewColumnBefore,
+                          .placement = EColumnPlacement::Before, .destinationColumnIndex = 0, .destinationRowIndex = 0},
+                         0, 0, 0, "new-column before with disappearing source");
+    expectMutationCommit({.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::NewColumnAfter,
+                          .placement = EColumnPlacement::After, .destinationColumnIndex = 1, .destinationRowIndex = 0},
+                         0, 1, 0, "new-column after with disappearing source");
+    expectMutationCommit({.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 2, .kind = EDropKind::CrossWorkspace,
+                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1},
+                         1, 0, 1, "cross-workspace insertion");
+
+    auto mixed = simulateMutation(mutationFixture(), {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 3, .kind = EDropKind::MixedFallback});
+    expect(mixed.result.outcome == EMutationOutcome::Committed && mixed.result.violatedInvariantIDs.empty(), "mixed fallback commits controller ownership only");
+    expect(mixed.state.workspaces[2].members == std::vector<uint64_t>({31, 11}) && mixed.state.workspaces[2].columns.empty(),
+           "mixed fallback never invents native scrolling rows");
+
+    auto terminalState = mutationFixture();
+    auto terminal = simulateMutation(terminalState, {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 4,
+                                                     .kind = EDropKind::TerminalWorkspace, .createDestination = true});
+    expect(terminal.result.outcome == EMutationOutcome::Committed && terminal.state.workspaces.back().workspaceID == 4,
+           "terminal transaction creates the release-time next-empty workspace");
+    expect(terminal.state.workspaces.back().columns.size() == 1 && terminal.state.workspaces.back().columns.front().targets.front().identity == 11,
+           "terminal transaction moves exactly once into one native column");
+
+    const SMutationRequest faultRequest{.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 2, .kind = EDropKind::CrossWorkspace,
+                                         .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1};
+    const auto successful = simulateMutation(mutationFixture(), faultRequest);
+    expect(successful.result.outcome == EMutationOutcome::Committed && !successful.boundaries.empty(), "fault fixture has a complete successful operation trace");
+    expect(successful.controllerMoveCount == 1 && successful.reverseMoveCount == 0, "cross-workspace commit invokes the controller exactly once");
+    const auto reversed = simulateMutation(mutationFixture(), faultRequest,
+                                           SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::ReResolve, .when = EFaultWhen::After});
+    expect(reversed.result.outcome == EMutationOutcome::RolledBack && reversed.controllerMoveCount == 1 && reversed.reverseMoveCount == 1,
+           "post-controller failure invokes exactly one reverse move before exact rollback");
+    const std::vector<std::pair<std::string, SMutationRequest>> matrix{
+        {"same-column", {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
+                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1}},
+        {"existing-column", {.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
+                              .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1}},
+        {"new-before", {.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::NewColumnBefore,
+                         .placement = EColumnPlacement::Before, .destinationColumnIndex = 0}},
+        {"new-after", {.targetIdentity = 13, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::NewColumnAfter,
+                        .placement = EColumnPlacement::After, .destinationColumnIndex = 1}},
+        {"cross", faultRequest},
+        {"mixed", {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 3, .kind = EDropKind::MixedFallback}},
+        {"terminal", {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 4, .kind = EDropKind::TerminalWorkspace, .createDestination = true}},
+    };
+    for (const auto& [label, request] : matrix) {
+        const auto committed = simulateMutation(mutationFixture(), request);
+        expect(committed.result.outcome == EMutationOutcome::Committed, label + " baseline commits before fault enumeration");
+        const auto hasBoundary = [](const SMutationSimulation& simulation, EMutationPhase phase, EMutationStep step, EFaultWhen when) {
+            return std::ranges::any_of(simulation.boundaries, [&](const auto& boundary) {
+                return boundary.phase == phase && boundary.step == step && boundary.when == when;
+            });
+        };
+        std::vector<EMutationStep> applySteps{EMutationStep::SnapshotPreState, EMutationStep::RestoreWidths, EMutationStep::RestoreSizes,
+                                              EMutationStep::Recalculate, EMutationStep::SnapshotPostState, EMutationStep::VerifyPostconditions};
+        if (request.sourceWorkspaceID == request.destinationWorkspaceID) {
+            applySteps.push_back(EMutationStep::RemoveTarget);
+            applySteps.push_back(EMutationStep::AddTarget);
+        } else {
+            applySteps.push_back(EMutationStep::ControllerMove);
+            applySteps.push_back(EMutationStep::ReResolve);
+            if (request.kind != EDropKind::MixedFallback)
+                applySteps.push_back(EMutationStep::AddTarget);
+        }
+        for (const auto step : applySteps)
+            for (const auto when : {EFaultWhen::Before, EFaultWhen::After})
+                expect(hasBoundary(committed, EMutationPhase::Apply, step, when), label + " exposes every required apply boundary before and after");
+        for (const auto& boundary : committed.boundaries) {
+            if (boundary.phase != EMutationPhase::Apply)
+                continue;
+            const auto failed = simulateMutation(mutationFixture(), request, boundary);
+            const bool preSnapshotBefore = boundary.step == EMutationStep::SnapshotPreState && boundary.when == EFaultWhen::Before;
+            expect(failed.result.outcome == (preSnapshotBefore ? EMutationOutcome::Rejected : EMutationOutcome::RolledBack),
+                   label + " apply boundary returns the phase-correct outcome");
+            expect(failed.state == mutationFixture(), label + " apply boundary never mutates or restores exact pre-state");
+        }
+
+        const auto rollbackTrace = simulateMutation(mutationFixture(), request,
+                                                     SFaultInjection{.phase = EMutationPhase::Rollback, .step = EMutationStep::VerifyPostconditions,
+                                                                     .when = EFaultWhen::After});
+        std::vector<EMutationStep> rollbackSteps{EMutationStep::RestorePreState, EMutationStep::RestoreWidths, EMutationStep::RestoreSizes,
+                                                 EMutationStep::Recalculate, EMutationStep::SnapshotPostState, EMutationStep::VerifyPostconditions};
+        if (request.sourceWorkspaceID != request.destinationWorkspaceID) {
+            rollbackSteps.push_back(EMutationStep::ReverseControllerMove);
+            rollbackSteps.push_back(EMutationStep::ReResolve);
+        }
+        for (const auto step : rollbackSteps)
+            for (const auto when : {EFaultWhen::Before, EFaultWhen::After})
+                expect(hasBoundary(rollbackTrace, EMutationPhase::Rollback, step, when), label + " exposes every required rollback boundary before and after");
+        for (const auto& boundary : rollbackTrace.boundaries) {
+            if (boundary.phase != EMutationPhase::Rollback)
+                continue;
+            const auto fatal = simulateMutation(mutationFixture(), request, boundary);
+            expect(fatal.result.outcome == EMutationOutcome::RollbackFailed && !fatal.result.violatedInvariantIDs.empty(),
+                   label + " rollback boundary is fatal-safe with invariant IDs");
+        }
+    }
+
+    const auto sameColumn = simulateMutation(mutationFixture(), matrix[0].second);
+    expect(near(sameColumn.state.workspaces[0].columns[0].targets[0].size, 0.65) && near(sameColumn.state.workspaces[0].columns[0].targets[1].size, 0.35),
+           "same-column reorder preserves exact per-target proportions while changing order");
+    const auto existingColumn = simulateMutation(mutationFixture(), matrix[1].second);
+    const auto& inserted = existingColumn.state.workspaces[0].columns[0].targets;
+    const double insertedSum = inserted[0].size + inserted[1].size + inserted[2].size;
+    expect(near(insertedSum, 1.0) && near(inserted[1].size, 1.0 / 3.0), "existing-column insertion allocates one bounded native row share and sums to one");
+    expect(near(inserted[0].size / inserted[2].size, 0.35 / 0.65), "existing destination rows preserve their relative size ratio");
+    expect(near(successful.state.workspaces[1].columns[0].width, 0.55), "cross insertion preserves the existing destination column width");
+
+    auto duplicate = successful.state;
+    duplicate.workspaces[1].members.push_back(11);
+    const auto duplicateViolations = verifyPostconditions(successful.result.before, duplicate, successful.result.plan, false);
+    expect(std::ranges::find(duplicateViolations, "membership.exact-once") != duplicateViolations.end(), "exact-once comparator rejects duplicate targets");
+    auto lost = successful.state;
+    std::erase(lost.workspaces[1].members, 11);
+    const auto lostViolations = verifyPostconditions(successful.result.before, lost, successful.result.plan, false);
+    expect(std::ranges::find(lostViolations, "membership.exact-once") != lostViolations.end(), "exact-once comparator rejects lost targets");
+    auto foreign = successful.state;
+    foreign.workspaces[1].members.push_back(999);
+    const auto foreignViolations = verifyPostconditions(successful.result.before, foreign, successful.result.plan, false);
+    expect(std::ranges::find(foreignViolations, "membership.exact-once") != foreignViolations.end(), "exact-once comparator rejects foreign targets");
+    auto misplaced = successful.state;
+    std::swap(misplaced.workspaces[1].columns[0].targets[0], misplaced.workspaces[1].columns[0].targets[1]);
+    const auto misplacedViolations = verifyPostconditions(successful.result.before, misplaced, successful.result.plan, false);
+    expect(std::ranges::find(misplacedViolations, "moved.expected-location") != misplacedViolations.end(), "postconditions reject a misplaced moved target");
+    auto widened = successful.state;
+    widened.workspaces[1].columns[0].width = 0.25;
+    const auto widthViolations = verifyPostconditions(successful.result.before, widened, successful.result.plan, false);
+    expect(std::ranges::find(widthViolations, "unaffected.width") != widthViolations.end(), "postconditions reject changed unaffected widths");
+    auto resized = successful.state;
+    resized.workspaces[1].columns[0].targets[0].size = 0.25;
+    const auto sizeViolations = verifyPostconditions(successful.result.before, resized, successful.result.plan, false);
+    expect(std::ranges::find(sizeViolations, "size.expected") != sizeViolations.end(), "postconditions reject a changed normalized destination row size");
+    auto invalidAggregate = successful.state;
+    invalidAggregate.workspaces[1].columns[0].targets[0].size += 0.1;
+    const auto aggregateViolations = verifyPostconditions(successful.result.before, invalidAggregate, successful.result.plan, false);
+    expect(std::ranges::find(aggregateViolations, "size.aggregate") != aggregateViolations.end(), "postconditions reject non-unit destination row totals");
+    auto staleSource = successful.state;
+    staleSource.workspaces[0].columns[0].targets.push_back({.identity = 11, .windowIdentity = 111, .size = 0.5});
+    const auto staleSourceViolations = verifyPostconditions(successful.result.before, staleSource, successful.result.plan, false);
+    expect(std::ranges::find(staleSourceViolations, "topology.exact-once") != staleSourceViolations.end(),
+           "global exact-once rejects a stale source topology copy plus destination copy");
+
+    const auto terminalRollback = simulateMutation(mutationFixture(), matrix.back().second,
+                                                    SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::SnapshotPostState,
+                                                                    .when = EFaultWhen::Before});
+    expect(terminalRollback.result.outcome == EMutationOutcome::RolledBack && terminalRollback.state == mutationFixture(),
+           "terminal rollback proves and removes the created empty destination from exact readback");
+
+    expect(nextUnusedOrdinaryWorkspaceID({1, 3, -99, 4}) == 2, "terminal allocation chooses the first globally unused positive ordinary workspace ID");
+    expect(nextUnusedOrdinaryWorkspaceID({1, 2, 3}) == 4, "terminal allocation advances past a dense positive workspace prefix");
 }
 
 }
@@ -356,6 +923,16 @@ int main() {
     checkGeometryForMonitor(makeSize(1600, 900));
     checkGeometryForMonitor(makeSize(900, 1600));
     checkGeometryForMonitor(makeSize(2560, 1080));
+    checkScrollingTapeDirections();
+    checkScrollingSceneAndInputMath();
+    checkScrollingDropIntents();
+    checkScrollingCaptureBudget();
+    checkScrollingInputCoordinates();
+    checkScrollingRequestIds();
+    checkScrollingOverviewTransition();
+    checkScrollingMouseInputState();
+    checkScrollingTouchAndResetState();
+    checkScrollingMutationTransactions();
 
     // --- global multi-monitor geometry ---
     {

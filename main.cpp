@@ -9,7 +9,8 @@
 
 #include "Dispatchers.hpp"
 #include "globals.hpp"
-#include "Overview.hpp"
+#include "IOverviewSession.hpp"
+#include "OverviewCapture.hpp"
 #include "PluginConfig.hpp"
 #include <stdexcept>
 #include <string>
@@ -29,7 +30,7 @@ typedef void (*origAddDamageB)(void*, const pixman_region32_t*);
 static void hkRenderWorkspace(void* thisptr, PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& now, const CBox& geometry) {
     auto* const OV = overviewForMonitor(pMonitor);
 
-    if (!OV || isRenderingOverview() || OV->blockOverviewRendering || !OV->shouldRenderOverviewForMonitor(pMonitor))
+    if (!OV || isRenderingOverview() || OV->blocksOverviewRendering() || !OV->shouldRenderOverviewForMonitor(pMonitor))
         ((origRenderWorkspace)(g_pRenderWorkspaceHook->m_original))(thisptr, pMonitor, pWorkspace, now, geometry);
     else
         OV->render();
@@ -41,7 +42,7 @@ static void hkAddDamageA(void* thisptr, const CBox& box) {
 
     auto* const OV = overviewForMonitor(PMONITORSP);
 
-    if (!OV || !OV->shouldRenderOverviewForMonitor(PMONITORSP) || OV->blockDamageReporting) {
+    if (!OV || !OV->shouldRenderOverviewForMonitor(PMONITORSP) || OV->blocksDamageReporting()) {
         ((origAddDamageA)g_pAddDamageHookA->m_original)(thisptr, box);
         return;
     }
@@ -55,7 +56,7 @@ static void hkAddDamageB(void* thisptr, const pixman_region32_t* rg) {
 
     auto* const OV = overviewForMonitor(PMONITORSP);
 
-    if (!OV || !OV->shouldRenderOverviewForMonitor(PMONITORSP) || OV->blockDamageReporting) {
+    if (!OV || !OV->shouldRenderOverviewForMonitor(PMONITORSP) || OV->blocksDamageReporting()) {
         ((origAddDamageB)g_pAddDamageHookB->m_original)(thisptr, rg);
         return;
     }
@@ -135,7 +136,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             info.cancelled = true;
     });
 
-    static auto PCFG = Event::bus()->m_events.config.reloaded.listen([]() { syncExpoGestureFromConfig(); });
+    static auto PCFG = Event::bus()->m_events.config.reloaded.listen([]() {
+        Hyprexpo::Capture::notifyOverviewCaptureConfigReload();
+        forEachOverview([](IOverviewSession& overview) { overview.onConfigReload(); });
+        syncExpoGestureFromConfig();
+    });
 
     registerHyprexpoDispatchers();
 

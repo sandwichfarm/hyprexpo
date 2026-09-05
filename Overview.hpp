@@ -3,6 +3,7 @@
 #define WLR_USE_UNSTABLE
 
 #include "globals.hpp"
+#include "IOverviewSession.hpp"
 #include "HyprexpoLogic.hpp"
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
@@ -20,24 +21,31 @@
 // hyprland's fault, but cba to fix.
 constexpr bool ENABLE_LOWRES = false;
 
-class COverview {
+class COverview final : public IOverviewSession {
   public:
     // The monitor is passed in rather than resolved from the cursor: with
     // several overviews alive they would all bind to the same output.
-    COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe = false);
-    ~COverview();
+    COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe = false, uint64_t sessionGeneration = 0);
+    ~COverview() override;
 
-    void render();
-    void damage();
-    void onDamageReported();
-    void onPreRender();
+    void render() override;
+    void damage() override;
+    void onDamageReported() override;
+    void onPreRender() override;
+    void onConfigReload() override {
+        onDamageReported();
+    }
+    void prepareForTeardown() override {}
+    std::expected<std::string, std::string> injectScrollingInput(const std::string&) override {
+        return std::unexpected("active overview is not a scrolling session");
+    }
 
-    void setClosing(bool closing);
-    void beginCancelSwipe();
+    void setClosing(bool closing) override;
+    void beginCancelSwipe() override;
     // True once close() has armed the teardown animation. Further gestures must
     // be ignored until the overview is destroyed, otherwise a second swipe
     // rewinds the in-flight close animation (the close "replays" from ~80%).
-    bool closeCommitted() const {
+    bool closeCommitted() const override {
         return m_closeCommitted;
     }
     bool shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const;
@@ -46,9 +54,9 @@ class COverview {
     bool ownsAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var) const;
     void onWindowMoveToWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace);
 
-    void resetSwipe();
-    void onSwipeUpdate(double delta);
-    void onSwipeEnd(bool switchToSelection);
+    void resetSwipe() override;
+    void onSwipeUpdate(double delta) override;
+    void onSwipeEnd(bool switchToSelection) override;
 
     // close without a selection
     void          close(bool switchToSelection = true);
@@ -67,6 +75,13 @@ class COverview {
     std::optional<Hyprexpo::SGlobalTile> focusedGlobalTile() const;
     std::vector<Hyprexpo::SGlobalTile>   globalTiles() const;
     bool                                 setKeyboardFocus(int tileIndex);
+
+    bool blocksOverviewRendering() const override { return blockOverviewRendering; }
+    bool blocksDamageReporting() const override { return blockDamageReporting; }
+    bool isSwiping() const override { return m_isSwiping; }
+    bool ownsPointerInput() const override;
+    PHLMONITOR monitor() const override { return pMonitor.lock(); }
+    uint64_t sessionGeneration() const override { return m_sessionGeneration; }
 
     bool          blockOverviewRendering = false;
     bool          blockDamageReporting   = false;
@@ -96,7 +111,7 @@ class COverview {
     void       redrawID(int id, bool forcelowres = false);
     void       redrawAll(bool forcelowres = false);
     void       onWorkspaceChange();
-    void       fullRender();
+    void       fullRender() override;
     Hyprexpo::SGridShape currentGridShape() const;
     double     currentOuterInset() const;
     Hyprexpo::STileLayout tileLayoutForIndex(int id, const Vector2D& totalSize, double gap, double outerInset = 0.0, bool centerPartialRows = true) const;
@@ -138,7 +153,6 @@ class COverview {
     int                          kbFocusID = -1;
     int                          hoveredID = -1;
     bool                         submapActive = false;
-    std::string                  previousSubmap = "";
 
     std::vector<int>             queuedRedrawIDs;
     std::vector<int64_t>         settlingRedrawWorkspaceIDs;
@@ -154,6 +168,7 @@ class COverview {
 
     bool                         closing = false;
     bool                         m_closeCommitted = false;
+    uint64_t                     m_sessionGeneration = 0;
     bool                         externalWorkspaceMoveDuringClose = false;
 
     CHyprSignalListener          mouseMoveHook;
@@ -173,12 +188,6 @@ class COverview {
     friend class COverviewPassElement;
 };
 
-// Overview instances, one per monitor currently showing the overview. A single
-// monitor invocation keeps exactly one entry; "all monitors" mode keeps one per
-// output. Instances are owned here and torn down via destroyOverview().
-inline std::vector<std::unique_ptr<COverview>> g_overviews;
-inline PHLMONITORREF                           g_keyboardOverviewMonitor;
-
 struct SOverviewDragRuntime {
     Hyprexpo::SOverviewDragState state;
     Vector2D                     pressGlobal;
@@ -189,40 +198,7 @@ struct SOverviewDragRuntime {
 
 inline SOverviewDragRuntime g_overviewDrag;
 
-// The instance that owns keyboard input and unqualified dispatcher commands:
-// the one on the focused monitor, else the one under the cursor, else the
-// first. nullptr when no overview is open.
-COverview* activeOverview();
-COverview* overviewForMonitorKey(uint64_t key);
-COverview* overviewForGlobalPoint(const Vector2D& point);
-uint64_t   overviewMonitorKey(const PHLMONITOR& monitor);
-bool       overviewRegistered(const COverview* overview);
-std::vector<uint64_t> liveOverviewMonitorKeys();
-bool       moveOverviewFocusAcrossMonitors(COverview* source, Hyprexpo::EDirection direction);
-void       closeOverviewsSelecting(COverview* selecting);
-void       closeOverviews(bool switchToSelection);
-void       resetOverviewDrag(Hyprexpo::EOverviewDragEventType type = Hyprexpo::EOverviewDragEventType::Cancel, uint64_t monitorKey = 0);
-
-// The instance owning an animated variable, or nullptr.
-COverview* overviewForAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var);
-
-// The instance rendering on a specific monitor, or nullptr.
-COverview* overviewForMonitor(const PHLMONITOR& monitor);
-
-// Create an overview on a monitor and register it. Returns nullptr if the
-// monitor already has one, or if the arguments are unusable.
-COverview* createOverview(const PHLMONITOR& monitor, bool swipe = false);
-
-// True while at least one overview is alive.
-bool       overviewOpen();
-
-// Run fn for every live overview. Safe when the callback destroys overviews:
-// entries torn down mid-iteration are skipped.
-void       forEachOverview(const std::function<void(COverview&)>& fn);
-
-// Destroy one instance. This deletes the object, so a member function
-// destroying itself must return immediately afterwards.
-void       destroyOverview(COverview* overview);
-
-// Destroy every instance.
-void       destroyAllOverviews();
+// Grid drag indices are workspace tiles, while scrolling indices address its native scene.
+COverview* gridOverviewForMonitorKey(uint64_t key);
+COverview* gridOverviewForGlobalPoint(const Vector2D& point);
+void resetOverviewDrag(Hyprexpo::EOverviewDragEventType type = Hyprexpo::EOverviewDragEventType::Cancel, uint64_t monitorKey = 0);

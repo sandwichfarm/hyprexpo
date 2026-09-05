@@ -4,6 +4,7 @@
 #include "HyprlandConfigCompat.hpp"
 #include "HyprexpoConfig.hpp"
 #include "OverviewInternal.hpp"
+#include "OverviewCapture.hpp"
 #include "HyprexpoLogic.hpp"
 #include <hyprland/src/event/EventBus.hpp>
 #define private   public
@@ -545,16 +546,6 @@ void settleWorkspaceMoveAnimations() {
     }
 }
 
-void ensureFramebuffer(COverview::SWorkspaceImage& image, const CBox& monbox, uint32_t drmFormat) {
-    if (!image.fb)
-        image.fb = g_pHyprRenderer->createFB("hyprexpo");
-
-    if (image.fb->m_size != monbox.size()) {
-        image.fb->release();
-        image.fb->alloc(monbox.w, monbox.h, drmFormat);
-    }
-}
-
 std::vector<SWindowPreviewState> applyWorkspaceWindowGoalState(const PHLWORKSPACE& workspace) {
     std::vector<SWindowPreviewState> states;
     if (!workspace)
@@ -634,7 +625,7 @@ bool COverview::ownsAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable
     return RAW == size.get() || RAW == pos.get();
 }
 
-COverview* overviewForAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var) {
+IOverviewSession* overviewForAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var) {
     for (const auto& OV : g_overviews) {
         if (!OV)
             continue;
@@ -645,14 +636,14 @@ COverview* overviewForAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariab
     return nullptr;
 }
 
-COverview* overviewForMonitor(const PHLMONITOR& monitor) {
+IOverviewSession* overviewForMonitor(const PHLMONITOR& monitor) {
     if (!monitor)
         return nullptr;
 
     for (const auto& OV : g_overviews) {
         if (!OV)
             continue;
-        if (OV->pMonitor == monitor)
+        if (OV->monitor() == monitor)
             return OV.get();
     }
 
@@ -663,14 +654,14 @@ uint64_t overviewMonitorKey(const PHLMONITOR& monitor) {
     return monitor ? static_cast<uint64_t>(monitor->m_id) + 1 : 0;
 }
 
-COverview* overviewForMonitorKey(uint64_t key) {
+IOverviewSession* overviewForMonitorKey(uint64_t key) {
     if (key == 0)
         return nullptr;
 
     for (const auto& OV : g_overviews) {
         if (!OV)
             continue;
-        const auto MON = OV->pMonitor.lock();
+        const auto MON = OV->monitor();
         if (overviewMonitorKey(MON) == key)
             return OV.get();
     }
@@ -678,11 +669,11 @@ COverview* overviewForMonitorKey(uint64_t key) {
     return nullptr;
 }
 
-COverview* overviewForGlobalPoint(const Vector2D& point) {
+IOverviewSession* overviewForGlobalPoint(const Vector2D& point) {
     for (const auto& OV : g_overviews) {
         if (!OV)
             continue;
-        const auto MON = OV->pMonitor.lock();
+        const auto MON = OV->monitor();
         if (!MON)
             continue;
         if (point.x >= MON->m_position.x && point.x < MON->m_position.x + MON->m_size.x && point.y >= MON->m_position.y && point.y < MON->m_position.y + MON->m_size.y)
@@ -691,18 +682,46 @@ COverview* overviewForGlobalPoint(const Vector2D& point) {
     return nullptr;
 }
 
-bool overviewRegistered(const COverview* overview) {
+IOverviewSession* overviewForSession(uint64_t monitorKey, uint64_t generation) {
+    auto* const session = overviewForMonitorKey(monitorKey);
+    return session && session->sessionGeneration() == generation ? session : nullptr;
+}
+
+COverview* gridOverviewForMonitorKey(uint64_t key) {
+    return dynamic_cast<COverview*>(overviewForMonitorKey(key));
+}
+
+COverview* gridOverviewForGlobalPoint(const Vector2D& point) {
+    return dynamic_cast<COverview*>(overviewForGlobalPoint(point));
+}
+
+bool overviewRegistered(const IOverviewSession* overview) {
     return overview && std::any_of(g_overviews.begin(), g_overviews.end(), [overview](const auto& entry) { return entry.get() == overview; });
 }
 
-COverview* createOverview(const PHLMONITOR& monitor, bool swipe) {
+IOverviewSession* pointerOverview() {
+    for (const auto& session : g_overviews) {
+        if (session && session->ownsPointerInput())
+            return session.get();
+    }
+    return overviewForGlobalPoint(g_pInputManager->getMouseCoordsInternal());
+}
+
+bool COverview::ownsPointerInput() const {
+    return g_overviewDrag.state.active && g_overviewDrag.state.sourceMonitorKey == overviewMonitorKey(monitor());
+}
+
+IOverviewSession* createOverview(const PHLMONITOR& monitor, bool swipe) {
     if (!monitor || !monitor->m_activeWorkspace)
         return nullptr;
 
     if (overviewForMonitor(monitor))
         return nullptr;
 
-    g_overviews.push_back(std::make_unique<COverview>(monitor->m_activeWorkspace, monitor, swipe));
+    auto session = createOverviewSession(monitor->m_activeWorkspace, monitor, swipe);
+    if (!session)
+        return nullptr;
+    g_overviews.push_back(std::move(session));
     return g_overviews.back().get();
 }
 
@@ -710,7 +729,7 @@ bool overviewOpen() {
     return std::any_of(g_overviews.begin(), g_overviews.end(), [](const auto& entry) { return static_cast<bool>(entry); });
 }
 
-COverview* activeOverview() {
+IOverviewSession* activeOverview() {
     if (g_overviews.empty())
         return nullptr;
 
@@ -775,7 +794,7 @@ bool COverview::setKeyboardFocus(int tileIndex) {
     return true;
 }
 
-bool moveOverviewFocusAcrossMonitors(COverview* source, Hyprexpo::EDirection direction) {
+bool moveOverviewFocusAcrossMonitors(IOverviewSession* source, Hyprexpo::EDirection direction) {
     if (!overviewRegistered(source))
         return false;
 
@@ -801,24 +820,23 @@ bool moveOverviewFocusAcrossMonitors(COverview* source, Hyprexpo::EDirection dir
     if (!TARGET || !TARGET->setKeyboardFocus(DESTINATION->tileIndex))
         return false;
 
-    g_keyboardOverviewMonitor = TARGET->pMonitor;
+    g_keyboardOverviewMonitor = TARGET->monitor();
     source->damage();
     return true;
 }
 
-void forEachOverview(const std::function<void(COverview&)>& fn) {
-    std::vector<COverview*> snapshot;
+void forEachOverview(const std::function<void(IOverviewSession&)>& fn) {
+    std::vector<std::pair<uint64_t, uint64_t>> snapshot;
     snapshot.reserve(g_overviews.size());
     for (const auto& OV : g_overviews) {
         if (OV)
-            snapshot.push_back(OV.get());
+            snapshot.emplace_back(overviewMonitorKey(OV->monitor()), OV->sessionGeneration());
     }
 
-    for (auto* const OV : snapshot) {
-        // fn may tear down overviews, including this one. Skip dead entries
-        // instead of dereferencing a pointer the callback already freed.
-        const bool ALIVE = std::any_of(g_overviews.begin(), g_overviews.end(), [OV](const auto& entry) { return entry.get() == OV; });
-        if (!ALIVE)
+    for (const auto& [monitorKey, generation] : snapshot) {
+        // A callback may destroy an entry and create a replacement on the same monitor.
+        auto* const OV = overviewForSession(monitorKey, generation);
+        if (!OV)
             continue;
 
         fn(*OV);
@@ -830,7 +848,7 @@ std::vector<uint64_t> liveOverviewMonitorKeys() {
     keys.reserve(g_overviews.size());
     for (const auto& OV : g_overviews) {
         if (OV)
-            keys.push_back(overviewMonitorKey(OV->pMonitor.lock()));
+            keys.push_back(overviewMonitorKey(OV->monitor()));
     }
     return keys;
 }
@@ -852,24 +870,24 @@ void resetOverviewDrag(Hyprexpo::EOverviewDragEventType type, uint64_t monitorKe
         if (!OV)
             continue;
         OV->damage();
-        if (const auto MON = OV->pMonitor.lock())
+        if (const auto MON = OV->monitor())
             g_pHyprRenderer->damageMonitor(MON);
     }
 }
 
-void closeOverviewsSelecting(COverview* selecting) {
+void closeOverviewsSelecting(IOverviewSession* selecting) {
     resetOverviewDrag(Hyprexpo::EOverviewDragEventType::AllClose);
     g_keyboardOverviewMonitor.reset();
-    forEachOverview([selecting](COverview& overview) { overview.close(&overview == selecting); });
+    forEachOverview([selecting](IOverviewSession& overview) { overview.close(&overview == selecting); });
 }
 
 void closeOverviews(bool switchToSelection) {
     resetOverviewDrag(Hyprexpo::EOverviewDragEventType::AllClose);
     g_keyboardOverviewMonitor.reset();
-    forEachOverview([switchToSelection](COverview& overview) { overview.close(switchToSelection); });
+    forEachOverview([switchToSelection](IOverviewSession& overview) { overview.close(switchToSelection); });
 }
 
-void destroyOverview(COverview* overview) {
+void destroyOverview(IOverviewSession* overview) {
     if (!overview)
         return;
 
@@ -877,13 +895,14 @@ void destroyOverview(COverview* overview) {
     if (IT == g_overviews.end())
         return;
 
-    const auto MON = overview->pMonitor.lock();
+    const auto MON = overview->monitor();
     resetOverviewDrag(Hyprexpo::EOverviewDragEventType::MonitorDestroyed, overviewMonitorKey(MON));
     if (g_keyboardOverviewMonitor.lock() == MON)
         g_keyboardOverviewMonitor.reset();
 
     auto OWNER = std::move(*IT);
     g_overviews.erase(IT);
+    OWNER->prepareForTeardown();
     OWNER.reset();
 }
 
@@ -891,8 +910,10 @@ void destroyAllOverviews() {
     resetOverviewDrag(Hyprexpo::EOverviewDragEventType::AllClose);
     g_keyboardOverviewMonitor.reset();
 
-    std::vector<std::unique_ptr<COverview>> OWNERS;
+    std::vector<std::unique_ptr<IOverviewSession>> OWNERS;
     OWNERS.swap(g_overviews);
+    for (const auto& owner : OWNERS)
+        owner->prepareForTeardown();
     OWNERS.clear();
 }
 
@@ -901,7 +922,7 @@ void removeOverview(WP<Hyprutils::Animation::CBaseAnimatedVariable> thisptr) {
     if (!OV)
         return;
 
-    const auto MON = OV->pMonitor.lock();
+    const auto MON = OV->monitor();
     destroyOverview(OV);
 
     if (!MON)
@@ -1021,7 +1042,7 @@ COverview::~COverview() {
     resetSubmapIfNeeded();
 }
 
-COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_) : startedOn(startedOn_), swipe(swipe_) {
+COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, uint64_t sessionGeneration) : startedOn(startedOn_), m_sessionGeneration(sessionGeneration), swipe(swipe_) {
     const auto PMONITOR = monitor_;
     pMonitor            = PMONITOR;
 
@@ -1209,43 +1230,12 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_) 
 
     int          currentid = 0;
 
-    // Temporarily disable monitor rotation during framebuffer capture so
-    // workspace content renders in the logical (portrait) orientation
-    // rather than the physical panel orientation.
-    const auto savedTransform       = pMonitor->m_transform;
-    const auto savedTransformedSize = pMonitor->m_transformedSize;
-    const auto savedPixelSize       = pMonitor->m_pixelSize;
-
-    // Fix for rotated monitors: m_pixelSize contains physical panel dimensions
-    // (landscape), but we need logical portrait dimensions for the framebuffer
-    if (isTransformRotated(savedTransform)) {
-        // Swap monbox dimensions to match logical orientation
-        monbox = {{0, 0}, {monbox.h, monbox.w}};
-
-        // Override monitor state: disable rotation and set all size fields to
-        // portrait dimensions so beginRender sets up the viewport correctly
-        pMonitor->m_transform       = WL_OUTPUT_TRANSFORM_NORMAL;
-        pMonitor->m_pixelSize       = {monbox.w, monbox.h};
-        pMonitor->m_transformedSize = {monbox.w, monbox.h};
-    }
-
-    PHLWORKSPACE openSpecial = PMONITOR->m_activeSpecialWorkspace;
-    if (openSpecial)
-        PMONITOR->m_activeSpecialWorkspace.reset();
-
-    g_pHyprRenderer->m_bBlockSurfaceFeedback = true;
     settleWorkspaceMoveAnimations();
 
     startedOn->m_visible = false;
 
     for (size_t i = 0; i < images.size(); ++i) {
         COverview::SWorkspaceImage& image = images[i];
-        ensureFramebuffer(image, monbox, framebufferFormatWithAlpha(PMONITOR->m_output->state->state().drmFormat));
-
-        CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
-        g_pHyprRenderer->beginRender(PMONITOR, fakeDamage, Render::RENDER_MODE_FULL_FAKE, nullptr, image.fb);
-
-        clearWithColor(CHyprColor{0, 0, 0, 1.0});
 
         PHLWORKSPACE PWORKSPACE;
         for (const auto& w : State::workspaceState()->workspacesCopy()) {
@@ -1258,50 +1248,18 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_) 
         if (PWORKSPACE == startedOn)
             currentid = i;
 
-        if (PWORKSPACE) {
-            image.pWorkspace        = PWORKSPACE;
-            const auto previousWS    = activateWorkspaceForPreview(PMONITOR, PWORKSPACE);
-            const auto previewStates = applyExclusiveWorkspacePreviewState(PWORKSPACE);
-            const auto windowState   = PWORKSPACE == startedOn ? std::vector<SWindowPreviewState>{} : applyWorkspaceWindowGoalState(PWORKSPACE);
-
-            if (PWORKSPACE == startedOn)
-                PMONITOR->m_activeSpecialWorkspace = openSpecial;
-
-            {
-                CPinnedWindowPreviewGuard pinnedWindowPreviewGuard{showPinnedWindowsInPreview()};
-                g_pHyprRenderer->renderWorkspace(PMONITOR, PWORKSPACE, Time::steadyNow(), monbox);
-            }
-
-            restoreWorkspaceWindowGoalState(windowState);
-            restoreWorkspacePreviewStates(previewStates);
-            restoreActiveWorkspaceAfterPreview(PMONITOR, previousWS);
-            startedOn->m_visible = false;
-
-            if (PWORKSPACE == startedOn)
-                PMONITOR->m_activeSpecialWorkspace.reset();
-        } else {
-            CPinnedWindowPreviewGuard pinnedWindowPreviewGuard{showPinnedWindowsInPreview()};
-            g_pHyprRenderer->renderWorkspace(PMONITOR, PWORKSPACE, Time::steadyNow(), monbox);
-        }
+        image.pWorkspace = PWORKSPACE;
+        Hyprexpo::Capture::captureWorkspacePreview({
+            .monitor              = PMONITOR,
+            .workspace            = PWORKSPACE,
+            .startedOn            = startedOn,
+            .box                  = monbox,
+            .showPinnedWindows    = showPinnedWindowsInPreview(),
+            .blockSurfaceFeedback = true,
+        }, image.fb);
 
         image.box = tileBoxForIndex((int)i, pMonitor->m_size, GAP_WIDTH, 0.0, true);
-
-        g_pHyprRenderer->m_renderData.blockScreenShader = true;
-        g_pHyprRenderer->endRender();
-
-        // Capture normalizes rotated monitor geometry; Hyprland's output path adds one more half-turn.
-        if (const auto texture = image.fb->getTexture(); texture)
-            texture->m_transform = isTransformRotated(savedTransform) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;
     }
-
-    g_pHyprRenderer->m_bBlockSurfaceFeedback = false;
-
-    // Restore the original monitor state after capture
-    pMonitor->m_transform       = savedTransform;
-    pMonitor->m_pixelSize       = savedPixelSize;
-    pMonitor->m_transformedSize = savedTransformedSize;
-
-    PMONITOR->m_activeSpecialWorkspace = openSpecial;
     PMONITOR->m_activeWorkspace        = startedOn;
     startedOn->m_visible               = true;
     Animation::Workspace::startAnimation(startedOn, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
@@ -1332,24 +1290,27 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_) 
     kbFocusID = openedID;
 
     auto onCursorMove = [this](Event::SCallbackInfo& info) {
-        if (closing || info.cancelled)
+        if (closing)
             return;
 
-        info.cancelled = true;
-        ensureOverviewCursorVisible();
-
         const Vector2D GLOBAL = g_pInputManager->getMouseCoordsInternal();
-        for (const auto& OV : g_overviews) {
+        for (const auto& session : g_overviews) {
+            auto* const OV = dynamic_cast<COverview*>(session.get());
             if (!OV)
                 continue;
-            const auto MON = OV->pMonitor.lock();
+            const auto MON = OV->monitor();
             if (!MON || OV->closing)
                 continue;
             OV->lastMousePosLocal = GLOBAL - MON->m_position;
             OV->updateHoveredFromMouse();
         }
 
-        if (auto* const SOURCE = overviewForMonitorKey(g_overviewDrag.state.sourceMonitorKey))
+        if (info.cancelled || !dynamic_cast<COverview*>(pointerOverview()))
+            return;
+        info.cancelled = true;
+        ensureOverviewCursorVisible();
+
+        if (auto* const SOURCE = gridOverviewForMonitorKey(g_overviewDrag.state.sourceMonitorKey))
             SOURCE->updateWindowDrag();
     };
 
@@ -1357,9 +1318,12 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_) 
         if (closing || info.cancelled)
             return;
 
+        if (!dynamic_cast<COverview*>(pointerOverview()))
+            return;
+
         const Vector2D GLOBAL = g_pInputManager->getMouseCoordsInternal();
-        auto* const    TARGET = overviewForGlobalPoint(GLOBAL);
-        auto* const    SOURCE = overviewForMonitorKey(g_overviewDrag.state.sourceMonitorKey);
+        auto* const    TARGET = gridOverviewForGlobalPoint(GLOBAL);
+        auto* const    SOURCE = gridOverviewForMonitorKey(g_overviewDrag.state.sourceMonitorKey);
         if (!TARGET && !SOURCE)
             return;
 
@@ -1394,7 +1358,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_) 
             return;
 
         const Vector2D GLOBAL = g_pInputManager->getMouseCoordsInternal();
-        auto* const    TARGET = overviewForGlobalPoint(GLOBAL);
+        auto* const    TARGET = gridOverviewForGlobalPoint(GLOBAL);
         if (!TARGET)
             return;
 
@@ -1404,9 +1368,22 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_) 
     };
 
     mouseMoveHook = Event::bus()->m_events.input.mouse.move.listen([onCursorMove](const Vector2D&, Event::SCallbackInfo& info) { onCursorMove(info); });
-    touchMoveHook = Event::bus()->m_events.input.touch.motion.listen([onCursorMove](const ITouch::SMotionEvent&, Event::SCallbackInfo& info) { onCursorMove(info); });
+    touchMoveHook = Event::bus()->m_events.input.touch.motion.listen([onCursorMove](const ITouch::SMotionEvent& event, Event::SCallbackInfo& info) {
+        for (const auto& session : g_overviews) {
+            if (session && session->ownsTouchInput(event.touchID))
+                return;
+        }
+        onCursorMove(info);
+    });
     mouseButtonHook = Event::bus()->m_events.input.mouse.button.listen([onCursorSelect](const IPointer::SButtonEvent& event, Event::SCallbackInfo& info) { onCursorSelect(event, info); });
-    touchDownHook = Event::bus()->m_events.input.touch.down.listen([onTouchSelect](const ITouch::SDownEvent&, Event::SCallbackInfo& info) { onTouchSelect(info); });
+    touchDownHook = Event::bus()->m_events.input.touch.down.listen([onTouchSelect](const ITouch::SDownEvent& event, Event::SCallbackInfo& info) {
+        if (event.device && !event.device->m_boundOutput.empty()) {
+            const auto MON = State::monitorState()->query().name(event.device->m_boundOutput).run();
+            if (!dynamic_cast<COverview*>(overviewForMonitor(MON)))
+                return;
+        }
+        onTouchSelect(info);
+    });
     workspaceMoveHook = Event::bus()->m_events.window.moveToWorkspace.listen([this](PHLWINDOW window, PHLWORKSPACE workspace) { onWindowMoveToWorkspace(window, workspace); });
 
     enterSubmapIfEnabled();
