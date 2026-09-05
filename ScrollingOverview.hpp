@@ -104,6 +104,7 @@ class CScrollingOverview final : public IOverviewSession {
     };
 
     bool refreshScene(const std::optional<Hyprexpo::Scrolling::SWorkspaceSnapshot>& initialSnapshot = std::nullopt);
+    bool sceneTopologyCurrent() const;
     void refreshCache();
     void releaseCacheEntry(SCacheEntry& entry);
     void releaseAllCaptureState();
@@ -160,4 +161,5 @@ class CScrollingOverview final : public IOverviewSession {
     CHyprSignalListener                       touchMotionHook;
     CHyprSignalListener                       touchUpHook;
     CHyprSignalListener                       touchCancelHook;
+    CHyprSignalListener                       workspaceMoveHook;
 };

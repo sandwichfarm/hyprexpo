@@ -160,6 +160,7 @@ SInputEffects CScrollingOverview::resetInputState(EResetReason reason) {
         touchMotionHook.reset();
         touchUpHook.reset();
         touchCancelHook.reset();
+        workspaceMoveHook.reset();
     }
     const auto reset = resetInput(m_inputState, reason);
     m_inputState = reset.state;
@@ -178,7 +179,8 @@ void CScrollingOverview::prepareForTeardown() {
 }
 
 void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const SInputState& previousState) {
-    bool needsDamage = effects.hoverChanged || effects.clearHover || effects.beginDrag || effects.updateDrag || effects.cancelDrag || effects.finishDrag;
+    bool needsDamage = effects.hoverChanged || effects.clearHover || effects.beginDrag || effects.updateDrag || effects.cancelDrag || effects.finishDrag ||
+        (effects.resetOwnership && m_damageDirty);
     if (effects.panDelta != 0.0) {
         m_pan += effects.panDelta;
         needsDamage = true;
@@ -215,7 +217,7 @@ void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const S
             });
         };
 
-        if (!intent || targetIdentity == 0 || intent->kind == EDropKind::Invalid || intent->kind == EDropKind::NoOp) {
+        if (!intent || targetIdentity == 0 || intent->kind == EDropKind::Invalid || intent->kind == EDropKind::NoOp || !sceneTopologyCurrent()) {
             refreshAfterMutation();
         } else {
             const auto sourceRow = workspaceRow(source.workspaceID);
@@ -263,6 +265,8 @@ void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const S
     if (effects.selection) {
         m_focus = {.kind = effects.selection->kind, .workspaceID = effects.selection->workspaceID, .targetToken = effects.selection->targetToken};
         updateSelectionFromFocus();
+        // The release relinquishes input before the deferred close runs.
+        setClosing(true);
         const auto generation = m_sessionGeneration;
         const auto monitorKey = overviewMonitorKey(m_monitor.lock());
         g_pEventLoopManager->doLater([monitorKey, generation]() {
@@ -284,6 +288,7 @@ SInputEffects CScrollingOverview::processInput(const SInputEvent& event) {
 }
 
 void CScrollingOverview::installInputListeners() {
+    workspaceMoveHook = Event::bus()->m_events.window.moveToWorkspace.listen([this](PHLWINDOW window, PHLWORKSPACE workspace) { onWindowMoveToWorkspace(window, workspace); });
     mouseMoveHook = Event::bus()->m_events.input.mouse.move.listen([this](const Vector2D&, Event::SCallbackInfo& info) {
         // Leaving this output must clear its hover even when another session owns the event.
         if (pointerOverview() != this && m_inputState.owner == EInputOwner::None && m_inputState.hover.kind != EHitKind::Outside) {
@@ -404,6 +409,52 @@ CScrollingOverview::SCacheEntry* CScrollingOverview::cacheEntry(int64_t workspac
 const CScrollingOverview::SWorkspaceRow* CScrollingOverview::workspaceRow(int64_t workspaceID) const {
     const auto found = std::ranges::find_if(m_rows, [&](const auto& row) { return row.workspace && row.workspace->m_id == workspaceID; });
     return found == m_rows.end() ? nullptr : &*found;
+}
+
+bool CScrollingOverview::sceneTopologyCurrent() const {
+    const auto MON = m_monitor.lock();
+    if (!MON)
+        return false;
+
+    const auto workspaces = State::workspaceState()->workspacesCopy();
+    const auto count = std::ranges::count_if(workspaces, [&](const auto& ws) { return ws && !ws->m_isSpecialWorkspace && ws->m_monitor == MON; });
+    if (static_cast<size_t>(count) != m_rows.size())
+        return false;
+
+    for (const auto& row : m_rows) {
+        if (!row.workspace || row.workspace->inert() || row.workspace->m_monitor != MON)
+            return false;
+        if (row.kind != EWorkspaceKind::Scrolling) {
+            const bool empty = row.workspace->getWindowCount() <= 0;
+            if ((row.kind == EWorkspaceKind::Empty) != empty || (!empty && workspaceUsesScrollingLayout(row.workspace)))
+                return false;
+            continue;
+        }
+
+        const auto current = snapshotWorkspace(row.workspace);
+        if (!current.success())
+            return false;
+        const auto& before = row.snapshot;
+        const auto& after = *current.snapshot;
+        if (before.algorithmFingerprint != after.algorithmFingerprint || before.dataFingerprint != after.dataFingerprint ||
+            before.direction != after.direction || before.columns.size() != after.columns.size())
+            return false;
+        for (size_t i = 0; i < before.columns.size(); ++i) {
+            const auto& oldColumn = before.columns[i];
+            const auto& newColumn = after.columns[i];
+            if (oldColumn.fingerprint != newColumn.fingerprint || oldColumn.width != newColumn.width ||
+                oldColumn.primarySize != newColumn.primarySize || oldColumn.targets.size() != newColumn.targets.size())
+                return false;
+            for (size_t j = 0; j < oldColumn.targets.size(); ++j) {
+                const auto& oldTarget = oldColumn.targets[j];
+                const auto& newTarget = newColumn.targets[j];
+                if (targetToken(oldTarget) != targetToken(newTarget) || oldTarget.windowStableID != newTarget.windowStableID ||
+                    oldTarget.proportion != newTarget.proportion || oldTarget.group != newTarget.group || oldTarget.fullscreen != newTarget.fullscreen)
+                    return false;
+            }
+        }
+    }
+    return true;
 }
 
 bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& initialSnapshot) {
@@ -628,7 +679,9 @@ void CScrollingOverview::onDamageReported() {
 }
 
 void CScrollingOverview::onPreRender() {
-    if (!m_damageDirty || m_closing)
+    // Content damage must not replace the scene between press and release.
+    // Config and workspace moves still invalidate input explicitly.
+    if (!m_damageDirty || m_closing || m_inputState.owner != EInputOwner::None)
         return;
     m_damageDirty = false;
     if (!refreshScene()) {

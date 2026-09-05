@@ -967,9 +967,25 @@ int main() {
     expectContains(scrollingKbMove, "m_closing || m_closeCommitted", "closing scrolling sessions reject fresh keyboard navigation");
     expectContains(scrollingKbConfirm, "m_closing || m_closeCommitted", "closing scrolling sessions reject fresh keyboard selection");
     const auto scrollingInstallInput = extractFunction(scrollingSource, "void CScrollingOverview::installInputListeners(");
+    expectContains(scrollingInstallInput, "m_events.window.moveToWorkspace.listen", "workspace moves explicitly invalidate native input while damage refresh is deferred");
+    const auto scrollingReset = extractFunction(scrollingSource, "SInputEffects CScrollingOverview::resetInputState(");
+    expectContains(scrollingReset, "workspaceMoveHook.reset();", "teardown disconnects native workspace invalidation before destroying its session");
     expectContains(scrollingInstallInput, "event.device->m_boundOutput.empty()", "touch ownership requires an explicitly bound output");
     expectAbsent(scrollingInstallInput, ": m_monitor.lock()", "unbound touch devices are not guessed onto the overview monitor");
     const auto scrollingRefresh = extractFunction(scrollingSource, "bool CScrollingOverview::refreshScene(");
+    const auto scrollingPreRender = extractFunction(scrollingSource, "void CScrollingOverview::onPreRender(");
+    expectOrder(scrollingPreRender, "m_inputState.owner != EInputOwner::None", "m_damageDirty = false;",
+                "ordinary damage stays pending while a mouse or touch interaction owns the scene");
+    const auto scrollingEffects = extractFunction(scrollingSource, "void CScrollingOverview::applyInputEffects(");
+    expectContains(scrollingEffects, "effects.resetOwnership && m_damageDirty", "ending a pan schedules its deferred refresh even without client damage");
+    expectOrder(scrollingEffects, "!sceneTopologyCurrent()", "moveScrollingTarget(", "drops reject stale scene indices before touching native layout");
+    const auto currentTopology = extractFunction(scrollingSource, "bool CScrollingOverview::sceneTopologyCurrent(");
+    for (const auto& token : {"m_rows.size()", "snapshotWorkspace(row.workspace)", "oldColumn.fingerprint != newColumn.fingerprint",
+                              "targetToken(oldTarget) != targetToken(newTarget)", "oldTarget.proportion != newTarget.proportion"})
+        expectContains(currentTopology, token, "held native drops revalidate scene structure via " + std::string{token});
+    const auto inputSelection = extractFunction(scrollingEffects, "if (effects.selection)");
+    expectOrder(inputSelection, "updateSelectionFromFocus();", "setClosing(true);", "input selection is latched before freezing scene refresh");
+    expectOrder(inputSelection, "setClosing(true);", "g_pEventLoopManager->doLater", "released input selection survives frames before deferred close");
     const auto scrollingDestructor = extractFunction(scrollingSource, "CScrollingOverview::~CScrollingOverview(");
     expectOrder(scrollingRefresh, "resetInputState(EResetReason::Refresh)", "releaseAllCaptureState();", "scene refresh clears input ownership before replacing cache state");
     expectOrder(scrollingDestructor, "resetInputState(EResetReason::Teardown)", "releaseAllCaptureState();", "destruction clears listeners/input before capture ownership");
