@@ -33,6 +33,14 @@ plugin {
 
 ## Active workspace beyond the grid
 
+With `skip_empty = 0`, `max_workspace` limits the workspace IDs shown without
+moving a `first <workspace>` or explicit `center <workspace>` anchor. Enumeration
+keeps Hyprland's monitor-aware ordering, including uncreated empty workspaces.
+For example, with workspaces 1–5 bound to one monitor and 6–9 to another,
+`columns = 3`, `max_workspace = 9`, and `first 1` / `first 6` show 1–5 / 6–9.
+The remaining tiles are padding; selecting them does not create a workspace.
+`skip_empty = 1` retains its existing next-empty-workspace tiles and ignores the cap.
+
 `first <workspace>` anchors the grid to a fixed workspace and counts upward, so
 the configured `columns` normally bound how many workspaces are visible. When
 the currently active workspace sits past the last tile (for example `first 1`

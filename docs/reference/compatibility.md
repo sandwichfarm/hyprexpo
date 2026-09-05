@@ -33,12 +33,12 @@ tracks the recovery and the affected feature PRs.
 
 ## hyprpm and Nix
 
-The `hyprpm.toml` pins added by PR #112 remain deliberate:
+The release pins introduced by PR #112 now select the issue #110 fix:
 
 | Hyprland release | Pinned HyprExpo commit |
 | --- | --- |
-| v0.56.1 | `40352e2663deded7c6536b2fda1ed18a97234a80` |
-| v0.56.2 | `b3a866144ab2a503a1257e2050fd7f9dde51542f` |
+| v0.56.1 | `bd0ec15d0dbf7ff0d9d97495959664a565df211b` |
+| v0.56.2 | `bd0ec15d0dbf7ff0d9d97495959664a565df211b` |
 
 Changing current source does not update what those pins select. Before moving
 a pin, build and test the proposed plugin commit against that exact tagged
