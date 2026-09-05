@@ -220,7 +220,7 @@ void COverview::close(bool switchToSelection) {
 
     redrawAll();
 
-    if (switchToSelection && TILE.workspaceID != MON->activeWorkspaceID()) {
+    if (switchToSelection && (TILE.workspaceID != WORKSPACE_INVALID || emptyTilesSelectable) && TILE.workspaceID != MON->activeWorkspaceID()) {
         MON->setSpecialWorkspace(0);
 
         // If this tile's workspace was WORKSPACE_INVALID, move to the next

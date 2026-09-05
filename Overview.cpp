@@ -776,18 +776,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
     const bool    skipEmpty    = **PSKIP;
     const int64_t maxWorkspace = std::max<Hyprlang::INT>(0, **PMAXWS);
     std::string   selector     = skipEmpty ? "m" : "r";
-
-    std::optional<int64_t> lowestExistingID;
-    std::optional<int64_t> highestExistingID;
-    if (!skipEmpty) {
-        for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-            if (!workspace || workspace->m_isSpecialWorkspace || workspace->m_id <= 0 || workspace->m_monitor != PMONITOR)
-                continue;
-
-            lowestExistingID  = lowestExistingID ? std::min(*lowestExistingID, workspace->m_id) : workspace->m_id;
-            highestExistingID = highestExistingID ? std::max(*highestExistingID, workspace->m_id) : workspace->m_id;
-        }
-    }
+    emptyTilesSelectable = skipEmpty;
 
     if (!methodCenter && !skipEmpty && maxWorkspace <= 0 && startedOn) {
         SIDE_LENGTH = Hyprexpo::gridColumnsToIncludeWorkspace(SIDE_LENGTH, methodStartID, (int)startedOn->m_id, HyprexpoConfig::COLUMNS_MAX);
@@ -796,21 +785,42 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
 
     images.resize(SIDE_LENGTH * SIDE_LENGTH);
 
-    if (!skipEmpty && maxWorkspace > 0) {
-        const auto workspaceIDs = Hyprexpo::cappedWorkspaceIDs(images.size(), methodCenter ? Hyprexpo::EWorkspaceMethodMode::Center : Hyprexpo::EWorkspaceMethodMode::First,
-                                                               methodStartID, maxWorkspace, lowestExistingID, highestExistingID);
-        for (size_t i = 0; i < images.size(); ++i)
-            images[i].workspaceID = workspaceIDs[i].value_or(WORKSPACE_INVALID);
-    } else if (methodCenter) {
+    const bool anchorSelector = !methodCenter || (!skipEmpty && maxWorkspace > 0 && methodStartID != startedOn->m_id);
+    if (anchorSelector) {
+        PHLWORKSPACE PWORKSPACESTART;
+        for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
+            if (workspace->m_id == methodStartID) {
+                PWORKSPACESTART = workspace;
+                break;
+            }
+        }
+        if (!PWORKSPACESTART)
+            PWORKSPACESTART = CWorkspace::create(methodStartID, pMonitor.lock(), std::to_string(methodStartID));
+
+        // Relative selectors must use an explicit first/center anchor, not the opened workspace.
+        pMonitor->m_activeWorkspace = PWORKSPACESTART;
+    }
+
+    if (methodCenter) {
         int currentID = methodStartID;
         int firstID   = currentID;
+
+        std::optional<int64_t> lowestExistingID;
+        std::optional<int64_t> highestExistingID;
+        if (!skipEmpty) {
+            for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
+                if (!workspace || workspace->m_isSpecialWorkspace || workspace->m_monitor != PMONITOR)
+                    continue;
+
+                lowestExistingID  = lowestExistingID ? std::min(*lowestExistingID, workspace->m_id) : workspace->m_id;
+                highestExistingID = highestExistingID ? std::max(*highestExistingID, workspace->m_id) : workspace->m_id;
+            }
+        }
 
         const size_t backtrackTarget = Hyprexpo::centeredWorkspaceBacktrack(images.size(), methodStartID, lowestExistingID, highestExistingID);
         int backtracked = 0;
 
-        // Initialize tiles to WORKSPACE_INVALID; cliking one of these results
-        // in changing to "emptynm" (next empty workspace). Tiles with this id
-        // will only remain if skip_empty is on.
+        // Unfilled skip-empty tiles may create a workspace; capped padding cannot.
         for (size_t i = 0; i < images.size(); i++) {
             images[i].workspaceID = WORKSPACE_INVALID;
         }
@@ -844,18 +854,6 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
         int currentID         = methodStartID;
         images[0].workspaceID = currentID;
 
-        PHLWORKSPACE PWORKSPACESTART;
-        for (const auto& w : State::workspaceState()->workspacesCopy()) {
-            if (w->m_id == currentID) {
-                PWORKSPACESTART = w;
-                break;
-            }
-        }
-        if (!PWORKSPACESTART)
-            PWORKSPACESTART = CWorkspace::create(currentID, pMonitor.lock(), std::to_string(currentID));
-
-        pMonitor->m_activeWorkspace = PWORKSPACESTART;
-
         // Scan through workspaces higher than methodStartID. If using "m"
         // (skip_empty), stop when we wrap, leaving the rest of the workspace
         // ID's set to WORKSPACE_INVALID
@@ -867,7 +865,17 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
             image.workspaceID = currentID;
         }
 
+    }
+
+    if (anchorSelector)
         pMonitor->m_activeWorkspace = startedOn;
+
+    // Keep Hyprland's monitor-aware ordering and apply the cap only to emitted IDs.
+    if (!skipEmpty && maxWorkspace > 0) {
+        for (auto& image : images) {
+            if (image.workspaceID > maxWorkspace)
+                image.workspaceID = WORKSPACE_INVALID;
+        }
     }
 
     if (dynamicGrid) {

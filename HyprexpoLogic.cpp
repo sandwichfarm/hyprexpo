@@ -6,7 +6,6 @@
 #include <charconv>
 #include <cctype>
 #include <cmath>
-#include <limits>
 
 namespace Hyprexpo {
 
@@ -182,43 +181,6 @@ std::size_t centeredWorkspaceBacktrack(std::size_t tileCount, int64_t activeWork
     const __int128 boundedTarget   = std::min(maxBacktrack, std::max(static_cast<__int128>(centerTarget), minBacktrack));
 
     return static_cast<std::size_t>(boundedTarget);
-}
-
-std::vector<std::optional<int64_t>> cappedWorkspaceIDs(std::size_t tileCount, EWorkspaceMethodMode mode, int64_t anchorWorkspaceID, int64_t maxWorkspaceID,
-                                                       std::optional<int64_t> lowestExistingID, std::optional<int64_t> highestExistingID) {
-    std::vector<std::optional<int64_t>> workspaceIDs(tileCount);
-    if (tileCount == 0 || maxWorkspaceID < 1)
-        return workspaceIDs;
-
-    const bool localBoundsApply = lowestExistingID && highestExistingID && *lowestExistingID <= *highestExistingID &&
-        anchorWorkspaceID >= *lowestExistingID && anchorWorkspaceID <= *highestExistingID;
-
-    __int128 startID = std::max<__int128>(1, anchorWorkspaceID);
-    if (mode == EWorkspaceMethodMode::Center) {
-        std::size_t backtrack = tileCount / 2;
-        if (localBoundsApply)
-            backtrack = centeredWorkspaceBacktrack(tileCount, anchorWorkspaceID, lowestExistingID, highestExistingID);
-        else {
-            const __int128 roomBefore = std::max<__int128>(0, static_cast<__int128>(anchorWorkspaceID) - 1);
-            backtrack                 = static_cast<std::size_t>(std::min<__int128>(backtrack, roomBefore));
-        }
-
-        startID = static_cast<__int128>(anchorWorkspaceID) - static_cast<__int128>(backtrack);
-    }
-
-    for (std::size_t i = 0; i < tileCount; ++i) {
-        const __int128 candidate = startID + static_cast<__int128>(i);
-        if (candidate < 1 || candidate > maxWorkspaceID || candidate > std::numeric_limits<int64_t>::max())
-            continue;
-
-        const int64_t workspaceID = static_cast<int64_t>(candidate);
-        if (localBoundsApply && (workspaceID < *lowestExistingID || workspaceID > *highestExistingID))
-            continue;
-
-        workspaceIDs[i] = workspaceID;
-    }
-
-    return workspaceIDs;
 }
 
 int tileIndexFromPoint(double x, double y, double width, double height, int sideLength) {

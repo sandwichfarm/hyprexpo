@@ -183,26 +183,6 @@ int main() {
     expect(centeredWorkspaceBacktrack(9, std::numeric_limits<int64_t>::max(), std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max()) == 8,
            "center-current handles the full signed workspace range without overflow");
 
-    const auto invalidWorkspace = std::optional<int64_t>{};
-    expect(cappedWorkspaceIDs(9, EWorkspaceMethodMode::First, 1, 9, 1, 5) ==
-               std::vector<std::optional<int64_t>>{1, 2, 3, 4, 5, invalidWorkspace, invalidWorkspace, invalidWorkspace, invalidWorkspace},
-           "a capped first 1 range stops at monitor one's highest workspace");
-    expect(cappedWorkspaceIDs(9, EWorkspaceMethodMode::First, 6, 9, 6, 9) ==
-               std::vector<std::optional<int64_t>>{6, 7, 8, 9, invalidWorkspace, invalidWorkspace, invalidWorkspace, invalidWorkspace, invalidWorkspace},
-           "a capped first 6 range preserves monitor two's anchor and invalidates its tail");
-    expect(cappedWorkspaceIDs(9, EWorkspaceMethodMode::Center, 7, 9, 6, 9) ==
-               std::vector<std::optional<int64_t>>{6, 7, 8, 9, invalidWorkspace, invalidWorkspace, invalidWorkspace, invalidWorkspace, invalidWorkspace},
-           "a capped centered range composes the cap with monitor-local bounds");
-    expect(cappedWorkspaceIDs(9, EWorkspaceMethodMode::First, 6, 9, std::nullopt, std::nullopt) ==
-               std::vector<std::optional<int64_t>>{6, 7, 8, 9, invalidWorkspace, invalidWorkspace, invalidWorkspace, invalidWorkspace, invalidWorkspace},
-           "a capped first range without local bounds never back-clamps its anchor");
-    expect(cappedWorkspaceIDs(9, EWorkspaceMethodMode::Center, 7, 9, std::nullopt, std::nullopt) ==
-               std::vector<std::optional<int64_t>>{3, 4, 5, 6, 7, 8, 9, invalidWorkspace, invalidWorkspace},
-           "a capped centered range without local bounds stays centered instead of filling backwards from the cap");
-    expect(cappedWorkspaceIDs(3, EWorkspaceMethodMode::First, std::numeric_limits<int64_t>::max(), std::numeric_limits<int64_t>::max(), std::nullopt, std::nullopt) ==
-               std::vector<std::optional<int64_t>>{std::numeric_limits<int64_t>::max(), invalidWorkspace, invalidWorkspace},
-           "capped range generation cannot overflow past the largest workspace ID");
-    expect(cappedWorkspaceIDs(0, EWorkspaceMethodMode::First, 1, 9, 1, 5).empty(), "capped range generation handles an empty tile set");
     expect(HyprexpoConfig::SHOW_PINNED_WINDOWS_DEFAULT == 0, "pinned windows are hidden from previews by default");
     expect(std::string{HyprexpoConfig::NUMBER_KEY_MODE_DEFAULT} == "workspace", "raw number keys keep selecting workspace IDs by default");
     expect(numberKeyModeFromString("workspace") == ENumberKeyMode::Workspace, "workspace number-key mode parses");
