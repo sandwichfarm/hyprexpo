@@ -51,6 +51,12 @@ grows — never below the configured `columns` — and is capped at the maximum 
 columns. This applies to plain sequential grids (not `skip_empty` or
 `max_workspace`, which keep their explicit bounds).
 
+With `rows = 0` (the default), growth keeps the legacy square grid. With explicit
+positive `rows`, only columns grow: `columns = 3`, `rows = 2`, `first 1` grows to
+four columns and two rows when workspace 7 is active. Rows are never silently
+increased. At the seven-column limit this remains best effort, so a one-row grid
+cannot include an active workspace more than seven slots from its first anchor.
+
 ## Opening on Every Monitor
 
 By default the overview opens only on the monitor under the cursor. Append `all`

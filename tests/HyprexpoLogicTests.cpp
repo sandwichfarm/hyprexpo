@@ -157,6 +157,43 @@ void checkGeometryForMonitor(const Hyprexpo::SSize& total) {
     }
 }
 
+void checkFixedGridGeometryForMonitor(const Hyprexpo::SSize& total) {
+    constexpr double gap = 24.0;
+    for (const auto shape : std::vector<Hyprexpo::SGridShape>{{5, 2}, {2, 5}, {1, 5}, {5, 1}, {3, 2}, {2, 3}, {7, 7}}) {
+        const int count = shape.cols * shape.rows;
+        const auto layouts = layoutsFor(count, shape, total, gap, false);
+        const auto& first = layouts.front().box;
+        const auto& last = layouts.back().box;
+        expect(near(first.x, total.w - last.x - last.w) && near(first.y, total.h - last.y - last.h),
+               "fixed rectangle is letterboxed symmetrically");
+        const double zoom = std::max(shape.cols, shape.rows);
+        for (int i = 0; i < count; ++i) {
+            const auto& layout = layouts[i];
+            const auto& box = layout.box;
+            expect(layout.row == i / shape.cols && layout.col == i % shape.cols, "fixed rectangle keeps row-major tile indices");
+            expect(box.x >= 0.0 && box.y >= 0.0 && box.x + box.w <= total.w + 0.001 && box.y + box.h <= total.h + 0.001,
+                   "every fixed tile fits the monitor");
+            expect(near(box.w / box.h, total.w / total.h), "fixed tiles preserve workspace aspect ratio");
+            expect(Hyprexpo::tileIndexAtPoint(box.x + box.w / 2, box.y + box.h / 2, count, shape, total, gap, false) == i,
+                   "every rectangular tile is hit-testable including the last slot");
+            const auto zoomed = Hyprexpo::computeTileLayout(i, count, shape, {total.w * zoom, total.h * zoom}, 0.0, false);
+            expect(near(zoomed.box.w, total.w) && near(zoomed.box.h, total.h), "rectangular zoom endpoints retain full workspace size");
+        }
+        if (shape.cols > 1)
+            expect(Hyprexpo::tileIndexAtPoint(first.x + first.w + gap / 2, first.y + first.h / 2, count, shape, total, gap, false) == -1,
+                   "fixed-grid column gaps are not selectable");
+        if (shape.rows > 1)
+            expect(Hyprexpo::tileIndexAtPoint(first.x + first.w / 2, first.y + first.h + gap / 2, count, shape, total, gap, false) == -1,
+                   "fixed-grid row gaps are not selectable");
+        if (first.x > 0.0)
+            expect(Hyprexpo::tileIndexAtPoint(first.x / 2, first.y + first.h / 2, count, shape, total, gap, false) == -1,
+                   "horizontal letterboxing is not a workspace target");
+        if (first.y > 0.0)
+            expect(Hyprexpo::tileIndexAtPoint(first.x + first.w / 2, first.y / 2, count, shape, total, gap, false) == -1,
+                   "vertical letterboxing is not a workspace target");
+    }
+}
+
 Hyprexpo::Scrolling::STapeSpec scrollingTape(Hyprexpo::Scrolling::EDirection direction) {
     using namespace Hyprexpo::Scrolling;
     return {
@@ -732,6 +769,20 @@ int main() {
     expect(clampGridColumns(3) == 3, "columns keep valid value");
     expect(clampGridColumns(99) == 7, "columns clamp upper bound");
 
+    const auto wideFixed = computeFixedGridShape(5, 2);
+    expect(wideFixed.cols == 5 && wideFixed.rows == 2 && wideFixed.cols * wideFixed.rows == 10,
+           "explicit five-column two-row fixed grid contains ten slots");
+    const auto tallFixed = computeFixedGridShape(2, 5);
+    expect(tallFixed.cols == 2 && tallFixed.rows == 5, "explicit rows can exceed columns");
+    const auto defaultFixed = computeFixedGridShape(3, 0);
+    expect(defaultFixed.cols == 3 && defaultFixed.rows == 3, "unset rows preserve the legacy square grid");
+    const auto negativeRows = computeFixedGridShape(4, std::numeric_limits<int64_t>::min());
+    expect(negativeRows.cols == 4 && negativeRows.rows == 4, "nonpositive rows use the configured column count");
+    const auto oversizedFixed = computeFixedGridShape(std::numeric_limits<int64_t>::max(), std::numeric_limits<int64_t>::max());
+    expect(oversizedFixed.cols == 7 && oversizedFixed.rows == 7, "64-bit grid settings clamp before narrowing or allocation");
+    const auto minimumFixed = computeFixedGridShape(std::numeric_limits<int64_t>::min(), 1);
+    expect(minimumFixed.cols == 1 && minimumFixed.rows == 1, "minimum column setting remains a valid bounded grid");
+
     expect(gridColumnsToIncludeWorkspace(3, 1, 9, 7) == 3, "first-anchor grid keeps columns when active workspace fits");
     expect(gridColumnsToIncludeWorkspace(3, 1, 10, 7) == 4, "first-anchor grid grows to include an active workspace just past the grid");
     expect(gridColumnsToIncludeWorkspace(3, 1, 16, 7) == 4, "first-anchor grid grows to exactly fill the last tile");
@@ -740,6 +791,14 @@ int main() {
     expect(gridColumnsToIncludeWorkspace(3, 5, 4, 7) == 3, "first-anchor grid never shrinks for an active workspace before the anchor");
     expect(gridColumnsToIncludeWorkspace(3, 1, 1000, 7) == 7, "first-anchor grid is capped at the max columns as a best effort");
     expect(gridColumnsToIncludeWorkspace(5, 1, 4, 7) == 5, "first-anchor grid never shrinks below the configured columns");
+
+    expect(gridColumnsToIncludeWorkspace(5, 1, 10, 7, 2) == 5, "five-by-two grid keeps its shape when the active workspace fits");
+    expect(gridColumnsToIncludeWorkspace(3, 1, 7, 7, 2) == 4, "rectangular first-anchor growth uses the explicit row count");
+    expect(gridColumnsToIncludeWorkspace(5, 1, 11, 7, 2) == 6, "rectangular growth adds only the needed column");
+    expect(gridColumnsToIncludeWorkspace(2, 6, 15, 7, 5) == 2, "tall fixed grid accounts for a non-one first anchor");
+    expect(gridColumnsToIncludeWorkspace(2, 6, 16, 7, 5) == 3, "tall grid grows columns without changing rows");
+    expect(gridColumnsToIncludeWorkspace(3, 1, 1000, 7, 1) == 7, "single-row growth remains bounded");
+    expect(gridColumnsToIncludeWorkspace(5, 1, 2, 7, 2) == 5, "rectangular growth never shrinks the configured width");
 
     expect(centeredWorkspaceBacktrack(9, 1, 1, 9) == 0, "center-current keeps the low workspace at the first tile");
     expect(centeredWorkspaceBacktrack(9, 5, 1, 9) == 4, "center-current places the middle workspace at the center tile");
@@ -923,6 +982,9 @@ int main() {
     checkGeometryForMonitor(makeSize(1600, 900));
     checkGeometryForMonitor(makeSize(900, 1600));
     checkGeometryForMonitor(makeSize(2560, 1080));
+    checkFixedGridGeometryForMonitor(makeSize(1600, 900));
+    checkFixedGridGeometryForMonitor(makeSize(900, 1600));
+    checkFixedGridGeometryForMonitor(makeSize(1280, 720.5));
     checkScrollingTapeDirections();
     checkScrollingSceneAndInputMath();
     checkScrollingDropIntents();

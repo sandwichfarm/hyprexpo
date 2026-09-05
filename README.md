@@ -133,6 +133,7 @@ Add the plugin block to your Hyprland config:
 plugin {
     hyprexpo {
         columns = 3
+        rows = 0 # Follow columns; use a positive value for a rectangular fixed grid.
         gaps_in = 5
         gaps_out = 0
         bg_col = rgb(111111)
@@ -153,6 +154,7 @@ hl.config({
     plugin = {
         hyprexpo = {
             columns = 3,
+            rows = 0, -- Follow columns; positive values set fixed-grid rows.
             gaps_in = 5,
             gaps_out = 0,
             bg_col = "rgb(111111)",
@@ -167,6 +169,12 @@ hl.config({
 ```
 
 `drag_drop_enable` defaults to `1`. Set it to `0` to keep workspace clicks from moving windows when the pointer shifts during a click.
+
+For ten fixed-grid slots, use `columns = 5`, `rows = 2`, `dynamic_grid = 0`,
+and `skip_empty = 0`. Empty workspaces remain selectable and can receive dragged
+windows. `rows = 0` (the default) keeps the existing square grid; positive rows
+are clamped to `1..7`. Dynamic grids and native scrolling overviews size themselves
+as before and ignore `rows`.
 
 Add a dispatcher binding:
 
