@@ -11,6 +11,8 @@
 #include <hyprland/src/helpers/signal/Signal.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <chrono>
+#include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -20,7 +22,9 @@ constexpr bool ENABLE_LOWRES = false;
 
 class COverview {
   public:
-    COverview(PHLWORKSPACE startedOn_, bool swipe = false);
+    // The monitor is passed in rather than resolved from the cursor: with
+    // several overviews alive they would all bind to the same output.
+    COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe = false);
     ~COverview();
 
     void render();
@@ -37,6 +41,9 @@ class COverview {
         return m_closeCommitted;
     }
     bool shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const;
+    // Animation callbacks are handed the variable that fired, not the owner.
+    // With several overviews alive the owner has to be resolved from it.
+    bool ownsAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var) const;
     void onWindowMoveToWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace);
 
     void resetSwipe();
@@ -45,18 +52,21 @@ class COverview {
 
     // close without a selection
     void          close(bool switchToSelection = true);
-    void          selectHoveredWorkspace();
+    bool          selectHoveredWorkspace();
 
     // keyboard navigation interface
-    void          onKbMoveFocus(const std::string& dir);
-    void          onKbConfirm();
-    void          onKbSelectNumber(int num);
-    void          onKbSelectToken(int visibleIdx);
+    bool          onKbMoveFocus(const std::string& dir);
+    bool          onKbConfirm();
+    bool          onKbSelectNumber(int num);
+    bool          onKbSelectToken(int visibleIdx);
     bool          selectVisibleToken(const std::string& token);
     int64_t       selectedWorkspaceID() const;
     bool          selectWorkspaceByID(int64_t workspaceID);
     bool          selectVisibleIndex(size_t index);
     bool          moveWindowBetweenVisibleIndices(size_t sourceIndex, size_t targetIndex, const PHLWINDOW& window = nullptr);
+    std::optional<Hyprexpo::SGlobalTile> focusedGlobalTile() const;
+    std::vector<Hyprexpo::SGlobalTile>   globalTiles() const;
+    bool                                 setKeyboardFocus(int tileIndex);
 
     bool          blockOverviewRendering = false;
     bool          blockDamageReporting   = false;
@@ -97,13 +107,13 @@ class COverview {
     void       updateHoveredFromMouse();
     void       ensureKbFocusInitialized();
     bool       isTileValid(int id) const;
-    void       moveFocus(int dx, int dy);
+    bool       moveFocus(int dx, int dy);
     int        tileForWorkspaceID(int wsid) const;
     int        tileForVisibleIndex(int vIdx) const;
     void       beginWindowDrag();
     bool       finishWindowDrag();
     void       updateWindowDrag();
-    void       redrawDraggedWindowTiles(int source, int target);
+    void       redrawDraggedWorkspace(int64_t workspaceID);
     void       queueRedrawID(int id);
     void       flushQueuedRedraws();
     PHLWINDOW  windowAtTilePoint(int id, const Vector2D& localPoint) const;
@@ -129,16 +139,8 @@ class COverview {
     bool                         submapActive = false;
     std::string                  previousSubmap = "";
 
-    Vector2D                     dragStartLocal = Vector2D{};
-    int                          dragSourceID   = -1;
-    bool                         dragMoved      = false;
-    Vector2D                     dragGrabOffset = Vector2D{};
-    PHLWINDOW                    dragWindow;
-    int                          dropIntentTargetID = -1;
-    Hyprexpo::SDropIntentGeometry dropIntent;
-
     std::vector<int>             queuedRedrawIDs;
-    std::vector<int>             settlingRedrawIDs;
+    std::vector<int64_t>         settlingRedrawWorkspaceIDs;
     int                          redrawSettleTicks = 0;
     SP<CEventLoopTimer>          redrawSettleTimer;
 
@@ -170,4 +172,56 @@ class COverview {
     friend class COverviewPassElement;
 };
 
-inline std::unique_ptr<COverview> g_pOverview;
+// Overview instances, one per monitor currently showing the overview. A single
+// monitor invocation keeps exactly one entry; "all monitors" mode keeps one per
+// output. Instances are owned here and torn down via destroyOverview().
+inline std::vector<std::unique_ptr<COverview>> g_overviews;
+inline PHLMONITORREF                           g_keyboardOverviewMonitor;
+
+struct SOverviewDragRuntime {
+    Hyprexpo::SOverviewDragState state;
+    Vector2D                     pressGlobal;
+    Vector2D                     pointerGlobal;
+    Vector2D                     grabOffset;
+    PHLWINDOW                    window;
+};
+
+inline SOverviewDragRuntime g_overviewDrag;
+
+// The instance that owns keyboard input and unqualified dispatcher commands:
+// the one on the focused monitor, else the one under the cursor, else the
+// first. nullptr when no overview is open.
+COverview* activeOverview();
+COverview* overviewForMonitorKey(uint64_t key);
+COverview* overviewForGlobalPoint(const Vector2D& point);
+uint64_t   overviewMonitorKey(const PHLMONITOR& monitor);
+bool       overviewRegistered(const COverview* overview);
+std::vector<uint64_t> liveOverviewMonitorKeys();
+bool       moveOverviewFocusAcrossMonitors(COverview* source, Hyprexpo::EDirection direction);
+void       closeOverviewsSelecting(COverview* selecting);
+void       closeOverviews(bool switchToSelection);
+void       resetOverviewDrag(Hyprexpo::EOverviewDragEventType type = Hyprexpo::EOverviewDragEventType::Cancel, uint64_t monitorKey = 0);
+
+// The instance owning an animated variable, or nullptr.
+COverview* overviewForAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var);
+
+// The instance rendering on a specific monitor, or nullptr.
+COverview* overviewForMonitor(const PHLMONITOR& monitor);
+
+// Create an overview on a monitor and register it. Returns nullptr if the
+// monitor already has one, or if the arguments are unusable.
+COverview* createOverview(const PHLMONITOR& monitor, bool swipe = false);
+
+// True while at least one overview is alive.
+bool       overviewOpen();
+
+// Run fn for every live overview. Safe when the callback destroys overviews:
+// entries torn down mid-iteration are skipped.
+void       forEachOverview(const std::function<void(COverview&)>& fn);
+
+// Destroy one instance. This deletes the object, so a member function
+// destroying itself must return immediately afterwards.
+void       destroyOverview(COverview* overview);
+
+// Destroy every instance.
+void       destroyAllOverviews();

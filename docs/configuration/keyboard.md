@@ -71,6 +71,15 @@ the active config system. On Hyprland 0.55+ Lua configs, that means
 `hl.define_submap("hyprexpo", ...)`; a `submap = hyprexpo` block in
 `hyprland.conf` is not loaded by a `hyprland.lua` setup.
 
+When the overview is open on every monitor, one overview is the explicit keyboard owner.
+Arrow movement first searches that overview's grid, so local wrapping takes precedence
+whenever `keynav_wrap_h` or `keynav_wrap_v` provides a
+valid tile. Only a direction with no local result crosses to the nearest tile on
+another monitor by global logical geometry. The destination remains the
+keyboard owner for later focus and selection commands even if compositor focus
+has not moved yet. A successful selection switches that destination monitor and
+closes every overview; invalid selection leaves them open.
+
 For vim-style navigation, bind `h`, `j`, `k`, and `l` inside the same Lua
 submap:
 

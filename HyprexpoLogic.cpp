@@ -6,6 +6,8 @@
 #include <charconv>
 #include <cctype>
 #include <cmath>
+#include <limits>
+#include <tuple>
 
 namespace Hyprexpo {
 
@@ -142,6 +144,189 @@ int tileIndexAtPoint(double x, double y, int visibleCount, SGridShape shape, SSi
     }
 
     return -1;
+}
+
+static bool validRect(const SRect& rect) {
+    return rect.w > 0.0 && rect.h > 0.0;
+}
+
+static double intervalDistance(double a0, double a1, double b0, double b1) {
+    if (a1 < b0)
+        return b0 - a1;
+    if (b1 < a0)
+        return a0 - b1;
+    return 0.0;
+}
+
+std::optional<STileTarget> selectDirectionalTile(const SRect& source, EDirection direction, const std::vector<SGlobalTile>& candidates) {
+    if (!validRect(source))
+        return std::nullopt;
+
+    const double sourceCenterX = source.x + source.w / 2.0;
+    const double sourceCenterY = source.y + source.h / 2.0;
+    std::optional<STileTarget> best;
+    auto bestRank = std::tuple{std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity()};
+
+    for (const auto& candidate : candidates) {
+        if (candidate.overviewKey == 0 || candidate.tileIndex < 0 || !validRect(candidate.overviewGlobal) || !validRect(candidate.tileGlobal))
+            continue;
+
+        const double candidateCenterX = candidate.tileGlobal.x + candidate.tileGlobal.w / 2.0;
+        const double candidateCenterY = candidate.tileGlobal.y + candidate.tileGlobal.h / 2.0;
+        double       forward          = 0.0;
+        double       perpendicular    = 0.0;
+        double       centerDistance   = 0.0;
+
+        switch (direction) {
+            case EDirection::Left:
+                if (candidate.tileGlobal.x + candidate.tileGlobal.w > source.x)
+                    continue;
+                forward        = std::max(0.0, source.x - (candidate.tileGlobal.x + candidate.tileGlobal.w));
+                perpendicular  = intervalDistance(source.y, source.y + source.h, candidate.tileGlobal.y, candidate.tileGlobal.y + candidate.tileGlobal.h);
+                centerDistance = std::abs(candidateCenterY - sourceCenterY);
+                break;
+            case EDirection::Right:
+                if (candidate.tileGlobal.x < source.x + source.w)
+                    continue;
+                forward        = std::max(0.0, candidate.tileGlobal.x - (source.x + source.w));
+                perpendicular  = intervalDistance(source.y, source.y + source.h, candidate.tileGlobal.y, candidate.tileGlobal.y + candidate.tileGlobal.h);
+                centerDistance = std::abs(candidateCenterY - sourceCenterY);
+                break;
+            case EDirection::Up:
+                if (candidate.tileGlobal.y + candidate.tileGlobal.h > source.y)
+                    continue;
+                forward        = std::max(0.0, source.y - (candidate.tileGlobal.y + candidate.tileGlobal.h));
+                perpendicular  = intervalDistance(source.x, source.x + source.w, candidate.tileGlobal.x, candidate.tileGlobal.x + candidate.tileGlobal.w);
+                centerDistance = std::abs(candidateCenterX - sourceCenterX);
+                break;
+            case EDirection::Down:
+                if (candidate.tileGlobal.y < source.y + source.h)
+                    continue;
+                forward        = std::max(0.0, candidate.tileGlobal.y - (source.y + source.h));
+                perpendicular  = intervalDistance(source.x, source.x + source.w, candidate.tileGlobal.x, candidate.tileGlobal.x + candidate.tileGlobal.w);
+                centerDistance = std::abs(candidateCenterX - sourceCenterX);
+                break;
+        }
+
+        const auto rank = std::tuple{forward, perpendicular, centerDistance};
+        if (!best || rank < bestRank) {
+            best     = STileTarget{candidate.overviewKey, candidate.tileIndex};
+            bestRank = rank;
+        }
+    }
+
+    return best;
+}
+
+std::optional<STileHit> hitTestGlobalTile(const SPoint& point, const std::vector<SGlobalTile>& tiles) {
+    for (const auto& tile : tiles) {
+        if (tile.overviewKey == 0 || tile.tileIndex < 0 || !validRect(tile.overviewGlobal) || !validRect(tile.tileGlobal))
+            continue;
+        if (point.x < tile.tileGlobal.x || point.x >= tile.tileGlobal.x + tile.tileGlobal.w || point.y < tile.tileGlobal.y || point.y >= tile.tileGlobal.y + tile.tileGlobal.h)
+            continue;
+
+        return STileHit{
+            .overviewKey = tile.overviewKey,
+            .tileIndex   = tile.tileIndex,
+            .pointLocal  = {point.x - tile.overviewGlobal.x, point.y - tile.overviewGlobal.y},
+        };
+    }
+
+    return std::nullopt;
+}
+
+static bool containsMonitorKey(const std::vector<uint64_t>& keys, uint64_t key) {
+    return key != 0 && std::find(keys.begin(), keys.end(), key) != keys.end();
+}
+
+static void appendMonitorKey(std::vector<uint64_t>& keys, uint64_t key) {
+    if (key != 0 && !containsMonitorKey(keys, key))
+        keys.push_back(key);
+}
+
+static SOverviewDragTransition cleanupOverviewDrag(const SOverviewDragState& state) {
+    if (!state.active)
+        return {.next = state, .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = false, .cleanup = false};
+
+    return {
+        .next               = {},
+        .drop               = std::nullopt,
+        .cleanupMonitorKeys = state.affectedMonitorKeys,
+        .accepted           = true,
+        .cleanup            = true,
+    };
+}
+
+SOverviewDragTransition transitionOverviewDrag(const SOverviewDragState& state, const SOverviewDragEvent& event, const std::vector<uint64_t>& liveMonitorKeys) {
+    if (event.type == EOverviewDragEventType::Press) {
+        if (state.active || event.tileIndex < 0 || event.windowKey == 0 || !containsMonitorKey(liveMonitorKeys, event.monitorKey))
+            return {.next = state, .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = false, .cleanup = false};
+
+        SOverviewDragState next;
+        next.active           = true;
+        next.sourceMonitorKey = event.monitorKey;
+        next.sourceTileIndex  = event.tileIndex;
+        next.windowKey        = event.windowKey;
+        appendMonitorKey(next.affectedMonitorKeys, event.monitorKey);
+        return {.next = std::move(next), .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = true, .cleanup = false};
+    }
+
+    if (!state.active)
+        return {.next = state, .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = false, .cleanup = false};
+
+    if (event.type == EOverviewDragEventType::Cancel || event.type == EOverviewDragEventType::AllClose)
+        return cleanupOverviewDrag(state);
+
+    const bool sourceLive = containsMonitorKey(liveMonitorKeys, state.sourceMonitorKey);
+    const bool targetLive = state.targetMonitorKey == 0 || containsMonitorKey(liveMonitorKeys, state.targetMonitorKey);
+    if (!sourceLive || !targetLive)
+        return cleanupOverviewDrag(state);
+
+    if (event.type == EOverviewDragEventType::MonitorDestroyed) {
+        if (!containsMonitorKey(state.affectedMonitorKeys, event.monitorKey))
+            return {.next = state, .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = false, .cleanup = false};
+        return cleanupOverviewDrag(state);
+    }
+
+    if (event.type == EOverviewDragEventType::Move) {
+        auto next  = state;
+        next.moved = true;
+        return {.next = std::move(next), .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = true, .cleanup = false};
+    }
+
+    if (event.type == EOverviewDragEventType::Target) {
+        if (event.monitorKey == 0) {
+            auto next             = state;
+            next.targetMonitorKey = 0;
+            next.targetTileIndex  = -1;
+            return {.next = std::move(next), .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = true, .cleanup = false};
+        }
+        if (event.tileIndex < 0 || !containsMonitorKey(liveMonitorKeys, event.monitorKey))
+            return {.next = state, .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = false, .cleanup = false};
+
+        auto next             = state;
+        next.targetMonitorKey = event.monitorKey;
+        next.targetTileIndex  = event.tileIndex;
+        appendMonitorKey(next.affectedMonitorKeys, event.monitorKey);
+        return {.next = std::move(next), .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = true, .cleanup = false};
+    }
+
+    if (event.type == EOverviewDragEventType::Release) {
+        auto transition = cleanupOverviewDrag(state);
+        if (state.moved && state.targetTileIndex >= 0 && containsMonitorKey(liveMonitorKeys, state.targetMonitorKey) &&
+            (state.sourceMonitorKey != state.targetMonitorKey || state.sourceTileIndex != state.targetTileIndex)) {
+            transition.drop = SOverviewDropIntent{
+                .sourceMonitorKey = state.sourceMonitorKey,
+                .sourceTileIndex  = state.sourceTileIndex,
+                .targetMonitorKey = state.targetMonitorKey,
+                .targetTileIndex  = state.targetTileIndex,
+                .windowKey        = state.windowKey,
+            };
+        }
+        return transition;
+    }
+
+    return {.next = state, .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = false, .cleanup = false};
 }
 
 int clampGridColumns(int columns) {
@@ -477,6 +662,18 @@ SWorkspaceMethodSpec parseWorkspaceMethodSpec(const std::string& method) {
     spec.workspace = tokens[1];
     spec.valid     = true;
     return spec;
+}
+
+SExpoCommand parseExpoCommand(const std::string& arg) {
+    const std::string TRIMMED = trimString(arg);
+
+    if (TRIMMED == "all")
+        return {.command = "toggle", .allMonitors = true};
+
+    if (TRIMMED.ends_with(" all"))
+        return {.command = trimString(TRIMMED.substr(0, TRIMMED.size() - 4)), .allMonitors = true};
+
+    return {.command = TRIMMED, .allMonitors = false};
 }
 
 SWorkspaceMethodSpec resolveWorkspaceMethodForMonitor(const std::string& config, const std::string& monitorName) {
