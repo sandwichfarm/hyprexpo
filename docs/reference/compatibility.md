@@ -33,13 +33,13 @@ tracks the recovery and the affected feature PRs.
 
 ## hyprpm and Nix
 
-On the feature interoperability branch, the release pins introduced by PR #112
-select the combined, tested source (including the issue #110 fix):
+The release pins introduced by PR #112 now select the combined, tested source
+on master (including the issue #110 fix and the PR #116 feature integration):
 
 | Hyprland release | Pinned HyprExpo commit |
 | --- | --- |
-| v0.56.1 | `c905dcfb0e1050c19021f2cf4b8f2d71d04763ce` |
-| v0.56.2 | `c905dcfb0e1050c19021f2cf4b8f2d71d04763ce` |
+| v0.56.1 | `7c5e2ac2524ffa75d077b5785b760ec81edb0cc6` |
+| v0.56.2 | `7c5e2ac2524ffa75d077b5785b760ec81edb0cc6` |
 
 Changing current source does not update what those pins select. Before moving
 a pin, build and test the proposed plugin commit against that exact tagged
@@ -47,9 +47,11 @@ Hyprland release, verify the plugin commit is an ancestor of the published
 branch with `make check-pins REF=HEAD`,
 and validate loading in a disposable matching compositor.
 
-These candidate pins do not change master until the integration PR is merged.
-See [feature integration](./feature-integration.md) for exact build artifacts,
-runtime coverage and remaining test boundaries.
+PR #116 was squash-merged, so its former integration-branch pin was not an
+ancestor of master. Both pins now select the landed version commit after fresh
+separate builds and matching disposable runtime acceptance on both releases.
+See [feature integration](./feature-integration.md) for the historical integration
+checkpoints, release revalidation and remaining test boundaries.
 
 The flake has an explicit v0.56.2 reference. Nix users should keep the plugin's
 Hyprland input aligned with their system input through `default.nix` and the

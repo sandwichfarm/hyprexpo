@@ -1,7 +1,8 @@
-# Feature interoperability candidate
+# Feature interoperability validation
 
-This branch combines the open features for testing before a proposed merge to
-master. Its base is the release-compatible recovery at `eecace3`.
+PR #116 combined the feature branches for testing on top of the release-compatible
+recovery at `eecace3`. The verified integration was squash-merged to master at
+`fe502d0`. The checkpoints below retain the original integration commit identities.
 
 ## Merge checkpoints
 
@@ -19,11 +20,11 @@ runtime checks before the next feature is merged. The final checks cover the
 features together, especially workspace selection, exact submap restoration,
 multi-monitor ownership, preview recapture, pinned windows and scrolling input.
 
-## Testing this branch
+## Building the combined features
 
-Check out `integration/feature-interoperability`, not master. Its v0.56.1 and
-v0.56.2 HyprPM pins select combined source
-`c905dcfb0e1050c19021f2cf4b8f2d71d04763ce`; older release pins are unchanged.
+Use master or the release tag for the landed features. The v0.56.1 and v0.56.2
+HyprPM pins select combined source on master at
+`7c5e2ac2524ffa75d077b5785b760ec81edb0cc6`; older release pins are unchanged.
 Compile against the exact Hyprland revision and dependency ABI of the disposable
 compositor. An enabled HyprPM entry is not evidence that the combined artifact
 is loaded: confirm the plugin version and configuration errors in the target
@@ -40,8 +41,8 @@ bash scripts/inject-scrolling-input.sh --source-contract
 Use `make -B all` with separate output paths and exact include paths for each
 release. A previously built binary is not proof for a different header set.
 
-This integration PR remains separate from master until combined testing is
-reviewed. Compile checks alone do not establish runtime interoperability.
+The integration PR was merged after combined testing and inline review.
+Compile checks alone do not establish runtime interoperability.
 
 The fourth checkpoint found that a disconnected output could leave its
 overview registered. The integration branch unregisters it on monitor removal;
@@ -69,7 +70,7 @@ release preserves the changed geometry and emits no additional mutation.
 Grid-to-scrolling, scrolling-to-grid and scrolling-to-scrolling cross-output
 drops all release ownership without moving windows or closing peer sessions.
 
-## Release evidence
+## Integration checkpoint evidence
 
 The following separate binaries were built from `c905dcf` and loaded into
 matching disposable compositors. Both passed native topology/direction checks,
@@ -89,6 +90,26 @@ Local logs, scripts, binaries, captures and checksums are retained under
 `merge-5-input-safe-c905dcfb0e1050c19021f2cf4b8f2d71d04763ce` and native runs in
 `native/v0.56.{1,2}-input-safe*`.
 
+## v0.56.2 release revalidation
+
+After the squash merge, master commit
+`7c5e2ac2524ffa75d077b5785b760ec81edb0cc6` was rebuilt separately for both supported
+Hyprland releases and passed native acceptance in both matching disposable
+compositors. Its runtime code is identical to the reviewed integration head
+`86c6783`; only `VERSION` changed to `v0.56.2`.
+
+| Hyprland | Pinned-source build SHA-256 |
+| --- | --- |
+| v0.56.1 | `e86ca41c0d3982cfb8768a6a3fe632c9cd09f1176a3faa44d336865b38bc96c1` |
+| v0.56.2 | `5044f240905fa47c7f905ea21d3fdd80a95390554ff0201a1581b64c043616b3` |
+
+These pre-tag pin builds report `v0.56.2-dev+7c5e2ac`. The release workflow builds
+the tagged tree afresh and must report clean `v0.56.2`; its downloadable artifact
+and provenance are separate from the above binaries. Fresh source tests and
+ASan/UBSan suites passed. Logs/builds are under
+`/var/tmp/hyprexpo-release-0562.6RsFp3`; native acceptance evidence is under
+`/var/tmp/hyprexpo-integration.oc6IUs/native/v0.56.{1,2}-release-0562-pin`.
+
 ## Test boundaries
 
 - Grid-to-grid cross-output dragging is supported. Cross-output drops involving
@@ -100,4 +121,3 @@ Local logs, scripts, binaries, captures and checksums are retained under
 - PR #117 is a separate development-Hyprland compatibility draft superseding
   reverted #109, not part of this tagged-release feature set. It remains separate
   to preserve the #113 recovery and explicit release reference.
-- Master and its installed production plugin are unchanged by this test branch.
