@@ -116,7 +116,7 @@ static bool matchesCancelKey(xkb_keysym_t keysym) {
 }
 
 bool shouldCancelOverview(const IKeyboard::SKeyEvent& event) {
-    if (!g_pOverview || event.state != WL_KEYBOARD_KEY_STATE_PRESSED)
+    if (!overviewOpen() || event.state != WL_KEYBOARD_KEY_STATE_PRESSED)
         return false;
 
     const auto KEYCODE  = event.keycode + 8;
@@ -146,16 +146,14 @@ static PHLWINDOW windowToBringFromWorkspace(const PHLWORKSPACE& workspace) {
     return nullptr;
 }
 
-static SDispatchResult bringWindowFromWorkspace(int64_t sourceWorkspaceID) {
+static SDispatchResult bringWindowFromWorkspace(int64_t sourceWorkspaceID, const PHLMONITOR& destinationMonitor) {
     if (sourceWorkspaceID == WORKSPACE_INVALID)
         return {.success = false, .error = "selected workspace is empty"};
 
-    const auto focusState = Desktop::focusState();
-    const auto monitor    = focusState ? focusState->monitor() : State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
-    if (!monitor || !monitor->m_activeWorkspace)
+    if (!destinationMonitor || !destinationMonitor->m_activeWorkspace)
         return {.success = false, .error = "no active monitor/workspace"};
 
-    if (sourceWorkspaceID == monitor->activeWorkspaceID())
+    if (sourceWorkspaceID == destinationMonitor->activeWorkspaceID())
         return {};
 
     PHLWORKSPACE sourceWorkspace;
@@ -172,11 +170,25 @@ static SDispatchResult bringWindowFromWorkspace(int64_t sourceWorkspaceID) {
     if (!window)
         return {.success = false, .error = "selected workspace has no mapped windows"};
 
-    Desktop::globalWindowController()->moveWindowToWorkspace(window, monitor->m_activeWorkspace);
+    Desktop::globalWindowController()->moveWindowToWorkspace(window, destinationMonitor->m_activeWorkspace);
+    const auto focusState = Desktop::focusState();
     if (focusState)
         focusState->fullWindowFocus(window, Desktop::FOCUS_REASON_KEYBIND);
     window->warpCursor();
     return {};
+}
+
+// Open on every monitor, or just the one under the cursor.
+static void openOverviews(bool allMonitors) {
+    renderingOverview = true;
+
+    if (allMonitors) {
+        for (const auto& MONITOR : State::monitorState()->monitors())
+            createOverview(MONITOR);
+    } else if (const auto PMONITOR = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run())
+        createOverview(PMONITOR);
+
+    renderingOverview = false;
 }
 
 static bool isSingleDigitWorkspaceArg(const std::string& arg) {
@@ -186,13 +198,13 @@ static bool isSingleDigitWorkspaceArg(const std::string& arg) {
 static SDispatchResult changeToSingleDigitWorkspace(const std::string& arg) {
     const int workspaceID = arg[0] - '0';
 
-    if (g_pOverview) {
-        if (g_pOverview->selectWorkspaceByID(workspaceID)) {
-            g_pOverview->close();
+    if (auto* const OV = activeOverview()) {
+        if (OV->selectWorkspaceByID(workspaceID)) {
+            closeOverviewsSelecting(OV);
             return {};
         }
 
-        g_pOverview->close(false);
+        closeOverviews(false);
     }
 
     const auto change = Config::Actions::changeWorkspace(arg);
@@ -229,7 +241,7 @@ static std::string workspaceArgForKeysym(xkb_keysym_t keysym) {
 }
 
 static std::string workspaceArgForKeyEvent(const IKeyboard::SKeyEvent& event) {
-    if (!g_pOverview || event.state != WL_KEYBOARD_KEY_STATE_PRESSED)
+    if (!overviewOpen() || event.state != WL_KEYBOARD_KEY_STATE_PRESSED)
         return "";
 
     const auto KEYCODE  = event.keycode + 8;
@@ -251,7 +263,7 @@ static std::string workspaceArgForKeyEvent(const IKeyboard::SKeyEvent& event) {
 }
 
 bool shouldSelectWorkspaceFromKey(const IKeyboard::SKeyEvent& event) {
-    if (g_pOverview && g_pOverview->m_isSwiping)
+    if (auto* const OV = activeOverview(); OV && OV->m_isSwiping)
         return false;
 
     const auto arg = workspaceArgForKeyEvent(event);
@@ -265,8 +277,10 @@ bool shouldSelectWorkspaceFromKey(const IKeyboard::SKeyEvent& event) {
 
     if (mode == Hyprexpo::ENumberKeyMode::Index) {
         const int visibleIndex = Hyprexpo::numberKeyToVisibleIndex(arg[0] - '0');
-        if (visibleIndex >= 0)
-            g_pOverview->onKbSelectToken(visibleIndex);
+        if (visibleIndex >= 0) {
+            if (auto* const OV = activeOverview(); OV && OV->onKbSelectToken(visibleIndex))
+                closeOverviewsSelecting(OV);
+        }
         return true;
     }
 
@@ -432,68 +446,64 @@ static int luaGesture(lua_State* L) {
 }
 
 static SDispatchResult onExpoDispatcher(std::string arg) {
-    arg = lowerString(trimString(arg));
+    const auto COMMAND = Hyprexpo::parseExpoCommand(lowerString(trimString(arg)));
 
-    if (g_pOverview && g_pOverview->m_isSwiping)
+    arg                     = COMMAND.command;
+    const bool ALL_MONITORS = COMMAND.allMonitors;
+
+    if (auto* const OV = activeOverview(); OV && OV->m_isSwiping)
         return {.success = false, .error = "already swiping"};
 
     if (isSingleDigitWorkspaceArg(arg))
         return changeToSingleDigitWorkspace(arg);
 
     if (arg == "select") {
-        if (g_pOverview) {
-            g_pOverview->selectHoveredWorkspace();
-            g_pOverview->close();
+        if (auto* const OV = overviewForGlobalPoint(g_pInputManager->getMouseCoordsInternal())) {
+            if (OV->selectHoveredWorkspace())
+                closeOverviewsSelecting(OV);
         }
         return {};
     }
 
     if (arg == "bring") {
-        if (g_pOverview) {
-            g_pOverview->selectHoveredWorkspace();
-            const auto result = bringWindowFromWorkspace(g_pOverview->selectedWorkspaceID());
-            g_pOverview->close(false);
+        if (auto* const OV = overviewForGlobalPoint(g_pInputManager->getMouseCoordsInternal())) {
+            if (!OV->selectHoveredWorkspace())
+                return {.success = false, .error = "no workspace under pointer"};
+            const auto DESTINATION = OV->pMonitor.lock();
+            const auto result = bringWindowFromWorkspace(OV->selectedWorkspaceID(), DESTINATION);
+            closeOverviews(false);
             return result;
         }
         return {};
     }
 
     if (arg == "toggle") {
-        if (g_pOverview)
-            g_pOverview->close(false);
-        else {
-            const auto PMONITOR = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
-            if (!PMONITOR)
-                return {};
-            renderingOverview = true;
-            g_pOverview       = std::make_unique<COverview>(PMONITOR->m_activeWorkspace);
-            renderingOverview = false;
-        }
+        if (overviewOpen())
+            closeOverviews(false);
+        else
+            openOverviews(ALL_MONITORS);
         return {};
     }
 
     if (arg == "cancel") {
-        if (g_pOverview)
-            g_pOverview->close(false);
+        closeOverviews(false);
         return {};
     }
 
     if (arg == "off" || arg == "close" || arg == "disable") {
-        if (g_pOverview)
-            g_pOverview->close(false);
+        closeOverviews(false);
         return {};
     }
 
-    if (g_pOverview)
+    if (ALL_MONITORS && (arg == "on" || arg == "enable")) {
+        openOverviews(true);
+        return {};
+    }
+
+    if (overviewOpen())
         return {};
 
-    const auto PMONITOR = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
-    if (!PMONITOR)
-        return {};
-
-    renderingOverview = true;
-    g_pOverview       = std::make_unique<COverview>(PMONITOR->m_activeWorkspace);
-    renderingOverview = false;
+    openOverviews(ALL_MONITORS);
     return {};
 }
 
@@ -566,11 +576,12 @@ void syncExpoGestureFromConfig() {
 }
 
 static SDispatchResult onKbFocusDispatcher(std::string arg) {
-    if (!g_pOverview)
+    auto* const OV = activeOverview();
+    if (!OV)
         return {};
 
     if (arg == "left" || arg == "right" || arg == "up" || arg == "down") {
-        g_pOverview->onKbMoveFocus(arg);
+        OV->onKbMoveFocus(arg);
         return {};
     }
 
@@ -578,15 +589,18 @@ static SDispatchResult onKbFocusDispatcher(std::string arg) {
 }
 
 static SDispatchResult onKbConfirmDispatcher(std::string arg) {
-    if (!g_pOverview)
+    auto* const OV = activeOverview();
+    if (!OV)
         return {};
 
-    g_pOverview->onKbConfirm();
+    if (OV->onKbConfirm())
+        closeOverviewsSelecting(OV);
     return {};
 }
 
 static SDispatchResult onKbSelectNumberDispatcher(std::string arg) {
-    if (!g_pOverview)
+    auto* const OV = activeOverview();
+    if (!OV)
         return {};
 
     arg = trimString(arg);
@@ -597,22 +611,25 @@ static SDispatchResult onKbSelectNumberDispatcher(std::string arg) {
     if (!parseStrictInteger(arg, num))
         return {.success = false, .error = "invalid number"};
 
-    g_pOverview->onKbSelectNumber(num);
+    if (OV->onKbSelectNumber(num))
+        closeOverviewsSelecting(OV);
     return {};
 }
 
 static SDispatchResult onKbSelectTokenDispatcher(std::string arg) {
-    if (!g_pOverview)
+    auto* const OV = activeOverview();
+    if (!OV)
         return {};
     arg = trimString(arg);
-    if (!g_pOverview->selectVisibleToken(arg))
+    if (!OV->selectVisibleToken(arg))
         return {.success = false, .error = "no visible workspace for token"};
-    g_pOverview->close();
+    closeOverviewsSelecting(OV);
     return {};
 }
 
 static SDispatchResult onKbSelectIndexDispatcher(std::string arg) {
-    if (!g_pOverview)
+    auto* const OV = activeOverview();
+    if (!OV)
         return {};
     arg = trimString(arg);
     int idx = -1;
@@ -621,12 +638,14 @@ static SDispatchResult onKbSelectIndexDispatcher(std::string arg) {
     if (idx <= 0)
         return {.success = false, .error = "invalid index (expected >= 1)"};
     // convert to 0-based visible index
-    g_pOverview->onKbSelectToken(idx - 1);
+    if (OV->onKbSelectToken(idx - 1))
+        closeOverviewsSelecting(OV);
     return {};
 }
 
 static SDispatchResult onMovePreviewWindowDispatcher(std::string arg) {
-    if (!g_pOverview)
+    auto* const OV = activeOverview();
+    if (!OV)
         return {.success = false, .error = "overview is not open"};
 
     std::istringstream stream{trimString(arg)};
@@ -651,7 +670,7 @@ static SDispatchResult onMovePreviewWindowDispatcher(std::string arg) {
             return {.success = false, .error = "window address did not match a mapped window"};
     }
 
-    if (!g_pOverview->moveWindowBetweenVisibleIndices(source - 1, target - 1, window))
+    if (!OV->moveWindowBetweenVisibleIndices(source - 1, target - 1, window))
         return {.success = false, .error = "failed to move preview window"};
 
     return {};

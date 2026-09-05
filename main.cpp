@@ -27,34 +27,40 @@ typedef void (*origAddDamageA)(void*, const CBox&);
 typedef void (*origAddDamageB)(void*, const pixman_region32_t*);
 
 static void hkRenderWorkspace(void* thisptr, PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& now, const CBox& geometry) {
-    if (!g_pOverview || isRenderingOverview() || g_pOverview->blockOverviewRendering || !g_pOverview->shouldRenderOverviewForMonitor(pMonitor))
+    auto* const OV = overviewForMonitor(pMonitor);
+
+    if (!OV || isRenderingOverview() || OV->blockOverviewRendering || !OV->shouldRenderOverviewForMonitor(pMonitor))
         ((origRenderWorkspace)(g_pRenderWorkspaceHook->m_original))(thisptr, pMonitor, pWorkspace, now, geometry);
     else
-        g_pOverview->render();
+        OV->render();
 }
 
 static void hkAddDamageA(void* thisptr, const CBox& box) {
     const auto PMONITOR   = (Monitor::CMonitor*)thisptr;
     const auto PMONITORSP = PMONITOR ? PMONITOR->m_self.lock() : PHLMONITOR{};
 
-    if (!g_pOverview || !PMONITORSP || !g_pOverview->shouldRenderOverviewForMonitor(PMONITORSP) || g_pOverview->blockDamageReporting) {
+    auto* const OV = overviewForMonitor(PMONITORSP);
+
+    if (!OV || !OV->shouldRenderOverviewForMonitor(PMONITORSP) || OV->blockDamageReporting) {
         ((origAddDamageA)g_pAddDamageHookA->m_original)(thisptr, box);
         return;
     }
 
-    g_pOverview->onDamageReported();
+    OV->onDamageReported();
 }
 
 static void hkAddDamageB(void* thisptr, const pixman_region32_t* rg) {
     const auto PMONITOR   = (Monitor::CMonitor*)thisptr;
     const auto PMONITORSP = PMONITOR ? PMONITOR->m_self.lock() : PHLMONITOR{};
 
-    if (!g_pOverview || !PMONITORSP || !g_pOverview->shouldRenderOverviewForMonitor(PMONITORSP) || g_pOverview->blockDamageReporting) {
+    auto* const OV = overviewForMonitor(PMONITORSP);
+
+    if (!OV || !OV->shouldRenderOverviewForMonitor(PMONITORSP) || OV->blockDamageReporting) {
         ((origAddDamageB)g_pAddDamageHookB->m_original)(thisptr, rg);
         return;
     }
 
-    g_pOverview->onDamageReported();
+    OV->onDamageReported();
 }
 
 static void failNotif(const std::string& reason) {
@@ -109,15 +115,14 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     }
 
     static auto P = Event::bus()->m_events.render.pre.listen([](PHLMONITOR pMonitor) {
-        if (!g_pOverview)
-            return;
-        g_pOverview->onPreRender();
+        if (auto* const OV = overviewForMonitor(pMonitor))
+            OV->onPreRender();
     });
 
     static auto PKEY = Event::bus()->m_events.input.keyboard.key.listen([](IKeyboard::SKeyEvent event, Event::SCallbackInfo& info) {
         if (shouldCancelOverview(event)) {
             info.cancelled = true;
-            g_pOverview->close(false);
+            closeOverviews(false);
             return;
         }
 
@@ -141,7 +146,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 APICALL EXPORT void PLUGIN_EXIT() {
     disableExpoGestureRegistration();
 
-    g_pOverview.reset();
+    destroyAllOverviews();
     g_pHyprRenderer->m_renderPass.removeAllOfType("COverviewPassElement");
 
     Config::mgr()->reload();

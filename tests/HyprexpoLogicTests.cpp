@@ -25,6 +25,10 @@ bool near(double a, double b, double eps = 0.001) {
     return std::abs(a - b) < eps;
 }
 
+bool containsKey(const std::vector<uint64_t>& keys, uint64_t key) {
+    return std::find(keys.begin(), keys.end(), key) != keys.end();
+}
+
 Hyprexpo::SSize makeSize(double w, double h) {
     return {w, h};
 }
@@ -352,6 +356,189 @@ int main() {
     checkGeometryForMonitor(makeSize(1600, 900));
     checkGeometryForMonitor(makeSize(900, 1600));
     checkGeometryForMonitor(makeSize(2560, 1080));
+
+    // --- global multi-monitor geometry ---
+    {
+        const SRect source{100, 100, 80, 80};
+        const std::vector<SGlobalTile> candidates{
+            {.overviewKey = 2, .tileIndex = 0, .overviewGlobal = {240, 0, 200, 300}, .tileGlobal = {240, 100, 60, 60}},
+            {.overviewKey = 2, .tileIndex = 1, .overviewGlobal = {240, 0, 200, 300}, .tileGlobal = {320, 100, 60, 60}},
+            {.overviewKey = 3, .tileIndex = 0, .overviewGlobal = {-200, 40, 180, 260}, .tileGlobal = {-100, 110, 50, 50}},
+            {.overviewKey = 4, .tileIndex = 0, .overviewGlobal = {20, -240, 220, 180}, .tileGlobal = {110, -100, 50, 40}},
+            {.overviewKey = 5, .tileIndex = 0, .overviewGlobal = {0, 260, 280, 220}, .tileGlobal = {115, 280, 70, 50}},
+        };
+
+        const auto RIGHT = selectDirectionalTile(source, EDirection::Right, candidates);
+        expect(RIGHT && RIGHT->overviewKey == 2 && RIGHT->tileIndex == 0, "right selects nearest forward boundary tile");
+        const auto LEFT = selectDirectionalTile(source, EDirection::Left, candidates);
+        expect(LEFT && LEFT->overviewKey == 3, "left selects a negative-coordinate monitor tile");
+        const auto UP = selectDirectionalTile(source, EDirection::Up, candidates);
+        expect(UP && UP->overviewKey == 4, "up selects a stacked monitor tile");
+        const auto DOWN = selectDirectionalTile(source, EDirection::Down, candidates);
+        expect(DOWN && DOWN->overviewKey == 5, "down selects a gapped monitor tile");
+
+        const std::vector<SGlobalTile> ranked{
+            {.overviewKey = 10, .tileIndex = 0, .overviewGlobal = {200, 0, 300, 300}, .tileGlobal = {220, 260, 40, 40}},
+            {.overviewKey = 11, .tileIndex = 0, .overviewGlobal = {200, 0, 300, 300}, .tileGlobal = {220, 130, 40, 40}},
+            {.overviewKey = 12, .tileIndex = 0, .overviewGlobal = {200, 0, 300, 300}, .tileGlobal = {240, 110, 40, 40}},
+        };
+        const auto PERPENDICULAR = selectDirectionalTile(source, EDirection::Right, ranked);
+        expect(PERPENDICULAR && PERPENDICULAR->overviewKey == 11, "perpendicular interval distance ranks before center distance");
+
+        const std::vector<SGlobalTile> stableTie{
+            {.overviewKey = 20, .tileIndex = 3, .overviewGlobal = {200, 0, 300, 300}, .tileGlobal = {220, 100, 40, 40}},
+            {.overviewKey = 21, .tileIndex = 1, .overviewGlobal = {200, 0, 300, 300}, .tileGlobal = {220, 100, 40, 40}},
+        };
+        const auto TIE = selectDirectionalTile(source, EDirection::Right, stableTie);
+        expect(TIE && TIE->overviewKey == 20 && TIE->tileIndex == 3, "directional ties retain stable input order");
+
+        const std::vector<SGlobalTile> partialRow{
+            {.overviewKey = 30, .tileIndex = 3, .overviewGlobal = {220, 0, 400, 300}, .tileGlobal = {220, 20, 80, 80}},
+            {.overviewKey = 30, .tileIndex = 4, .overviewGlobal = {220, 0, 400, 300}, .tileGlobal = {220, 120, 80, 80}},
+        };
+        const auto PARTIAL = selectDirectionalTile(source, EDirection::Right, partialRow);
+        expect(PARTIAL && PARTIAL->tileIndex == 4, "partial-row candidate nearest the source interval wins");
+
+        const std::vector<SGlobalTile> invalid{
+            {.overviewKey = 0, .tileIndex = 0, .overviewGlobal = {200, 0, 100, 100}, .tileGlobal = {220, 100, 40, 40}},
+            {.overviewKey = 2, .tileIndex = -1, .overviewGlobal = {200, 0, 100, 100}, .tileGlobal = {220, 100, 40, 40}},
+            {.overviewKey = 2, .tileIndex = 0, .overviewGlobal = {200, 0, 100, 100}, .tileGlobal = {220, 100, 0, 40}},
+            {.overviewKey = 2, .tileIndex = 1, .overviewGlobal = {0, 0, 100, 100}, .tileGlobal = {20, 100, 40, 40}},
+        };
+        expect(!selectDirectionalTile(source, EDirection::Right, invalid), "invalid and wrong-half-plane candidates are ignored");
+    }
+
+    // --- global overview/tile hit testing ---
+    {
+        const std::vector<SGlobalTile> tiles{
+            {.overviewKey = 1, .tileIndex = 0, .overviewGlobal = {-1920, 0, 1920, 1080}, .tileGlobal = {-1900, 20, 900, 500}},
+            {.overviewKey = 2, .tileIndex = 4, .overviewGlobal = {100, 200, 1280, 720}, .tileGlobal = {140, 240, 500, 200}},
+        };
+        const auto FIRST = hitTestGlobalTile({-1900, 20}, tiles);
+        expect(FIRST && FIRST->overviewKey == 1 && FIRST->tileIndex == 0, "global hit includes the top-left tile edge");
+        expect(FIRST && near(FIRST->pointLocal.x, 20) && near(FIRST->pointLocal.y, 20), "hit result converts to first overview-local coordinates");
+        const auto SECOND = hitTestGlobalTile({639.999, 439.999}, tiles);
+        expect(SECOND && SECOND->overviewKey == 2 && SECOND->tileIndex == 4, "global hit resolves a differently sized target overview");
+        expect(SECOND && near(SECOND->pointLocal.x, 539.999) && near(SECOND->pointLocal.y, 239.999), "hit result converts to target-local coordinates");
+        expect(!hitTestGlobalTile({640, 440}, tiles), "global hit excludes exact bottom-right tile edges");
+        expect(!hitTestGlobalTile({50, 100}, tiles), "global hit rejects monitor gaps and points outside every tile");
+    }
+
+    // --- executable shared drag coordinator ---
+    {
+        SOverviewDragState state;
+        const std::vector<uint64_t> LIVE{1, 2, 3};
+
+        auto step = transitionOverviewDrag(state, {.type = EOverviewDragEventType::Press, .monitorKey = 1, .tileIndex = 2, .windowKey = 77}, LIVE);
+        expect(step.accepted && step.next.active && step.next.sourceMonitorKey == 1, "press claims one live source owner");
+        state = step.next;
+
+        const auto SECOND_PRESS = transitionOverviewDrag(state, {.type = EOverviewDragEventType::Press, .monitorKey = 2, .tileIndex = 0, .windowKey = 88}, LIVE);
+        expect(!SECOND_PRESS.accepted && SECOND_PRESS.next.sourceMonitorKey == 1, "a concurrent second press cannot steal drag ownership");
+
+        step = transitionOverviewDrag(state, {.type = EOverviewDragEventType::Move}, LIVE);
+        expect(step.accepted && step.next.moved, "move crosses the drag threshold once");
+        state = step.next;
+        step = transitionOverviewDrag(state, {.type = EOverviewDragEventType::Target, .monitorKey = 2, .tileIndex = 4}, LIVE);
+        expect(step.accepted && step.next.targetMonitorKey == 2, "target A becomes current");
+        state = step.next;
+        step = transitionOverviewDrag(state, {.type = EOverviewDragEventType::Target, .monitorKey = 3, .tileIndex = 1}, LIVE);
+        expect(step.accepted && step.next.targetMonitorKey == 3, "target B replaces target A");
+        expect(containsKey(step.next.affectedMonitorKeys, 1) && containsKey(step.next.affectedMonitorKeys, 2) && containsKey(step.next.affectedMonitorKeys, 3), "source and every visited target remain affected");
+        state = step.next;
+
+        step = transitionOverviewDrag(state, {.type = EOverviewDragEventType::Release}, LIVE);
+        expect(step.drop && step.drop->sourceMonitorKey == 1 && step.drop->targetMonitorKey == 3 && step.drop->windowKey == 77, "release emits one validated source-to-current-target drop");
+        expect(step.cleanup && !step.next.active, "release returns cleanup and leaves the coordinator idle");
+        expect(step.cleanupMonitorKeys.size() == 3, "release cleanup damages each affected monitor once");
+        state = step.next;
+        const auto DUPLICATE_RELEASE = transitionOverviewDrag(state, {.type = EOverviewDragEventType::Release}, LIVE);
+        expect(!DUPLICATE_RELEASE.drop && !DUPLICATE_RELEASE.cleanup && !DUPLICATE_RELEASE.next.active, "duplicate release is idempotent and emits no second drop");
+
+        const auto STALE_PRESS = transitionOverviewDrag({}, {.type = EOverviewDragEventType::Press, .monitorKey = 9, .tileIndex = 0, .windowKey = 1}, LIVE);
+        expect(!STALE_PRESS.accepted && !STALE_PRESS.next.active, "press rejects a stale source monitor key");
+        const auto VALID_PRESS = transitionOverviewDrag({}, {.type = EOverviewDragEventType::Press, .monitorKey = 1, .tileIndex = 0, .windowKey = 1}, LIVE);
+        const auto STALE_TARGET = transitionOverviewDrag(VALID_PRESS.next, {.type = EOverviewDragEventType::Target, .monitorKey = 9, .tileIndex = 0}, LIVE);
+        expect(!STALE_TARGET.accepted && !STALE_TARGET.next.targetMonitorKey, "target change rejects a stale target monitor key");
+
+        auto noTarget = transitionOverviewDrag(VALID_PRESS.next, {.type = EOverviewDragEventType::Move}, LIVE).next;
+        const auto NO_TARGET_RELEASE = transitionOverviewDrag(noTarget, {.type = EOverviewDragEventType::Release}, LIVE);
+        expect(!NO_TARGET_RELEASE.drop && NO_TARGET_RELEASE.cleanup && !NO_TARGET_RELEASE.next.active, "release without a target cleans up without a drop");
+
+        auto targetState = transitionOverviewDrag(noTarget, {.type = EOverviewDragEventType::Target, .monitorKey = 2, .tileIndex = 1}, LIVE).next;
+        const auto sameTile = transitionOverviewDrag(
+            transitionOverviewDrag(VALID_PRESS.next, {.type = EOverviewDragEventType::Move}, LIVE).next,
+            {.type = EOverviewDragEventType::Target, .monitorKey = 1, .tileIndex = 0}, LIVE).next;
+        const auto SAME_TILE_RELEASE = transitionOverviewDrag(sameTile, {.type = EOverviewDragEventType::Release}, LIVE);
+        expect(!SAME_TILE_RELEASE.drop && SAME_TILE_RELEASE.cleanup, "same-tile release is consumed without emitting a drop");
+
+        const auto CLEARED_TARGET = transitionOverviewDrag(targetState, {.type = EOverviewDragEventType::Target}, LIVE);
+        expect(CLEARED_TARGET.accepted && !CLEARED_TARGET.next.targetMonitorKey, "leaving every overview clears the current target without forgetting affected monitors");
+        const auto GAP_RELEASE = transitionOverviewDrag(CLEARED_TARGET.next, {.type = EOverviewDragEventType::Release}, LIVE);
+        expect(!GAP_RELEASE.drop && GAP_RELEASE.cleanup && GAP_RELEASE.cleanupMonitorKeys.size() == 2, "gap release cleans source and former target without a drop");
+
+        auto targetBState = transitionOverviewDrag(targetState, {.type = EOverviewDragEventType::Target, .monitorKey = 3, .tileIndex = 0}, LIVE).next;
+        const auto FORMER_TARGET_DESTROY = transitionOverviewDrag(targetBState, {.type = EOverviewDragEventType::MonitorDestroyed, .monitorKey = 2}, {1, 3});
+        expect(FORMER_TARGET_DESTROY.cleanup && !FORMER_TARGET_DESTROY.next.active, "destroying a former target invalidates and cleans the whole session");
+
+        const auto UNKNOWN_LOST_SOURCE = transitionOverviewDrag(targetState, {.type = EOverviewDragEventType::MonitorDestroyed}, {2, 3});
+        expect(UNKNOWN_LOST_SOURCE.cleanup && !UNKNOWN_LOST_SOURCE.next.active,
+               "an expired source resets the session even when the destruction key is unavailable");
+        const auto UNKNOWN_LOST_TARGET = transitionOverviewDrag(targetState, {.type = EOverviewDragEventType::MonitorDestroyed, .monitorKey = 99}, {1, 3});
+        expect(UNKNOWN_LOST_TARGET.cleanup && !UNKNOWN_LOST_TARGET.next.active,
+               "an expired target resets the session before an unknown destruction key is rejected");
+        const auto UNKNOWN_ALL_LIVE = transitionOverviewDrag(targetState, {.type = EOverviewDragEventType::MonitorDestroyed, .monitorKey = 99}, LIVE);
+        expect(!UNKNOWN_ALL_LIVE.cleanup && UNKNOWN_ALL_LIVE.next.active,
+               "an unrelated destruction key leaves a fully live session intact");
+
+        const auto LOST_TARGET_RELEASE = transitionOverviewDrag(targetState, {.type = EOverviewDragEventType::Release}, {1, 3});
+        expect(!LOST_TARGET_RELEASE.drop && LOST_TARGET_RELEASE.cleanup, "release rejects a target that disappeared without a destruction callback");
+
+        const auto TARGET_DESTROY = transitionOverviewDrag(targetState, {.type = EOverviewDragEventType::MonitorDestroyed, .monitorKey = 2}, {1, 3});
+        expect(TARGET_DESTROY.cleanup && !TARGET_DESTROY.drop && !TARGET_DESTROY.next.active, "target destruction cancels and cleans the session");
+        expect(containsKey(TARGET_DESTROY.cleanupMonitorKeys, 1) && containsKey(TARGET_DESTROY.cleanupMonitorKeys, 2), "target destruction retains source and destroyed-target cleanup keys");
+
+        const auto SOURCE_DESTROY = transitionOverviewDrag(targetState, {.type = EOverviewDragEventType::MonitorDestroyed, .monitorKey = 1}, {2, 3});
+        expect(SOURCE_DESTROY.cleanup && !SOURCE_DESTROY.next.active, "source destruction cancels and cleans the session");
+        const auto CANCEL = transitionOverviewDrag(targetState, {.type = EOverviewDragEventType::Cancel}, LIVE);
+        expect(CANCEL.cleanup && !CANCEL.next.active && !CANCEL.drop, "cancel cleans without emitting a drop");
+        const auto ALL_CLOSE = transitionOverviewDrag(targetState, {.type = EOverviewDragEventType::AllClose}, {});
+        expect(ALL_CLOSE.cleanup && !ALL_CLOSE.next.active && ALL_CLOSE.cleanupMonitorKeys.size() == 2, "all-close cleans and de-duplicates affected monitors");
+        const auto IDLE_CANCEL = transitionOverviewDrag({}, {.type = EOverviewDragEventType::Cancel}, LIVE);
+        expect(!IDLE_CANCEL.cleanup && !IDLE_CANCEL.next.active, "repeated cleanup while idle is harmless");
+    }
+
+    // --- "all monitors" qualifier on expo dispatcher args ---
+    {
+        const auto BARE = Hyprexpo::parseExpoCommand("all");
+        expect(BARE.allMonitors, "bare all targets every monitor");
+        expect(BARE.command == "toggle", "bare all means toggle all");
+
+        const auto TOGGLE = Hyprexpo::parseExpoCommand("toggle all");
+        expect(TOGGLE.allMonitors, "toggle all targets every monitor");
+        expect(TOGGLE.command == "toggle", "toggle all keeps the toggle command");
+
+        const auto ON = Hyprexpo::parseExpoCommand("on all");
+        expect(ON.allMonitors, "on all targets every monitor");
+        expect(ON.command == "on", "on all keeps the on command");
+
+        const auto PLAIN = Hyprexpo::parseExpoCommand("toggle");
+        expect(!PLAIN.allMonitors, "plain toggle stays single-monitor");
+        expect(PLAIN.command == "toggle", "plain toggle is unchanged");
+
+        const auto EMPTY = Hyprexpo::parseExpoCommand("");
+        expect(!EMPTY.allMonitors, "empty arg stays single-monitor");
+        expect(EMPTY.command.empty(), "empty arg stays empty");
+
+        const auto PADDED = Hyprexpo::parseExpoCommand("  toggle   all  ");
+        expect(PADDED.allMonitors, "surrounding whitespace does not hide the qualifier");
+        expect(PADDED.command == "toggle", "whitespace is trimmed off the command");
+
+        // "all" only counts as a qualifier on its own or as a trailing word.
+        const auto SUBSTRING = Hyprexpo::parseExpoCommand("install");
+        expect(!SUBSTRING.allMonitors, "a command merely ending in the letters all is not a qualifier");
+        expect(SUBSTRING.command == "install", "non-qualifier command is unchanged");
+    }
 
     if (failures != 0)
         return 1;

@@ -27,6 +27,7 @@ HEADERS = globals.hpp Dispatchers.hpp PluginConfig.hpp HyprlandConfigCompat.hpp 
 TARGET = hyprexpo.so
 TEST_TARGET = HyprexpoLogicTests
 SOURCE_TEST_TARGET = OverviewSourceTests
+REGISTRY_TEST_TARGET = RegistryTeardownTests
 INSTALL_USER ?= $(if $(SUDO_USER),$(SUDO_USER),$(USER))
 INSTALL_DIR ?= /var/cache/hyprpm/$(INSTALL_USER)/hyprexpo
 INSTALL_NAME = hyprexpo.so
@@ -66,17 +67,21 @@ install: $(TARGET)
 	install -Dm755 $(TARGET) $(INSTALL_DIR)/$(INSTALL_NAME)
 
 clean:
-	rm -f ./$(TARGET) ./$(TEST_TARGET) ./$(SOURCE_TEST_TARGET)
+	rm -f ./$(TARGET) ./$(TEST_TARGET) ./$(SOURCE_TEST_TARGET) ./$(REGISTRY_TEST_TARGET)
 
-test: $(TEST_TARGET) $(SOURCE_TEST_TARGET)
+test: $(TEST_TARGET) $(SOURCE_TEST_TARGET) $(REGISTRY_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(SOURCE_TEST_TARGET)
+	./$(REGISTRY_TEST_TARGET)
 
 $(TEST_TARGET): HyprexpoLogic.cpp HyprexpoLogic.hpp HyprexpoConfig.hpp tests/HyprexpoLogicTests.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror HyprexpoLogic.cpp tests/HyprexpoLogicTests.cpp -o $@
 
 $(SOURCE_TEST_TARGET): tests/OverviewSourceTests.cpp Overview.cpp OverviewRender.cpp Dispatchers.cpp main.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror tests/OverviewSourceTests.cpp -o $@
+
+$(REGISTRY_TEST_TARGET): tests/RegistryTeardownTests.cpp
+	$(CXX) -std=c++2b -Wall -Wextra -Werror tests/RegistryTeardownTests.cpp -o $@
 
 # --- Release ceremony -----------------------------------------------------
 # 1. make check-pins          verify hyprpm pins are on the release history

@@ -13,28 +13,36 @@ void CExpoGesture::begin(const ITrackpadGesture::STrackpadGestureBegin& e) {
     m_lastDelta   = 0.F;
     m_firstUpdate = true;
 
-    if (m_action == EExpoGestureAction::Cancel) {
-        if (!g_pOverview || g_pOverview->closeCommitted())
-            return;
-
-        g_pOverview->beginCancelSwipe();
-        return;
-    }
-
     const auto monitor = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
     if (!monitor || !monitor->m_activeWorkspace)
         return;
 
-    if (!g_pOverview)
-        g_pOverview = std::make_unique<COverview>(monitor->m_activeWorkspace, true);
-    else if (!g_pOverview->closeCommitted()) {
-        g_pOverview->selectHoveredWorkspace();
-        g_pOverview->setClosing(true);
+    m_monitor = monitor;
+
+    auto* const OV = overview();
+    if (m_action == EExpoGestureAction::Cancel) {
+        if (!OV || OV->closeCommitted())
+            return;
+
+        OV->beginCancelSwipe();
+        return;
+    }
+
+    if (!OV)
+        createOverview(monitor, true);
+    else if (!OV->closeCommitted()) {
+        OV->selectHoveredWorkspace();
+        OV->setClosing(true);
     }
 }
 
+COverview* CExpoGesture::overview() const {
+    return overviewForMonitor(m_monitor.lock());
+}
+
 void CExpoGesture::update(const ITrackpadGesture::STrackpadGestureUpdate& e) {
-    if (!g_pOverview || g_pOverview->closeCommitted())
+    auto* const OV = overview();
+    if (!OV || OV->closeCommitted())
         return;
 
     if (m_firstUpdate) {
@@ -47,15 +55,17 @@ void CExpoGesture::update(const ITrackpadGesture::STrackpadGestureUpdate& e) {
     if (m_lastDelta <= 0.01) // plugin will crash if swipe ends at <= 0
         m_lastDelta = 0.01;
 
-    g_pOverview->onSwipeUpdate(m_lastDelta);
+    OV->onSwipeUpdate(m_lastDelta);
 }
 
 void CExpoGesture::end(const ITrackpadGesture::STrackpadGestureEnd& e) {
-    if (!g_pOverview || g_pOverview->closeCommitted())
+    auto* const OV = overview();
+    if (!OV || OV->closeCommitted())
         return;
 
-    g_pOverview->setClosing(false);
-    g_pOverview->onSwipeEnd(m_action == EExpoGestureAction::Expo);
-    if (g_pOverview)
-        g_pOverview->resetSwipe();
+    OV->setClosing(false);
+    OV->onSwipeEnd(m_action == EExpoGestureAction::Expo);
+    // onSwipeEnd can tear the overview down, so re-resolve before touching it.
+    if (auto* const STILL_ALIVE = overview())
+        STILL_ALIVE->resetSwipe();
 }
