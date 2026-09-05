@@ -37,6 +37,7 @@ export default defineConfig({
       {
         text: "Guides",
         items: [
+          { text: "Scrolling Overview", link: "/guides/scrolling-overview" },
           { text: "Lua Gestures", link: "/guides/lua-gestures" },
           { text: "Multi-Monitor Layouts", link: "/guides/multi-monitor" },
           { text: "Migration", link: "/guides/migration" },

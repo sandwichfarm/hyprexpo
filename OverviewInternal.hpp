@@ -74,7 +74,6 @@ void restorePinnedWindowPreviewState(const std::vector<SPinnedWindowPreviewState
 bool windowVisibleOnWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace);
 void settleWorkspaceMoveAnimation(const PHLWINDOW& window);
 void settleWorkspaceMoveAnimations();
-void ensureFramebuffer(COverview::SWorkspaceImage& image, const CBox& monbox, uint32_t drmFormat);
 std::vector<SWindowPreviewState> applyWorkspaceWindowGoalState(const PHLWORKSPACE& workspace);
 void restoreWorkspaceWindowGoalState(const std::vector<SWindowPreviewState>& states);
 PHLWORKSPACE activateWorkspaceForPreview(PHLMONITOR monitor, const PHLWORKSPACE& workspace);

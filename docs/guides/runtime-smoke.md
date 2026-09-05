@@ -6,6 +6,28 @@ Run these checks in a nested Hyprland session or another disposable compositor s
 
 `scripts/dev-watch.sh` rebuilds and relaunches that session on source changes.
 
+For the issue #85 fixture, run:
+
+```bash
+HYPREXPO_DEV_LAYOUT=scrolling ./scripts/run-nested.sh
+```
+
+This explicit mode creates right/left/down/up native scrolling workspaces, a
+mixed-layout row, a three-column workspace with a multi-target column and an
+offscreen target, plus floating, grouped, fullscreen, and pinned cases. The
+default without `HYPREXPO_DEV_LAYOUT` remains the unchanged grid fixture.
+
+The complete exact-ABI automated gate is:
+
+```bash
+./scripts/validate-scrolling-overview.sh --all \
+  --evidence .planning/quick/260828-w7w-implement-issue-85-provide-a-niri-like-o/260828-w7w-05-RUNTIME-EVIDENCE.md
+```
+
+This command is reusable after merge. Before publishing issue #85 specifically,
+append `--issue-85-publication-check` to also require the approved feature
+branch, base, linear Lore history, and absent remote branch/PR.
+
 Nested test binds:
 
 - `F10` for overview
@@ -47,6 +69,17 @@ Nested test binds:
 27. With `dynamic_grid = 1`, leave the current workspace empty and open a window on a neighboring workspace. Open and close with `hyprexpo:expo, toggle`; confirm the current workspace does not change.
 28. With `dynamic_grid = 1` and `fill_gaps = 1`, create distant workspace IDs (for example 1 and 5000). Open the overview; confirm it rejects gap expansion, remains responsive, and shows only the sparse workspaces.
 29. With `dynamic_grid = 1`, set `label_enable = 0`, then `label_show = never`, and set modern `border_color_current` / `border_color_hover` values. Confirm labels stay hidden and the modern border colors win over legacy highlight values.
+
+26. In scrolling mode, prove hover enter/change/clear, click, threshold drag,
+    real wheel pan, every positional drop zone, cross-workspace and mixed
+    fallback moves, terminal next-empty creation, outside/no-op release, and
+    rollback diagnostics.
+27. Cancel touch pending, pan, and drag states. Confirm no selection/drop, no
+    stuck consumption or proxy, and immediate mouse/touch reacquisition.
+28. Capture topology before and after map/unmap/move/reload/close/unload cycles;
+    confirm offset/order/width/size equality where no mutation was requested.
+29. Repeat on rotated/fractional output settings, then launch the default grid
+    fixture and confirm its appearance, selection, drag, cancel, and close paths.
 
 ::: warning
 The public site and docs should not claim full release readiness until this runtime smoke gate has been completed for the intended release artifact.

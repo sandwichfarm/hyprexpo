@@ -4,6 +4,7 @@
 #include "HyprlandConfigCompat.hpp"
 #include "HyprexpoConfig.hpp"
 #include "OverviewInternal.hpp"
+#include "OverviewCapture.hpp"
 #include "HyprexpoLogic.hpp"
 #include <hyprland/src/event/EventBus.hpp>
 #define private   public
@@ -542,16 +543,6 @@ void settleWorkspaceMoveAnimations() {
     }
 }
 
-void ensureFramebuffer(COverview::SWorkspaceImage& image, const CBox& monbox, uint32_t drmFormat) {
-    if (!image.fb)
-        image.fb = g_pHyprRenderer->createFB("hyprexpo");
-
-    if (image.fb->m_size != monbox.size()) {
-        image.fb->release();
-        image.fb->alloc(monbox.w, monbox.h, drmFormat);
-    }
-}
-
 std::vector<SWindowPreviewState> applyWorkspaceWindowGoalState(const PHLWORKSPACE& workspace) {
     std::vector<SWindowPreviewState> states;
     if (!workspace)
@@ -623,7 +614,7 @@ void removeOverview(WP<Hyprutils::Animation::CBaseAnimatedVariable> thisptr) {
     if (!g_pOverview)
         return;
 
-    const auto MON = g_pOverview->pMonitor.lock();
+    const auto MON = g_pOverview->monitor();
     g_pOverview.reset();
 
     if (!MON)
@@ -739,7 +730,7 @@ COverview::~COverview() {
     resetSubmapIfNeeded();
 }
 
-COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn_), swipe(swipe_) {
+COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_, uint64_t sessionGeneration) : startedOn(startedOn_), m_sessionGeneration(sessionGeneration), swipe(swipe_) {
     const auto PMONITOR = State::monitorState()->query().vec(g_pInputManager->getMouseCoordsInternal()).run();
     pMonitor            = PMONITOR;
 
@@ -910,43 +901,12 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
 
     int          currentid = 0;
 
-    // Temporarily disable monitor rotation during framebuffer capture so
-    // workspace content renders in the logical (portrait) orientation
-    // rather than the physical panel orientation.
-    const auto savedTransform       = pMonitor->m_transform;
-    const auto savedTransformedSize = pMonitor->m_transformedSize;
-    const auto savedPixelSize       = pMonitor->m_pixelSize;
-
-    // Fix for rotated monitors: m_pixelSize contains physical panel dimensions
-    // (landscape), but we need logical portrait dimensions for the framebuffer
-    if (isTransformRotated(savedTransform)) {
-        // Swap monbox dimensions to match logical orientation
-        monbox = {{0, 0}, {monbox.h, monbox.w}};
-
-        // Override monitor state: disable rotation and set all size fields to
-        // portrait dimensions so beginRender sets up the viewport correctly
-        pMonitor->m_transform       = WL_OUTPUT_TRANSFORM_NORMAL;
-        pMonitor->m_pixelSize       = {monbox.w, monbox.h};
-        pMonitor->m_transformedSize = {monbox.w, monbox.h};
-    }
-
-    PHLWORKSPACE openSpecial = PMONITOR->m_activeSpecialWorkspace;
-    if (openSpecial)
-        PMONITOR->m_activeSpecialWorkspace.reset();
-
-    g_pHyprRenderer->m_bBlockSurfaceFeedback = true;
     settleWorkspaceMoveAnimations();
 
     startedOn->m_visible = false;
 
     for (size_t i = 0; i < images.size(); ++i) {
         COverview::SWorkspaceImage& image = images[i];
-        ensureFramebuffer(image, monbox, framebufferFormatWithAlpha(PMONITOR->m_output->state->state().drmFormat));
-
-        CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
-        g_pHyprRenderer->beginRender(PMONITOR, fakeDamage, Render::RENDER_MODE_FULL_FAKE, nullptr, image.fb);
-
-        clearWithColor(CHyprColor{0, 0, 0, 1.0});
 
         PHLWORKSPACE PWORKSPACE;
         for (const auto& w : State::workspaceState()->workspacesCopy()) {
@@ -959,50 +919,18 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
         if (PWORKSPACE == startedOn)
             currentid = i;
 
-        if (PWORKSPACE) {
-            image.pWorkspace        = PWORKSPACE;
-            const auto previousWS    = activateWorkspaceForPreview(PMONITOR, PWORKSPACE);
-            const auto previewStates = applyExclusiveWorkspacePreviewState(PWORKSPACE);
-            const auto windowState   = PWORKSPACE == startedOn ? std::vector<SWindowPreviewState>{} : applyWorkspaceWindowGoalState(PWORKSPACE);
-
-            if (PWORKSPACE == startedOn)
-                PMONITOR->m_activeSpecialWorkspace = openSpecial;
-
-            {
-                CPinnedWindowPreviewGuard pinnedWindowPreviewGuard{showPinnedWindowsInPreview()};
-                g_pHyprRenderer->renderWorkspace(PMONITOR, PWORKSPACE, Time::steadyNow(), monbox);
-            }
-
-            restoreWorkspaceWindowGoalState(windowState);
-            restoreWorkspacePreviewStates(previewStates);
-            restoreActiveWorkspaceAfterPreview(PMONITOR, previousWS);
-            startedOn->m_visible = false;
-
-            if (PWORKSPACE == startedOn)
-                PMONITOR->m_activeSpecialWorkspace.reset();
-        } else {
-            CPinnedWindowPreviewGuard pinnedWindowPreviewGuard{showPinnedWindowsInPreview()};
-            g_pHyprRenderer->renderWorkspace(PMONITOR, PWORKSPACE, Time::steadyNow(), monbox);
-        }
+        image.pWorkspace = PWORKSPACE;
+        Hyprexpo::Capture::captureWorkspacePreview({
+            .monitor              = PMONITOR,
+            .workspace            = PWORKSPACE,
+            .startedOn            = startedOn,
+            .box                  = monbox,
+            .showPinnedWindows    = showPinnedWindowsInPreview(),
+            .blockSurfaceFeedback = true,
+        }, image.fb);
 
         image.box = tileBoxForIndex((int)i, pMonitor->m_size, GAP_WIDTH, 0.0, true);
-
-        g_pHyprRenderer->m_renderData.blockScreenShader = true;
-        g_pHyprRenderer->endRender();
-
-        // Capture normalizes rotated monitor geometry; Hyprland's output path adds one more half-turn.
-        if (const auto texture = image.fb->getTexture(); texture)
-            texture->m_transform = isTransformRotated(savedTransform) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;
     }
-
-    g_pHyprRenderer->m_bBlockSurfaceFeedback = false;
-
-    // Restore the original monitor state after capture
-    pMonitor->m_transform       = savedTransform;
-    pMonitor->m_pixelSize       = savedPixelSize;
-    pMonitor->m_transformedSize = savedTransformedSize;
-
-    PMONITOR->m_activeSpecialWorkspace = openSpecial;
     PMONITOR->m_activeWorkspace        = startedOn;
     startedOn->m_visible               = true;
     Animation::Workspace::startAnimation(startedOn, Animation::Workspace::ANIMATION_TYPE_IN, true, true);

@@ -6,7 +6,8 @@
 #include "HyprexpoConfig.hpp"
 #include "HyprexpoLogic.hpp"
 #include "HyprlandConfigCompat.hpp"
-#include "Overview.hpp"
+#include "IOverviewSession.hpp"
+#include "ScrollingDiagnostics.hpp"
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/debug/log/Logger.hpp>
@@ -45,6 +46,9 @@ static SDispatchResult onKbSelectNumberDispatcher(std::string arg);
 static SDispatchResult onKbSelectTokenDispatcher(std::string arg);
 static SDispatchResult onKbSelectIndexDispatcher(std::string arg);
 static SDispatchResult onMovePreviewWindowDispatcher(std::string arg);
+static SDispatchResult onScrollingDebugDispatcher(std::string arg);
+static SDispatchResult onScrollingInputTestDispatcher(std::string arg);
+static SDispatchResult onScrollingMutationTestDispatcher(std::string arg);
 static SDispatchResult registerExpoGesture(int fingerCount, const std::string& directionName, const std::string& action, const std::string& mods, float deltaScale, bool disableInhibit);
 
 static std::string trimString(std::string value) {
@@ -251,7 +255,7 @@ static std::string workspaceArgForKeyEvent(const IKeyboard::SKeyEvent& event) {
 }
 
 bool shouldSelectWorkspaceFromKey(const IKeyboard::SKeyEvent& event) {
-    if (g_pOverview && g_pOverview->m_isSwiping)
+    if (g_pOverview && g_pOverview->isSwiping())
         return false;
 
     const auto arg = workspaceArgForKeyEvent(event);
@@ -434,7 +438,7 @@ static int luaGesture(lua_State* L) {
 static SDispatchResult onExpoDispatcher(std::string arg) {
     arg = lowerString(trimString(arg));
 
-    if (g_pOverview && g_pOverview->m_isSwiping)
+    if (g_pOverview && g_pOverview->isSwiping())
         return {.success = false, .error = "already swiping"};
 
     if (isSingleDigitWorkspaceArg(arg))
@@ -466,8 +470,11 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
             if (!PMONITOR)
                 return {};
             renderingOverview = true;
-            g_pOverview       = std::make_unique<COverview>(PMONITOR->m_activeWorkspace);
+            auto overview     = createOverviewSession(PMONITOR->m_activeWorkspace);
             renderingOverview = false;
+            if (!overview)
+                return {.success = false, .error = "failed to initialize native scrolling overview"};
+            g_pOverview = std::move(overview);
         }
         return {};
     }
@@ -492,8 +499,11 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
         return {};
 
     renderingOverview = true;
-    g_pOverview       = std::make_unique<COverview>(PMONITOR->m_activeWorkspace);
+    auto overview     = createOverviewSession(PMONITOR->m_activeWorkspace);
     renderingOverview = false;
+    if (!overview)
+        return {.success = false, .error = "failed to initialize native scrolling overview"};
+    g_pOverview = std::move(overview);
     return {};
 }
 
@@ -657,6 +667,52 @@ static SDispatchResult onMovePreviewWindowDispatcher(std::string arg) {
     return {};
 }
 
+static SDispatchResult onScrollingDebugDispatcher(std::string arg) {
+    const auto emission = Hyprexpo::Scrolling::buildReadDiagnostic(arg);
+    if (!emission.validRequest)
+        return {.success = false, .error = emission.error};
+
+    Log::logger->log(Log::INFO, "HYPREXPO_SCROLLING_DIAGNOSTIC {}", emission.json);
+    if (!emission.success)
+        return {.success = false, .error = emission.error};
+    return {};
+}
+
+static SDispatchResult onScrollingInputTestDispatcher(std::string arg) {
+    if (g_unloading)
+        return {.success = false, .error = "plugin is unloading"};
+    if (CompatHyprlandAPI::intValue("plugin:hyprexpo:scrolling_input_debug") == 0)
+        return {.success = false, .error = "scrolling input diagnostics are disabled"};
+    if (!g_pOverview)
+        return {.success = false, .error = "overview is not open"};
+
+    const auto emission = g_pOverview->injectScrollingInput(arg);
+    if (!emission)
+        return {.success = false, .error = emission.error()};
+    Log::logger->log(Log::INFO, "HYPREXPO_SCROLLING_INPUT {}", *emission);
+    return {};
+}
+
+static SDispatchResult onScrollingMutationTestDispatcher(std::string arg) {
+    if (g_unloading)
+        return {.success = false, .error = "plugin is unloading"};
+    if (CompatHyprlandAPI::intValue("plugin:hyprexpo:scrolling_input_debug") == 0)
+        return {.success = false, .error = "scrolling mutation diagnostics are disabled"};
+    if (!g_pOverview)
+        return {.success = false, .error = "overview is not open"};
+
+    const auto result = Hyprexpo::Scrolling::runNativeMutationTest(arg, g_pOverview->sessionGeneration());
+    if (!result)
+        return {.success = false, .error = result.error()};
+    const auto diagnostic = Hyprexpo::Scrolling::mutationDiagnosticJson(*result);
+    Log::logger->log(result->outcome == Hyprexpo::Scrolling::EMutationOutcome::RollbackFailed ? Log::ERR : Log::INFO,
+                     "HYPREXPO_SCROLLING_MUTATION {}", diagnostic);
+    if (result->outcome == Hyprexpo::Scrolling::EMutationOutcome::RollbackFailed || result->outcome == Hyprexpo::Scrolling::EMutationOutcome::Rejected)
+        return {.success = false, .error = result->error};
+    g_pOverview->onConfigReload();
+    return {};
+}
+
 SP<Config::Values::CStringValue> createCancelKeyConfig() {
     g_pCancelKeyConfig = makeShared<Config::Values::CStringValue>("plugin:hyprexpo:cancel_key", "cancel key", HyprexpoConfig::CANCEL_KEY_DEFAULT);
     return g_pCancelKeyConfig;
@@ -686,6 +742,9 @@ void registerHyprexpoDispatchers() {
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:kb_select", onKbSelectTokenDispatcher);
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:kb_selecti", onKbSelectIndexDispatcher);
     HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:move_window", onMovePreviewWindowDispatcher);
+    HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:scrolling_debug", onScrollingDebugDispatcher);
+    HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:scrolling_input_test", onScrollingInputTestDispatcher);
+    HyprlandAPI::addDispatcherV2(PHANDLE, "hyprexpo:scrolling_mutation_test", onScrollingMutationTestDispatcher);
 
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "expo", luaExpo);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_focus", luaKbFocus);
