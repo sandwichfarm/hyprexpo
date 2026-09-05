@@ -60,6 +60,10 @@ size_t countOccurrences(const std::string& source, const std::string& needle) {
 }
 
 int main() {
+    const auto lifecycleSource = readFile("main.cpp");
+    expect(lifecycleSource.find("m_events.monitor.removed.listen") != std::string::npos &&
+               lifecycleSource.find("destroyOverview(OV);") != std::string::npos,
+           "disconnecting an output unregisters its overview without waiting for a frame on that output");
     const auto source = readFile("Overview.cpp");
     expect(!source.empty(), "Overview.cpp can be read from repo root");
 

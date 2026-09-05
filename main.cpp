@@ -119,6 +119,11 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
             OV->onPreRender();
     });
 
+    static auto PMONITORREMOVED = Event::bus()->m_events.monitor.removed.listen([](PHLMONITOR monitor) {
+        if (auto* const OV = overviewForMonitor(monitor))
+            destroyOverview(OV);
+    });
+
     static auto PKEY = Event::bus()->m_events.input.keyboard.key.listen([](IKeyboard::SKeyEvent event, Event::SCallbackInfo& info) {
         if (shouldCancelOverview(event)) {
             info.cancelled = true;
