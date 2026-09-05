@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <exception>
+#include <format>
 
 namespace {
 
