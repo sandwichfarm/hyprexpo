@@ -169,6 +169,18 @@ int main() {
     expect(gridColumnsToIncludeWorkspace(3, 5, 4, 7) == 3, "first-anchor grid never shrinks for an active workspace before the anchor");
     expect(gridColumnsToIncludeWorkspace(3, 1, 1000, 7) == 7, "first-anchor grid is capped at the max columns as a best effort");
     expect(gridColumnsToIncludeWorkspace(5, 1, 4, 7) == 5, "first-anchor grid never shrinks below the configured columns");
+
+    expect(centeredWorkspaceBacktrack(9, 1, 1, 9) == 0, "center-current keeps the low workspace at the first tile");
+    expect(centeredWorkspaceBacktrack(9, 5, 1, 9) == 4, "center-current places the middle workspace at the center tile");
+    expect(centeredWorkspaceBacktrack(9, 9, 1, 9) == 8, "center-current slides the high workspace back inside the real bounds");
+    expect(centeredWorkspaceBacktrack(9, 11, 11, 19) == 0, "center-current supports a shifted range at its low workspace");
+    expect(centeredWorkspaceBacktrack(9, 15, 11, 19) == 4, "center-current supports a shifted range at its middle workspace");
+    expect(centeredWorkspaceBacktrack(9, 19, 11, 19) == 8, "center-current supports a shifted range at its high workspace");
+    expect(centeredWorkspaceBacktrack(9, 5, std::nullopt, std::nullopt) == 3, "skip-empty 3x3 traversal preserves its three predecessor queries");
+    expect(centeredWorkspaceBacktrack(0, 5, 1, 9) == 0, "center-current handles an empty tile set");
+    expect(centeredWorkspaceBacktrack(9, 5, 9, 1) == 4, "center-current ignores reversed bounds safely");
+    expect(centeredWorkspaceBacktrack(9, std::numeric_limits<int64_t>::max(), std::numeric_limits<int64_t>::min(), std::numeric_limits<int64_t>::max()) == 8,
+           "center-current handles the full signed workspace range without overflow");
     expect(HyprexpoConfig::SHOW_PINNED_WINDOWS_DEFAULT == 0, "pinned windows are hidden from previews by default");
     expect(std::string{HyprexpoConfig::NUMBER_KEY_MODE_DEFAULT} == "workspace", "raw number keys keep selecting workspace IDs by default");
     expect(numberKeyModeFromString("workspace") == ENumberKeyMode::Workspace, "workspace number-key mode parses");

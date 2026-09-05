@@ -39,6 +39,7 @@
 #include <cctype>
 #include <chrono>
 #include <cmath>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -796,6 +797,19 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
         int currentID = methodStartID;
         int firstID   = currentID;
 
+        std::optional<int64_t> lowestExistingID;
+        std::optional<int64_t> highestExistingID;
+        if (!skipEmpty) {
+            for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
+                if (!workspace || workspace->m_isSpecialWorkspace || workspace->m_monitor != PMONITOR)
+                    continue;
+
+                lowestExistingID  = lowestExistingID ? std::min(*lowestExistingID, workspace->m_id) : workspace->m_id;
+                highestExistingID = highestExistingID ? std::max(*highestExistingID, workspace->m_id) : workspace->m_id;
+            }
+        }
+
+        const size_t backtrackTarget = Hyprexpo::centeredWorkspaceBacktrack(images.size(), methodStartID, lowestExistingID, highestExistingID);
         int backtracked = 0;
 
         // Initialize tiles to WORKSPACE_INVALID; cliking one of these results
@@ -806,7 +820,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, bool swipe_) : startedOn(startedOn
         }
 
         // Scan through workspaces lower than methodStartID until we wrap; count how many
-        for (size_t i = 1; i < images.size() / 2; ++i) {
+        for (size_t i = 1; i <= backtrackTarget; ++i) {
             currentID = getWorkspaceIDNameFromString(selector + "-" + std::to_string(i)).id;
             if (currentID >= firstID)
                 break;

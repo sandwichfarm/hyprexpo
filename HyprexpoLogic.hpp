@@ -107,6 +107,8 @@ int                      tileIndexAtPoint(double x, double y, int visibleCount, 
 
 int                      clampGridColumns(int columns);
 int                      gridColumnsToIncludeWorkspace(int configuredColumns, int firstWorkspaceID, int activeWorkspaceID, int maxColumns);
+std::size_t              centeredWorkspaceBacktrack(std::size_t tileCount, int64_t activeWorkspaceID, std::optional<int64_t> lowestExistingID,
+                                                    std::optional<int64_t> highestExistingID);
 int                      tileIndexFromPoint(double x, double y, double width, double height, int sideLength);
 int                      numberKeyToVisibleIndex(int number);
 ENumberKeyMode           numberKeyModeFromString(const std::string& mode);
