@@ -329,19 +329,25 @@ SOverviewDragTransition transitionOverviewDrag(const SOverviewDragState& state, 
     return {.next = state, .drop = std::nullopt, .cleanupMonitorKeys = {}, .accepted = false, .cleanup = false};
 }
 
-int clampGridColumns(int columns) {
-    return std::clamp(columns, HyprexpoConfig::COLUMNS_MIN, HyprexpoConfig::COLUMNS_MAX);
+int clampGridColumns(int64_t columns) {
+    return static_cast<int>(std::clamp<int64_t>(columns, HyprexpoConfig::COLUMNS_MIN, HyprexpoConfig::COLUMNS_MAX));
 }
 
-int gridColumnsToIncludeWorkspace(int configuredColumns, int firstWorkspaceID, int activeWorkspaceID, int maxColumns) {
+SGridShape computeFixedGridShape(int64_t columns, int64_t rows) {
+    const int cols = clampGridColumns(columns);
+    return {cols, rows > 0 ? clampGridColumns(rows) : cols};
+}
+
+int gridColumnsToIncludeWorkspace(int configuredColumns, int firstWorkspaceID, int activeWorkspaceID, int maxColumns, int fixedRows) {
     const int cap  = std::max(HyprexpoConfig::COLUMNS_MIN, maxColumns);
+    const int rows = fixedRows > 0 ? clampGridColumns(fixedRows) : 0;
     int       cols = std::clamp(configuredColumns, HyprexpoConfig::COLUMNS_MIN, cap);
 
     if (activeWorkspaceID <= firstWorkspaceID)
         return cols;
 
     const long long needed = static_cast<long long>(activeWorkspaceID) - firstWorkspaceID + 1;
-    while (static_cast<long long>(cols) * cols < needed && cols < cap)
+    while (static_cast<long long>(cols) * (rows > 0 ? rows : cols) < needed && cols < cap)
         ++cols;
 
     return cols;

@@ -180,6 +180,7 @@ std::string lowerString(std::string value);
 std::vector<std::string> splitCommaList(const std::string& value);
 
 SGridShape               computeDynamicGridShape(int visibleCount);
+SGridShape               computeFixedGridShape(int64_t columns, int64_t rows);
 std::optional<std::vector<int64_t>> expandDynamicWorkspaceIDs(const std::vector<int64_t>& workspaceIDs, bool fillGaps, std::size_t maxExpandedWorkspaces);
 SSize                    aspectCorrectTileSize(double screenW, double screenH, int cols, int rows, double gap);
 STileLayout              computeTileLayout(int index, int visibleCount, SGridShape shape, SSize total, double gap, bool centerPartialRows);
@@ -188,8 +189,8 @@ std::optional<STileTarget> selectDirectionalTile(const SRect& source, EDirection
 std::optional<STileHit>    hitTestGlobalTile(const SPoint& point, const std::vector<SGlobalTile>& tiles);
 SOverviewDragTransition    transitionOverviewDrag(const SOverviewDragState& state, const SOverviewDragEvent& event, const std::vector<uint64_t>& liveMonitorKeys);
 
-int                      clampGridColumns(int columns);
-int                      gridColumnsToIncludeWorkspace(int configuredColumns, int firstWorkspaceID, int activeWorkspaceID, int maxColumns);
+int                      clampGridColumns(int64_t columns);
+int                      gridColumnsToIncludeWorkspace(int configuredColumns, int firstWorkspaceID, int activeWorkspaceID, int maxColumns, int fixedRows = 0);
 std::size_t              centeredWorkspaceBacktrack(std::size_t tileCount, int64_t activeWorkspaceID, std::optional<int64_t> lowestExistingID,
                                                     std::optional<int64_t> highestExistingID);
 int                      tileIndexFromPoint(double x, double y, double width, double height, int sideLength);

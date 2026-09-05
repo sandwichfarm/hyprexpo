@@ -137,7 +137,6 @@ class COverview final : public IOverviewSession {
     void       enterSubmapIfEnabled();
     void       resetSubmapIfNeeded();
 
-    int        SIDE_LENGTH = 3;
     bool       dynamicGrid = false;
     bool       emptyTilesSelectable = false;
     Hyprexpo::SGridShape gridShape{3, 3};

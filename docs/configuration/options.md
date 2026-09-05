@@ -94,6 +94,7 @@ plugin {
 | key | type | description | default |
 | --- | --- | --- | --- |
 | `plugin:hyprexpo:columns` | int | desktops per row, clamped to `1..7` | `3` |
+| `plugin:hyprexpo:rows` | int | fixed-grid rows, positive values clamped to `1..7`; `0` or negative values follow columns | `0` |
 | `plugin:hyprexpo:gaps_in` | int | spacing between tiles in pixels | `5` |
 | `plugin:hyprexpo:gaps_out` | int | outer margin around the grid in pixels | `0` |
 | `plugin:hyprexpo:bg_col` | color | grid background color | `0xFF111111` |
@@ -108,6 +109,31 @@ plugin {
 | `plugin:hyprexpo:show_pinned_windows` | bool int | render pinned/PiP windows in workspace preview thumbnails; default `0` hides them from previews only | `0` |
 | `plugin:hyprexpo:scrolling_thumbnail_budget` | int | scrolling thumbnail budget multiplier `m`, clamped to `1..16`; total capture pixels are bounded by `m * W * H` for monitor size `W x H` | `4` |
 | `plugin:hyprexpo:scrolling_input_debug` | bool int | enable deterministic input and loaded native mutation acceptance dispatchers; leave disabled outside disposable testing | `0` |
+
+### Rectangular fixed grids
+
+Set positive `rows` to choose the height independently of `columns`. For example,
+this makes a five-column, two-row grid with ten slots:
+
+```lua
+hl.config({plugin = {hyprexpo = {
+    columns = 5,
+    rows = 2,
+    dynamic_grid = 0,
+    skip_empty = 0,
+}}})
+```
+
+Workspace previews retain their aspect ratio and the grid is centered with
+letterboxing as needed. Empty and not-yet-created workspaces remain available
+as selection and drag/drop targets. A workspace cap may leave non-selectable
+padding inside the configured rectangle; it does not shrink the grid.
+
+The default `rows = 0` inherits the column count, preserving existing square-grid
+behavior. It does **not** derive rows from workspace count. `rows` has no effect
+on `dynamic_grid = 1` or native scrolling-layout overviews. The existing
+[first-anchor growth](../guides/multi-monitor) can increase columns when uncapped,
+but explicit rows stay fixed.
 
 Pinned windows, including browser Picture-in-Picture windows, stay pinned and visible in normal Hyprland. By default HyprExpo hides them only while capturing workspace preview thumbnails so they do not appear on every tile. Set `show_pinned_windows = 1` to opt in to the old preview behavior.
 
@@ -289,7 +315,7 @@ Then bind `hyprexpo:kb_select` to those tokens in the overview submap.
 
 ## Safe Failure Behavior
 
-Invalid `columns`, workspace methods, label tokens, border colors, drag/drop
+Invalid `columns`, `rows`, workspace methods, label tokens, border colors, drag/drop
 border colors, gradient values, and bool-int options are expected to fail
 safely. The plugin should log invalid values or use a fallback instead of
 crashing Hyprland during render.

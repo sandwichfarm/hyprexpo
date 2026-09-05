@@ -370,6 +370,15 @@ int main() {
            "release cannot restore the cursor outside centralized reset");
 
     const auto overviewConstructor = extractFunction(source, "COverview::COverview(");
+    expectContains(configSource, "\"plugin:hyprexpo:rows\"", "explicit fixed rows are registered as configuration");
+    expectContains(source, "{\"plugin:hyprexpo:rows\", HyprexpoConfig::ROWS_DEFAULT}", "row fallback uses the shared default");
+    expectContains(overviewConstructor, "Hyprexpo::computeFixedGridShape(**PCOLUMNS, **PROWS)", "fixed grids resolve both configured dimensions");
+    expectContains(overviewConstructor, "images.resize(gridShape.cols * gridShape.rows)", "fixed grids allocate rectangular capacity including empty slots");
+    expectContains(overviewConstructor, "**PROWS > 0 ? gridShape.rows : 0", "first-anchor growth distinguishes explicit from inherited rows");
+    expectAbsent(overviewConstructor, "SIDE_LENGTH", "construction and captures no longer square a rectangle");
+    const auto currentShape = extractFunction(source, "Hyprexpo::SGridShape COverview::currentGridShape(");
+    expectContains(currentShape, "return gridShape;", "every geometry consumer sees the resolved grid shape");
+    expectAbsent(currentShape, "SIDE_LENGTH", "fixed geometry does not replace resolved rows with columns");
     expect(!overviewConstructor.empty(), "overview constructor exists");
     const auto gapExpansionPos = overviewConstructor.find("Hyprexpo::expandDynamicWorkspaceIDs(");
     const auto dynamicResizePos = overviewConstructor.find("images.resize(visibleWorkspaceIDs.size())");

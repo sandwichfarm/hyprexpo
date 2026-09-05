@@ -21,6 +21,7 @@ inline constexpr int         WALLPAPER_BG_DEFAULT                = 0;
 inline constexpr std::size_t DYNAMIC_GRID_MAX_TILES              = 64;
 
 inline constexpr int         COLUMNS_DEFAULT                 = 3;
+inline constexpr int         ROWS_DEFAULT                    = 0;
 inline constexpr int         COLUMNS_MIN                     = 1;
 inline constexpr int         COLUMNS_MAX                     = 7;
 inline constexpr int         GAPS_IN_DEFAULT                 = 5;
