@@ -10,7 +10,7 @@ master. Its base is the release-compatible recovery at `eecace3`.
 | 1 | #104 | Monitor-local centered workspace bounds | Merged at `c20e08e` |
 | 2 | #115 | Capped grids preserve anchors and reject padding selection | `89b2285`: tests, sanitizers, both release builds, 54 two-output selections and padding/empty-workspace input checks pass |
 | 3 | #105 | Pinned windows do not interrupt overview close | `361abbd`: tests, sanitizers, both release builds, repeated range/input checks and pinned-window selection follow-through pass |
-| 4 | #114 | All-monitor overview, input ownership, drag/drop and recapture | Pending |
+| 4 | #114 | All-monitor overview, input ownership, drag/drop and recapture | `5eae39b` + `b042565`: tests/sanitizers and both builds pass; 108 selections, cross-monitor drag, surviving-output teardown and exact submap restoration pass |
 | 5 | #107 | Native scrolling overview and mixed-layout sessions | Pending |
 
 From the second merge onward, each combined tree must pass regression tests,
@@ -29,3 +29,7 @@ configuration errors in the target compositor.
 
 This integration PR remains separate from master until combined testing is
 reviewed. Compile checks alone do not establish runtime interoperability.
+
+The fourth checkpoint found that a disconnected output could leave its
+overview registered. The integration branch unregisters it on monitor removal;
+the focused runtime regression now passes.
