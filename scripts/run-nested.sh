@@ -9,13 +9,105 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/hyprexpo"
 SO="${HYPREXPO_DEV_SO:-$BUILD_DIR/hyprexpo.so}"
 CONF="${XDG_CACHE_HOME:-$HOME/.cache}/hyprexpo-dev.conf"
+DEV_LAYOUT="${HYPREXPO_DEV_LAYOUT:-grid}"
+
+case "$DEV_LAYOUT" in
+    grid)
+        LAYOUT_BLOCK=''
+        FIXTURE_BLOCK=''
+        SCROLLING_INPUT_DEBUG=0
+        ;;
+    scrolling)
+        SCROLLING_INPUT_DEBUG=1
+        read -r -d '' LAYOUT_BLOCK <<'EOF' || true
+general {
+  layout = scrolling
+  border_size = 0
+  gaps_in = 8
+  gaps_out = 8
+}
+
+scrolling {
+  direction = right
+  column_width = 0.42
+  fullscreen_on_one_column = 0
+  follow_focus = 0
+}
+
+# Four native direction fixtures plus one mixed-layout fallback row.
+workspace = 1, layout:scrolling, layoutopt:direction:right
+workspace = 2, layout:scrolling, layoutopt:direction:left
+workspace = 3, layout:scrolling, layoutopt:direction:down
+workspace = 4, layout:scrolling, layoutopt:direction:up
+workspace = 5, layout:dwindle
+EOF
+        read -r -d '' FIXTURE_BLOCK <<'EOF' || true
+# The first workspace settles to three columns: C+D share a column, A and B are
+# dedicated column, and D remains offscreen at the default 0.42 width.
+exec-once = [workspace 1 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-SCROLL-A
+exec-once = [workspace 1 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-SCROLL-B
+exec-once = [workspace 1 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-SCROLL-C
+exec-once = [workspace 1 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-SCROLL-D
+exec-once = [workspace 2 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-SCROLL-LEFT
+exec-once = [workspace 3 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-SCROLL-DOWN
+exec-once = [workspace 4 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-SCROLL-UP
+exec-once = [workspace 5 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-MIXED
+exec-once = [workspace 1 silent; float] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-FLOATING
+exec-once = [workspace 1 silent; float] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-PINNED
+exec-once = [workspace 5 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-GROUP
+exec-once = [workspace 5 silent] kitty --class hyprexpo-scroll-fixture --title HYPREXPO-FULLSCREEN
+exec-once = sh -c 'sleep 2; hyprctl dispatch focuswindow title:HYPREXPO-SCROLL-D; hyprctl dispatch layoutmsg consume; hyprctl dispatch focuswindow title:HYPREXPO-PINNED; hyprctl dispatch pin; hyprctl dispatch focuswindow title:HYPREXPO-GROUP; hyprctl dispatch togglegroup; hyprctl dispatch focuswindow title:HYPREXPO-FULLSCREEN; hyprctl dispatch fullscreen 1; hyprctl dispatch workspace 1'
+EOF
+        ;;
+    *)
+        printf 'HYPREXPO_DEV_LAYOUT must be grid or scrolling, got: %s\n' "$DEV_LAYOUT" >&2
+        exit 2
+        ;;
+esac
+
+# A nested Wayland output advertises no preferred mode, so "preferred" resolves
+# to 0x0 and Hyprland refuses to render it. Always pin an explicit mode.
+DEFAULT_MODE=1280x720@60
+[[ "$DEV_LAYOUT" == scrolling ]] && DEFAULT_MODE=800x600@60
+MODE="${HYPREXPO_DEV_MODE:-$DEFAULT_MODE}"
+MODE_W="${MODE%%x*}"
+
+# Number of nested outputs. Set to 2+ to exercise multi-monitor behavior; each
+# extra output is created at runtime and appears as its own host window.
+OUTPUTS="${HYPREXPO_DEV_OUTPUTS:-1}"
+
+# Pick a terminal that actually exists on this machine instead of assuming one.
+TERMINAL="${HYPREXPO_DEV_TERMINAL:-}"
+if [[ -z "$TERMINAL" ]]; then
+  for candidate in kitty ghostty alacritty foot wezterm; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      TERMINAL="$candidate"
+      break
+    fi
+  done
+fi
+if [[ -z "$TERMINAL" ]]; then
+  echo "[run-nested] warning: no terminal found; SUPER+Return will do nothing" >&2
+  TERMINAL="kitty"
+fi
+
+EXTRA_OUTPUTS=""
+for ((i = 2; i <= OUTPUTS; i++)); do
+  EXTRA_OUTPUTS+="exec-once = hyprctl output create auto"$'\n'
+done
 
 mkdir -p "$(dirname "$CONF")" "$(dirname "$SO")"
 echo "[run-nested] Building local plugin at $SO"
 make -C "$REPO_ROOT" all TARGET="$SO"
 
 cat > "$CONF" <<EOF
-monitor=,preferred,auto,auto
+monitor=WAYLAND-1,$MODE,0x0,1
+monitor=WAYLAND-2,$MODE,${MODE_W}x0,1
+monitor=,$MODE,auto,1
+
+$EXTRA_OUTPUTS
+
+$LAYOUT_BLOCK
 
 debug {
   disable_logs = false
@@ -37,6 +129,8 @@ plugin {
     workspace_method = center current
     skip_empty = 0
     show_pinned_windows = 0
+    scrolling_thumbnail_budget = 4
+    scrolling_input_debug = $SCROLLING_INPUT_DEBUG
 
     # borders (hypr-style gradient, thicker to showcase)
     border_style = hyprland
@@ -79,9 +173,10 @@ plugin {
 
 # toggle with an unmodified function key to avoid host grabs
 bind = , F10, hyprexpo:expo, toggle
+bind = , F11, hyprexpo:expo, toggle all
 
 # nested-session test controls
-bind = SUPER, Return, exec, kitty
+bind = SUPER, Return, exec, $TERMINAL
 bind = SUPER, Q, killactive
 bind = SUPER SHIFT, Q, exit
 bind = SUPER, 1, workspace, 1
@@ -103,6 +198,13 @@ bind = SUPER SHIFT, 7, movetoworkspace, 7
 bind = SUPER SHIFT, 8, movetoworkspace, 8
 bind = SUPER SHIFT, 9, movetoworkspace, 9
 
+# Native scrolling layout controls used by the scrolling fixture and validator.
+bind = SUPER ALT, left, layoutmsg, move -200
+bind = SUPER ALT, right, layoutmsg, move +200
+bind = SUPER ALT, C, layoutmsg, consume
+bind = SUPER ALT, E, layoutmsg, expel
+bind = SUPER ALT, F, layoutmsg, fit visible
+
 # submap for keyboard nav (the plugin auto-enters this when open)
 submap = hyprexpo
   bind = , left, hyprexpo:kb_focus, left
@@ -121,7 +223,11 @@ submap = hyprexpo
   bind = , 9, hyprexpo:kb_selectn, 9
   bind = , 0, hyprexpo:kb_selectn, 0
 submap = reset
+
+$FIXTURE_BLOCK
 EOF
 
 echo "[run-nested] Launching nested Hyprland with $CONF"
-exec env WLR_BACKENDS=wayland WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1 HYPRLAND_NO_LOGO=1 Hyprland -c "$CONF"
+# Hyprland 0.56 uses aquamarine, not wlroots: the old WLR_* variables are
+# inert. Aquamarine selects its Wayland backend from WAYLAND_DISPLAY.
+exec env HYPRLAND_NO_LOGO=1 Hyprland -c "$CONF"

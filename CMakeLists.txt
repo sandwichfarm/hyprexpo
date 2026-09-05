@@ -11,12 +11,20 @@ set(HYPREXPO_SRC
     main.cpp
     Dispatchers.cpp
     PluginConfig.cpp
+    IOverviewSession.cpp
     Overview.cpp
     OverviewInteraction.cpp
     OverviewRender.cpp
+    OverviewCapture.cpp
+    ScrollingOverview.cpp
+    ScrollingInputState.cpp
     ExpoGesture.cpp
     OverviewPassElement.cpp
     HyprexpoLogic.cpp
+    ScrollingOverviewLogic.cpp
+    ScrollingMutationTransaction.cpp
+    ScrollingLayoutAdapter.cpp
+    ScrollingDiagnostics.cpp
 )
 
 add_library(hyprexpo SHARED ${HYPREXPO_SRC})
@@ -66,8 +74,27 @@ target_link_libraries(hyprexpo PRIVATE rt PkgConfig::deps PkgConfig::HYPREXPO_LU
 enable_testing()
 add_executable(HyprexpoLogicTests
     HyprexpoLogic.cpp
+    ScrollingOverviewLogic.cpp
+    ScrollingInputState.cpp
+    ScrollingMutationTransaction.cpp
     tests/HyprexpoLogicTests.cpp
 )
 add_test(NAME HyprexpoLogicTests COMMAND HyprexpoLogicTests)
+
+add_executable(OverviewSourceTests
+    tests/OverviewSourceTests.cpp
+)
+add_test(NAME OverviewSourceTests COMMAND OverviewSourceTests)
+add_executable(RegistryTeardownTests tests/RegistryTeardownTests.cpp)
+add_test(NAME RegistryTeardownTests COMMAND RegistryTeardownTests)
+add_executable(ScrollingInputOracle
+    HyprexpoLogic.cpp
+    ScrollingOverviewLogic.cpp
+    ScrollingInputState.cpp
+    tests/ScrollingInputOracle.cpp
+)
+set_tests_properties(OverviewSourceTests PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
 install(TARGETS hyprexpo)

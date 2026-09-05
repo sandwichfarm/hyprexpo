@@ -1,6 +1,7 @@
 #include "HyprlandConfigCompat.hpp"
 #define HyprlandAPI CompatHyprlandAPI
 #include "OverviewInternal.hpp"
+#include "OverviewCapture.hpp"
 #include "HyprexpoLogic.hpp"
 #include "OverviewPassElement.hpp"
 #define private   public
@@ -8,6 +9,7 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/ConfigValue.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
+#include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/animation/WorkspaceAnimationController.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
@@ -51,28 +53,7 @@ void COverview::redrawID(int id, bool forcelowres) {
     if (!ENABLE_LOWRES)
         monbox = {{0, 0}, MON->m_pixelSize};
 
-    const auto savedTransform       = MON->m_transform;
-    const auto savedTransformedSize = MON->m_transformedSize;
-    const auto savedPixelSize       = MON->m_pixelSize;
-
-    // Fix for rotated monitors: swap dimensions to match logical orientation
-    if (isTransformRotated(savedTransform)) {
-        monbox = {{0, 0}, {monbox.h, monbox.w}};
-
-        // Override monitor state to disable rotation
-        MON->m_transform       = WL_OUTPUT_TRANSFORM_NORMAL;
-        MON->m_pixelSize       = {monbox.w, monbox.h};
-        MON->m_transformedSize = {monbox.w, monbox.h};
-    }
-
     auto& image = images[id];
-
-    ensureFramebuffer(image, monbox, framebufferFormatWithAlpha(MON->m_output->state->state().drmFormat));
-
-    CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
-    g_pHyprRenderer->beginRender(MON, fakeDamage, Render::RENDER_MODE_FULL_FAKE, nullptr, image.fb);
-
-    clearWithColor(CHyprColor{0, 0, 0, 1.0});
 
     PHLWORKSPACE PWORKSPACE;
     if (image.pWorkspace) {
@@ -86,60 +67,15 @@ void COverview::redrawID(int id, bool forcelowres) {
             }
         }
     }
-    image.pWorkspace      = PWORKSPACE;
-
-    const auto   restoreWorkspace = MON->m_activeWorkspace;
-    PHLWORKSPACE openSpecial      = MON->m_activeSpecialWorkspace;
-    if (openSpecial)
-        MON->m_activeSpecialWorkspace.reset();
-
-    startedOn->m_visible = false;
-
-    if (PWORKSPACE) {
-        const auto previousWS    = activateWorkspaceForPreview(MON, PWORKSPACE);
-        const auto previewStates = applyExclusiveWorkspacePreviewState(PWORKSPACE);
-        const auto windowState   = PWORKSPACE == startedOn ? std::vector<SWindowPreviewState>{} : applyWorkspaceWindowGoalState(PWORKSPACE);
-
-        if (PWORKSPACE == startedOn)
-            MON->m_activeSpecialWorkspace = openSpecial;
-
-        {
-            CPinnedWindowPreviewGuard pinnedWindowPreviewGuard{showPinnedWindowsInPreview()};
-            g_pHyprRenderer->renderWorkspace(MON, PWORKSPACE, Time::steadyNow(), monbox);
-        }
-
-        restoreWorkspaceWindowGoalState(windowState);
-        restoreWorkspacePreviewStates(previewStates);
-        restoreActiveWorkspaceAfterPreview(MON, previousWS);
-
-        if (PWORKSPACE == startedOn)
-            MON->m_activeSpecialWorkspace.reset();
-    } else {
-        CPinnedWindowPreviewGuard pinnedWindowPreviewGuard{showPinnedWindowsInPreview()};
-        g_pHyprRenderer->renderWorkspace(MON, PWORKSPACE, Time::steadyNow(), monbox);
-    }
-
-    g_pHyprRenderer->m_renderData.blockScreenShader = true;
-    g_pHyprRenderer->endRender();
-
-    // Restore the original monitor state after capture
-    MON->m_transform       = savedTransform;
-    MON->m_pixelSize       = savedPixelSize;
-    MON->m_transformedSize = savedTransformedSize;
-
-    // Capture normalizes rotated monitor geometry; Hyprland's output path adds one more half-turn.
-    if (const auto texture = image.fb->getTexture(); texture)
-        texture->m_transform = isTransformRotated(savedTransform) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;
-
-    MON->m_activeSpecialWorkspace = openSpecial;
-
-    const auto activeWorkspace = restoreWorkspace ? restoreWorkspace : startedOn;
-    MON->m_activeWorkspace = activeWorkspace;
-    if (activeWorkspace) {
-        activeWorkspace->m_visible = true;
-        if (activeWorkspace == startedOn)
-            Animation::Workspace::startAnimation(activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
-    }
+    image.pWorkspace = PWORKSPACE;
+    Hyprexpo::Capture::captureWorkspacePreview({
+        .monitor                   = MON,
+        .workspace                 = PWORKSPACE,
+        .startedOn                 = startedOn,
+        .box                       = monbox,
+        .showPinnedWindows         = showPinnedWindowsInPreview(),
+        .animateStartedOnRestore   = true,
+    }, image.fb);
 
     blockOverviewRendering = false;
 }
@@ -196,14 +132,14 @@ void COverview::close(bool switchToSelection) {
     const auto MON = pMonitor.lock();
     if (!MON) {
         closing = true;
-        g_pOverview.reset();
+        destroyOverview(this);
         return;
     }
 
     resetSubmapIfNeeded();
 
     if (images.empty()) {
-        g_pOverview.reset();
+        destroyOverview(this);
         return;
     }
 
@@ -220,30 +156,48 @@ void COverview::close(bool switchToSelection) {
 
     redrawAll();
 
-    if (switchToSelection && TILE.workspaceID != MON->activeWorkspaceID()) {
+    if (switchToSelection && (TILE.workspaceID != WORKSPACE_INVALID || emptyTilesSelectable) &&
+        (TILE.workspaceID != MON->activeWorkspaceID() || Desktop::focusState()->monitor() != MON)) {
         MON->setSpecialWorkspace(0);
 
         // If this tile's workspace was WORKSPACE_INVALID, move to the next
         // empty workspace. This should only happen if skip_empty is on, in
         // which case some tiles will be left with this ID intentionally.
-        const int  NEWID = TILE.workspaceID == WORKSPACE_INVALID ? getWorkspaceIDNameFromString("emptynm").id : TILE.workspaceID;
+        const WORKSPACEID NEWID = TILE.workspaceID == WORKSPACE_INVALID ? nextEmptyWorkspaceIDForMonitor(MON) : TILE.workspaceID;
 
+        // A tile can name a workspace that does not exist yet -- an anchored
+        // grid (workspace_method "<output> first N") lays out max_workspace
+        // slots whether or not those workspaces have ever been opened. Reuse
+        // the same helper the drag paths use: it returns the existing
+        // workspace or creates it. Without this, selecting such a tile fell
+        // through to changeWorkspace(id), which cannot create one, and the
+        // selection silently did nothing.
         PHLWORKSPACE NEWIDWS;
-        for (const auto& w : State::workspaceState()->workspacesCopy()) {
-            if (w->m_id == NEWID) {
-                NEWIDWS = w;
-                break;
+        if (TILE.workspaceID != WORKSPACE_INVALID)
+            NEWIDWS = ensureWorkspaceForTile(SAFEID);
+
+        if (!NEWIDWS) {
+            for (const auto& w : State::workspaceState()->workspacesCopy()) {
+                if (w->m_id == NEWID) {
+                    NEWIDWS = w;
+                    break;
+                }
             }
         }
 
         const auto OLDWS = MON->m_activeWorkspace;
 
-        const auto CHANGE = !NEWIDWS ? Config::Actions::changeWorkspace(std::to_string(NEWID)) : Config::Actions::changeWorkspace(NEWIDWS->getConfigName());
+        if (!NEWIDWS && NEWID != WORKSPACE_INVALID)
+            NEWIDWS = State::workspaceState()->create(NEWID, MON->m_id, std::to_string(NEWID), false);
+
+        const auto CHANGE = Config::Actions::changeWorkspace(NEWIDWS);
         if (!CHANGE)
             Log::logger->log(Log::ERR, "[hyprexpo] failed to change workspace: {}", CHANGE.error().message);
 
-        Animation::Workspace::startAnimation(MON->m_activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
-        Animation::Workspace::startAnimation(OLDWS, Animation::Workspace::ANIMATION_TYPE_OUT, false, true);
+        if (CHANGE && OLDWS != MON->m_activeWorkspace) {
+            Animation::Workspace::startAnimation(MON->m_activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
+            Animation::Workspace::startAnimation(OLDWS, Animation::Workspace::ANIMATION_TYPE_OUT, false, true);
+        }
 
         startedOn = MON->m_activeWorkspace;
     }
@@ -281,7 +235,7 @@ void COverview::onWorkspaceChange() {
 }
 
 void COverview::render() {
-    g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewPassElement>());
+    g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewPassElement>(pMonitor.lock(), m_sessionGeneration));
 }
 
 bool COverview::shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const {
@@ -696,76 +650,49 @@ void COverview::fullRender() {
     if (kbFocusID != -1)
         drawBorderForID(kbFocusID, std::string{*PBCOLFOC}, std::string{*PBGREFOC}, RND_FOC);
 
-    if (dragMoved && dragSourceID != -1) {
+    const auto OVERVIEWKEY = overviewMonitorKey(MON);
+    if (g_overviewDrag.state.moved && g_overviewDrag.state.sourceMonitorKey == OVERVIEWKEY && isTileValid(g_overviewDrag.state.sourceTileIndex)) {
         const std::string sourceBorder = std::string{*PDRAGSOURCEBORDER}.empty() ? std::string{*PBCOLFOC} : std::string{*PDRAGSOURCEBORDER};
         const int         sourceWidth  = **PDRAGSOURCEBWIDTH >= 0 ? **PDRAGSOURCEBWIDTH : (int)**PBWIDTH;
-        drawBorderForID(dragSourceID, sourceBorder, std::string{*PBGREFOC}, RND_FOC, sourceWidth);
+        drawBorderForID(g_overviewDrag.state.sourceTileIndex, sourceBorder, std::string{*PBGREFOC}, RND_FOC, sourceWidth);
     }
 
-    dropIntent         = {};
-    dropIntentTargetID = -1;
-
-    if (dragWindow && isTileValid(dragSourceID)) {
-        const auto windowBox = dragWindow->getWindowMainSurfaceBox();
+    if (g_overviewDrag.window && g_overviewDrag.state.targetMonitorKey == OVERVIEWKEY && isTileValid(g_overviewDrag.state.targetTileIndex)) {
+        const auto windowBox = g_overviewDrag.window->getWindowMainSurfaceBox();
         if (windowBox.w > 0 && windowBox.h > 0) {
-            const CBox& sourceBox = tileBoxes[dragSourceID];
-            const double scaleX   = sourceBox.w / MON->m_size.x;
-            const double scaleY   = sourceBox.h / MON->m_size.y;
-            const double minW     = std::min(sourceBox.w, 24.0 * MON->m_scale);
-            const double minH     = std::min(sourceBox.h, 24.0 * MON->m_scale);
-
-            CBox proxy{
-                lastMousePosLocal.x * MON->m_scale - dragGrabOffset.x * scaleX,
-                lastMousePosLocal.y * MON->m_scale - dragGrabOffset.y * scaleY,
-                std::clamp(windowBox.w * scaleX, minW, sourceBox.w),
-                std::clamp(windowBox.h * scaleY, minH, sourceBox.h),
-            };
-            proxy.round();
-
-            const int maxProxyRound = std::max(0, (int)std::floor(std::min(proxy.w, proxy.h) / 2.0));
-            const int autoRound     = std::min(RND_FOC, maxProxyRound);
-            const int round        = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * MON->m_scale)), maxProxyRound) : autoRound;
-
-            if (dragMoved && hoveredID != -1 && hoveredID != dragSourceID && isTileValid(hoveredID)) {
-                const auto targetTileBox = tileBoxForIndex(hoveredID, SIZE, GAPSIZE, OUTER, true);
-                const Hyprexpo::SRect targetTileLocal{targetTileBox.x, targetTileBox.y, targetTileBox.w, targetTileBox.h};
-                dropIntent = Hyprexpo::computeDropIntentGeometry({
-                    .targetValid     = true,
-                    .pointerLocal    = {lastMousePosLocal.x, lastMousePosLocal.y},
-                    .targetTileLocal = targetTileLocal,
-                    .workspaceSize   = {MON->m_size.x, MON->m_size.y},
-                    .windowSize      = {windowBox.w, windowBox.h},
-                    .grabOffset      = {dragGrabOffset.x, dragGrabOffset.y},
-                });
-                dropIntentTargetID = dropIntent.valid ? hoveredID : -1;
-            }
-
+            const int  TARGET             = g_overviewDrag.state.targetTileIndex;
+            const auto targetTileBox      = tileBoxForIndex(TARGET, SIZE, GAPSIZE, OUTER, true);
+            const Vector2D pointerLocal   = g_overviewDrag.pointerGlobal - MON->m_position;
+            const auto dropIntent = Hyprexpo::computeDropIntentGeometry({
+                .targetValid     = true,
+                .pointerLocal    = {pointerLocal.x, pointerLocal.y},
+                .targetTileLocal = {targetTileBox.x, targetTileBox.y, targetTileBox.w, targetTileBox.h},
+                .workspaceSize   = {MON->m_size.x, MON->m_size.y},
+                .windowSize      = {windowBox.w, windowBox.h},
+                .grabOffset      = {g_overviewDrag.grabOffset.x, g_overviewDrag.grabOffset.y},
+            });
             if (dropIntent.valid) {
-                CBox targetProxy{
+                CBox proxy{
                     dropIntent.targetProxyLocal.x,
                     dropIntent.targetProxyLocal.y,
                     dropIntent.targetProxyLocal.w,
                     dropIntent.targetProxyLocal.h,
                 };
-                targetProxy.scale(MON->m_scale).translate(pos->value());
-                targetProxy.round();
+                proxy.scale(MON->m_scale).translate(pos->value());
+                proxy.round();
 
-                const int targetMaxRound = std::max(0, (int)std::floor(std::min(targetProxy.w, targetProxy.h) / 2.0));
-                const int targetRound    = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * MON->m_scale)), targetMaxRound) : std::min(RND_FOC, targetMaxRound);
-                Render::GL::g_pHyprOpenGL->renderRect(targetProxy, CHyprColor{(uint64_t)**PDRAGPROXYACTCOL}, {.round = targetRound, .roundingPower = ROUND_PWR});
+                const int maxProxyRound = std::max(0, (int)std::floor(std::min(proxy.w, proxy.h) / 2.0));
+                const int autoRound     = std::min(RND_FOC, maxProxyRound);
+                const int round        = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * MON->m_scale)), maxProxyRound) : autoRound;
 
-                const int   borderWidth   = **PDRAGPROXYBWIDTH >= 0 ? **PDRAGPROXYBWIDTH : std::max(2, (int)**PBWIDTH + 1);
-                const std::string effectiveSpec = std::string{*PDRAGPROXYBORDER}.empty() ? std::string{*PBCOLFOC} : std::string{*PDRAGPROXYBORDER};
-                drawProxyBorder(targetProxy, targetRound, borderWidth, effectiveSpec, std::string{*PBGREFOC});
+                Render::GL::g_pHyprOpenGL->renderRect(proxy, CHyprColor{(uint64_t)(g_overviewDrag.state.moved ? **PDRAGPROXYACTCOL : **PDRAGPROXYCOL)}, {.round = round, .roundingPower = ROUND_PWR});
+
+                const int borderWidth = **PDRAGPROXYBWIDTH >= 0 ? **PDRAGPROXYBWIDTH : std::max(2, (int)**PBWIDTH + 1);
+                std::string effectiveSpec = std::string{*PDRAGPROXYBORDER}.empty() ? std::string{*PBCOLFOC} : std::string{*PDRAGPROXYBORDER};
+                if (effectiveSpec.empty())
+                    effectiveSpec = std::string{*PBGREFOC};
+                drawProxyBorder(proxy, round, borderWidth, effectiveSpec, std::string{*PBGREFOC});
             }
-
-            Render::GL::g_pHyprOpenGL->renderRect(proxy, CHyprColor{(uint64_t)(dragMoved ? **PDRAGPROXYACTCOL : **PDRAGPROXYCOL)}, {.round = round, .roundingPower = ROUND_PWR});
-
-            const int   borderWidth   = **PDRAGPROXYBWIDTH >= 0 ? **PDRAGPROXYBWIDTH : std::max(2, (int)**PBWIDTH + 1);
-            std::string effectiveSpec = std::string{*PDRAGPROXYBORDER}.empty() ? std::string{*PBCOLFOC} : std::string{*PDRAGPROXYBORDER};
-            if (effectiveSpec.empty())
-                effectiveSpec = std::string{*PBGREFOC};
-            drawProxyBorder(proxy, round, borderWidth, effectiveSpec, std::string{*PBGREFOC});
         }
     }
 

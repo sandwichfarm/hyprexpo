@@ -33,17 +33,23 @@ tracks the recovery and the affected feature PRs.
 
 ## hyprpm and Nix
 
-The `hyprpm.toml` pins added by PR #112 remain deliberate:
+On the feature interoperability branch, the release pins introduced by PR #112
+select the combined, tested source (including the issue #110 fix):
 
 | Hyprland release | Pinned HyprExpo commit |
 | --- | --- |
-| v0.56.1 | `40352e2663deded7c6536b2fda1ed18a97234a80` |
-| v0.56.2 | `b3a866144ab2a503a1257e2050fd7f9dde51542f` |
+| v0.56.1 | `c905dcfb0e1050c19021f2cf4b8f2d71d04763ce` |
+| v0.56.2 | `c905dcfb0e1050c19021f2cf4b8f2d71d04763ce` |
 
 Changing current source does not update what those pins select. Before moving
 a pin, build and test the proposed plugin commit against that exact tagged
-Hyprland release, verify the plugin commit is on master with `make check-pins`,
+Hyprland release, verify the plugin commit is an ancestor of the published
+branch with `make check-pins REF=HEAD`,
 and validate loading in a disposable matching compositor.
+
+These candidate pins do not change master until the integration PR is merged.
+See [feature integration](./feature-integration.md) for exact build artifacts,
+runtime coverage and remaining test boundaries.
 
 The flake has an explicit v0.56.2 reference. Nix users should keep the plugin's
 Hyprland input aligned with their system input through `default.nix` and the

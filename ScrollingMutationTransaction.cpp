@@ -1,0 +1,673 @@
+#include "ScrollingMutationTransaction.hpp"
+
+#include "ScrollingRequestId.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <exception>
+#include <map>
+#include <limits>
+#include <ranges>
+#include <set>
+#include <sstream>
+#include <stdexcept>
+#include <unordered_map>
+
+namespace Hyprexpo::Scrolling {
+
+namespace {
+
+SMutationWorkspace* workspaceFor(SMutationState& state, int64_t workspaceID) {
+    const auto workspace = std::ranges::find(state.workspaces, workspaceID, &SMutationWorkspace::workspaceID);
+    return workspace == state.workspaces.end() ? nullptr : &*workspace;
+}
+
+const SMutationWorkspace* workspaceFor(const SMutationState& state, int64_t workspaceID) {
+    const auto workspace = std::ranges::find(state.workspaces, workspaceID, &SMutationWorkspace::workspaceID);
+    return workspace == state.workspaces.end() ? nullptr : &*workspace;
+}
+
+std::optional<SMutationTarget> targetFor(const SMutationState& state, uint64_t identity) {
+    for (const auto& workspace : state.workspaces)
+        for (const auto& column : workspace.columns)
+            for (const auto& target : column.targets)
+                if (target.identity == identity)
+                    return target;
+    return std::nullopt;
+}
+
+std::map<uint64_t, size_t> membershipCounts(const SMutationState& state) {
+    std::map<uint64_t, size_t> counts;
+    for (const auto& workspace : state.workspaces)
+        for (const auto identity : workspace.members)
+            ++counts[identity];
+    return counts;
+}
+
+std::vector<uint64_t> columnOrderWithout(const SMutationWorkspace& workspace, uint64_t movedTarget) {
+    std::vector<uint64_t> result;
+    for (const auto& column : workspace.columns) {
+        if (column.targets.size() == 1 && column.targets.front().identity == movedTarget)
+            continue;
+        result.push_back(column.identity);
+    }
+    return result;
+}
+
+std::vector<uint64_t> targetOrderWithout(const SMutationColumn& column, uint64_t movedTarget) {
+    std::vector<uint64_t> result;
+    for (const auto& target : column.targets)
+        if (target.identity != movedTarget)
+            result.push_back(target.identity);
+    return result;
+}
+
+void appendUnique(std::vector<std::string>& values, std::string value) {
+    if (std::ranges::find(values, value) == values.end())
+        values.push_back(std::move(value));
+}
+
+template <typename F>
+void operation(IMutationOperations& operations, EMutationPhase phase, EMutationStep step, F&& action) {
+    operations.checkpoint(phase, step, EFaultWhen::Before);
+    std::forward<F>(action)();
+    operations.checkpoint(phase, step, EFaultWhen::After);
+}
+
+class CInMemoryOperations final : public IMutationOperations {
+  public:
+    CInMemoryOperations(SMutationState state, std::optional<SFaultInjection> fault) : m_state(std::move(state)), m_fault(fault) {
+        for (const auto& workspace : m_state.workspaces)
+            for (const auto& column : workspace.columns)
+                m_nextColumnIdentity = std::max(m_nextColumnIdentity, column.identity + 1);
+    }
+
+    void checkpoint(EMutationPhase phase, EMutationStep step, EFaultWhen when) override {
+        m_boundaries.push_back({.phase = phase, .step = step, .when = when});
+        if (m_fault && m_fault->phase == phase && m_fault->step == step && m_fault->when == when)
+            throw std::runtime_error("injected mutation boundary failure");
+        if (m_fault && m_fault->phase == EMutationPhase::Rollback && phase == EMutationPhase::Apply && step == EMutationStep::VerifyPostconditions && when == EFaultWhen::Before)
+            throw std::runtime_error("forced apply failure for rollback injection");
+    }
+
+    SMutationState snapshotPreState(const SMutationRequest&) override {
+        return m_state;
+    }
+
+    void removeTarget(const SMutationPlan& plan) override {
+        removeFromColumns(*workspaceFor(m_state, plan.request.sourceWorkspaceID), plan.request.targetIdentity);
+    }
+
+    void controllerMove(const SMutationPlan& plan, bool reverse) override {
+        const int64_t fromID = reverse ? plan.request.destinationWorkspaceID : plan.request.sourceWorkspaceID;
+        const int64_t toID   = reverse ? plan.request.sourceWorkspaceID : plan.request.destinationWorkspaceID;
+        auto* from = workspaceFor(m_state, fromID);
+        auto* to = workspaceFor(m_state, toID);
+        if (!from)
+            throw std::runtime_error("controller source workspace vanished");
+        if (!to) {
+            if (!plan.createDestination || reverse)
+                throw std::runtime_error("controller destination workspace vanished");
+            m_state.workspaces.push_back({.workspaceID = toID, .modelIdentity = static_cast<uint64_t>(1000 + toID), .kind = EMutationWorkspaceKind::Scrolling,
+                                          .direction = from->direction, .offset = 0.0, .focusedTargetIdentity = 0, .focusedWindowIdentity = 0,
+                                          .columns = {}, .members = {}});
+            to = &m_state.workspaces.back();
+            from = workspaceFor(m_state, fromID);
+        }
+        const auto target = targetFor(m_state, plan.request.targetIdentity).value_or(SMutationTarget{.identity = plan.request.targetIdentity});
+        removeFromColumns(*from, plan.request.targetIdentity);
+        std::erase(from->members, plan.request.targetIdentity);
+        to->members.push_back(plan.request.targetIdentity);
+        if (to->kind == EMutationWorkspaceKind::Scrolling)
+            to->columns.push_back({.identity = m_nextColumnIdentity++, .width = plan.sourceColumnWidth, .targets = {{.identity = target.identity, .windowIdentity = target.windowIdentity, .size = 1.0}}});
+        if (reverse)
+            ++m_reverseMoveCount;
+        else
+            ++m_controllerMoveCount;
+    }
+
+    void reResolve(const SMutationPlan&, bool) override {
+        // The in-memory model has no borrowed references; this boundary remains fault injectable.
+    }
+
+    void addTarget(const SMutationPlan& plan) override {
+        auto* destination = workspaceFor(m_state, plan.request.destinationWorkspaceID);
+        if (!destination || destination->kind != EMutationWorkspaceKind::Scrolling)
+            throw std::runtime_error("native destination model unavailable");
+
+        const auto target = targetFor(m_beforeSnapshot, plan.request.targetIdentity).value();
+        removeFromColumns(*destination, plan.request.targetIdentity);
+        if (plan.request.placement == EColumnPlacement::None) {
+            destination->columns.push_back({.identity = m_nextColumnIdentity++, .width = plan.sourceColumnWidth,
+                                            .targets = {{.identity = target.identity, .windowIdentity = target.windowIdentity, .size = 1.0}}});
+            return;
+        }
+        if (plan.request.placement == EColumnPlacement::Existing) {
+            if (plan.request.destinationColumnIndex >= destination->columns.size())
+                throw std::runtime_error("destination column index is stale");
+            auto& targets = destination->columns[plan.request.destinationColumnIndex].targets;
+            if (plan.request.destinationRowIndex > targets.size())
+                throw std::runtime_error("destination row index is stale");
+            targets.insert(targets.begin() + plan.request.destinationRowIndex, target);
+            return;
+        }
+        if (plan.request.destinationColumnIndex > destination->columns.size())
+            throw std::runtime_error("new column index is stale");
+        destination->columns.insert(destination->columns.begin() + plan.request.destinationColumnIndex,
+                                    {.identity = m_nextColumnIdentity++, .width = plan.sourceColumnWidth,
+                                     .targets = {{.identity = target.identity, .windowIdentity = target.windowIdentity, .size = 1.0}}});
+    }
+
+    void restorePreState(const SMutationState& before, const SMutationPlan&) override {
+        m_state = before;
+    }
+
+    void restoreWidths(const SMutationState& before, const SMutationPlan& plan, bool rollback) override {
+        const auto& reference = rollback ? before : m_beforeSnapshot;
+        for (auto& workspace : m_state.workspaces) {
+            const auto* oldWorkspace = workspaceFor(reference, workspace.workspaceID);
+            for (auto& column : workspace.columns) {
+                if (oldWorkspace) {
+                    const auto oldColumn = std::ranges::find(oldWorkspace->columns, column.identity, &SMutationColumn::identity);
+                    if (oldColumn != oldWorkspace->columns.end()) {
+                        column.width = oldColumn->width;
+                        continue;
+                    }
+                }
+                const bool containsMoved = std::ranges::any_of(column.targets, [&](const auto& target) { return target.identity == plan.request.targetIdentity; });
+                if (containsMoved)
+                    column.width = plan.sourceColumnWidth;
+            }
+        }
+    }
+
+    void restoreSizes(const SMutationState& before, const SMutationPlan& plan, bool rollback) override {
+        if (rollback)
+            return;
+        for (auto& workspace : m_state.workspaces) {
+            for (auto& column : workspace.columns) {
+                std::vector<uint64_t> identities;
+                identities.reserve(column.targets.size());
+                for (const auto& target : column.targets)
+                    identities.push_back(target.identity);
+                const auto sizes = expectedCommittedTargetSizes(before, plan, workspace.workspaceID, column.identity, identities);
+                if (sizes.size() != column.targets.size())
+                    throw std::runtime_error("normalized target-size plan is incomplete");
+                for (size_t index = 0; index < sizes.size(); ++index)
+                    column.targets[index].size = sizes[index];
+            }
+        }
+    }
+
+    void recalculate(const SMutationPlan&, bool) override {}
+
+    SMutationState snapshotPostState(const SMutationPlan&, bool) override {
+        return m_state;
+    }
+
+    void setBeforeSnapshot(SMutationState state) {
+        m_beforeSnapshot = std::move(state);
+    }
+
+    static void removeFromColumns(SMutationWorkspace& workspace, uint64_t identity) {
+        for (auto& column : workspace.columns)
+            std::erase_if(column.targets, [&](const auto& target) { return target.identity == identity; });
+        std::erase_if(workspace.columns, [](const auto& column) { return column.targets.empty(); });
+    }
+
+    SMutationState             m_state;
+    SMutationState             m_beforeSnapshot;
+    std::optional<SFaultInjection> m_fault;
+    std::vector<SFaultInjection> m_boundaries;
+    uint64_t                   m_nextColumnIdentity = 10000;
+    size_t                     m_controllerMoveCount = 0;
+    size_t                     m_reverseMoveCount = 0;
+};
+
+}
+
+SMutationPlan buildMutationPlan(const SMutationState& before, const SMutationRequest& request) {
+    SMutationPlan plan;
+    plan.createDestination = request.createDestination;
+    plan.request = request;
+    if (request.kind == EDropKind::Invalid || request.targetIdentity == 0 || request.sourceWorkspaceID <= 0 || request.destinationWorkspaceID <= 0) {
+        plan.error = "invalid mutation request";
+        return plan;
+    }
+
+    size_t matches = 0;
+    for (size_t workspaceIndex = 0; workspaceIndex < before.workspaces.size(); ++workspaceIndex) {
+        const auto& workspace = before.workspaces[workspaceIndex];
+        for (size_t columnIndex = 0; columnIndex < workspace.columns.size(); ++columnIndex) {
+            const auto& column = workspace.columns[columnIndex];
+            for (size_t rowIndex = 0; rowIndex < column.targets.size(); ++rowIndex) {
+                const auto& target = column.targets[rowIndex];
+                if (target.identity != request.targetIdentity)
+                    continue;
+                ++matches;
+                plan.sourceWorkspaceIndex = workspaceIndex;
+                plan.sourceColumnIndex = columnIndex;
+                plan.sourceRowIndex = rowIndex;
+                plan.sourceColumnIdentity = column.identity;
+                plan.sourceColumnWidth = column.width;
+                plan.sourceTargetSize = target.size;
+                if (target.group || target.fullscreen)
+                    plan.error = "grouped or fullscreen targets cannot be transactionally moved";
+            }
+        }
+    }
+    if (matches != 1 || plan.sourceWorkspaceIndex >= before.workspaces.size() || before.workspaces[plan.sourceWorkspaceIndex].workspaceID != request.sourceWorkspaceID) {
+        plan.error = "source target membership is not exact";
+        return plan;
+    }
+    if (!plan.error.empty())
+        return plan;
+
+    const auto destination = std::ranges::find(before.workspaces, request.destinationWorkspaceID, &SMutationWorkspace::workspaceID);
+    if (destination != before.workspaces.end())
+        plan.destinationWorkspaceIndex = static_cast<size_t>(std::distance(before.workspaces.begin(), destination));
+    else if (!request.createDestination) {
+        plan.error = "destination workspace is unavailable";
+        return plan;
+    }
+
+    plan.noOp = request.kind == EDropKind::NoOp;
+    plan.crossWorkspace = request.sourceWorkspaceID != request.destinationWorkspaceID;
+    plan.mixedFallback = request.kind == EDropKind::MixedFallback;
+    if (plan.mixedFallback && (destination == before.workspaces.end() || destination->kind != EMutationWorkspaceKind::Mixed)) {
+        plan.error = "mixed fallback destination is not mixed";
+        return plan;
+    }
+    if (!plan.mixedFallback && destination != before.workspaces.end() && destination->kind != EMutationWorkspaceKind::Scrolling) {
+        plan.error = "native scrolling destination is unavailable";
+        return plan;
+    }
+    if (!plan.noOp && !plan.crossWorkspace && request.kind != EDropKind::ExistingColumn && request.kind != EDropKind::NewColumnBefore && request.kind != EDropKind::NewColumnAfter) {
+        plan.error = "same-workspace mutation kind is unsupported";
+        return plan;
+    }
+    plan.valid = true;
+    return plan;
+}
+
+std::vector<std::string> verifyPostconditions(const SMutationState& before, const SMutationState& after, const SMutationPlan& plan, bool rollback) {
+    std::vector<std::string> violations;
+    if (rollback) {
+        if (before != after)
+            violations.push_back("rollback.exact-state");
+        return violations;
+    }
+
+    const auto beforeCounts = membershipCounts(before);
+    const auto afterCounts = membershipCounts(after);
+    if (beforeCounts.size() != afterCounts.size())
+        appendUnique(violations, "membership.exact-once");
+    for (const auto& [identity, count] : beforeCounts) {
+        const auto found = afterCounts.find(identity);
+        if (count != 1 || found == afterCounts.end() || found->second != 1)
+            appendUnique(violations, "membership.exact-once");
+    }
+    for (const auto& [identity, count] : afterCounts)
+        if (!beforeCounts.contains(identity) || count != 1)
+            appendUnique(violations, "membership.exact-once");
+
+    std::map<uint64_t, std::vector<int64_t>> beforeTopology;
+    std::map<uint64_t, std::vector<int64_t>> afterTopology;
+    for (const auto& workspace : before.workspaces)
+        for (const auto& column : workspace.columns)
+            for (const auto& target : column.targets)
+                beforeTopology[target.identity].push_back(workspace.workspaceID);
+    for (const auto& workspace : after.workspaces)
+        for (const auto& column : workspace.columns)
+            for (const auto& target : column.targets)
+                afterTopology[target.identity].push_back(workspace.workspaceID);
+    for (const auto& [identity, owners] : beforeTopology) {
+        const size_t expectedCount = identity == plan.request.targetIdentity && plan.mixedFallback ? 0 : 1;
+        const auto found = afterTopology.find(identity);
+        if (owners.size() != 1 || (found == afterTopology.end() ? 0 : found->second.size()) != expectedCount)
+            appendUnique(violations, "topology.exact-once");
+    }
+    for (const auto& [identity, owners] : afterTopology) {
+        if (!beforeTopology.contains(identity) || owners.size() != 1)
+            appendUnique(violations, "topology.exact-once");
+        const auto memberOwner = std::ranges::find_if(after.workspaces, [&](const auto& workspace) {
+            return std::ranges::find(workspace.members, identity) != workspace.members.end();
+        });
+        if (memberOwner == after.workspaces.end() || owners.front() != memberOwner->workspaceID)
+            appendUnique(violations, "topology.membership-owner");
+    }
+
+    for (const auto& oldWorkspace : before.workspaces) {
+        const auto* current = workspaceFor(after, oldWorkspace.workspaceID);
+        if (!current)
+            continue;
+        if (oldWorkspace.modelIdentity != 0) {
+            if (oldWorkspace.direction != current->direction || oldWorkspace.offset != current->offset)
+                appendUnique(violations, "controller.direction-offset");
+            if (oldWorkspace.modelIdentity != current->modelIdentity)
+                appendUnique(violations, "model.identity");
+            if (oldWorkspace.focusedTargetIdentity != current->focusedTargetIdentity || oldWorkspace.focusedWindowIdentity != current->focusedWindowIdentity)
+                appendUnique(violations, "focus.identity");
+        }
+        if (columnOrderWithout(oldWorkspace, plan.request.targetIdentity) != columnOrderWithout(*current, plan.request.targetIdentity))
+            appendUnique(violations, "unaffected.order");
+        for (const auto& oldColumn : oldWorkspace.columns) {
+            const auto currentColumn = std::ranges::find(current->columns, oldColumn.identity, &SMutationColumn::identity);
+            const bool movedOnly = oldColumn.targets.size() == 1 && oldColumn.targets.front().identity == plan.request.targetIdentity;
+            if (currentColumn == current->columns.end()) {
+                if (!movedOnly)
+                    appendUnique(violations, "unaffected.order");
+                continue;
+            }
+            if (oldColumn.width != currentColumn->width)
+                appendUnique(violations, "unaffected.width");
+            if (targetOrderWithout(oldColumn, plan.request.targetIdentity) != targetOrderWithout(*currentColumn, plan.request.targetIdentity))
+                appendUnique(violations, "unaffected.order");
+        }
+    }
+
+    for (const auto& workspace : after.workspaces) {
+        if (workspace.kind != EMutationWorkspaceKind::Scrolling)
+            continue;
+        for (const auto& column : workspace.columns) {
+            double sum = 0.0;
+            std::vector<uint64_t> identities;
+            identities.reserve(column.targets.size());
+            for (const auto& target : column.targets) {
+                if (!std::isfinite(target.size) || target.size < 0.0)
+                    appendUnique(violations, "size.aggregate");
+                sum += target.size;
+                identities.push_back(target.identity);
+            }
+            if (column.targets.empty() || !std::isfinite(sum) || std::abs(sum - 1.0) > 0.00001)
+                appendUnique(violations, "size.aggregate");
+            const auto expected = expectedCommittedTargetSizes(before, plan, workspace.workspaceID, column.identity, identities);
+            if (expected.size() != column.targets.size())
+                appendUnique(violations, "size.expected");
+            else
+                for (size_t index = 0; index < expected.size(); ++index)
+                    if (std::abs(expected[index] - column.targets[index].size) > 0.00001)
+                        appendUnique(violations, "size.expected");
+            const auto oldWorkspace = workspaceFor(before, workspace.workspaceID);
+            const bool oldColumnExists = oldWorkspace && std::ranges::find(oldWorkspace->columns, column.identity, &SMutationColumn::identity) != oldWorkspace->columns.end();
+            const bool containsMoved = std::ranges::find(identities, plan.request.targetIdentity) != identities.end();
+            if (!oldColumnExists && containsMoved && std::abs(column.width - plan.sourceColumnWidth) > 0.00001)
+                appendUnique(violations, "moved.width");
+        }
+    }
+
+    const auto* destination = workspaceFor(after, plan.request.destinationWorkspaceID);
+    if (!destination || std::ranges::count(destination->members, plan.request.targetIdentity) != 1)
+        appendUnique(violations, "moved.expected-workspace");
+    if (destination && destination->kind == EMutationWorkspaceKind::Scrolling && !plan.mixedFallback) {
+        size_t occurrences = 0;
+        std::optional<std::pair<size_t, size_t>> location;
+        for (size_t columnIndex = 0; columnIndex < destination->columns.size(); ++columnIndex)
+            for (size_t rowIndex = 0; rowIndex < destination->columns[columnIndex].targets.size(); ++rowIndex)
+                if (destination->columns[columnIndex].targets[rowIndex].identity == plan.request.targetIdentity) {
+                    ++occurrences;
+                    location = {{columnIndex, rowIndex}};
+                }
+        if (occurrences != 1)
+            appendUnique(violations, "topology.exact-once");
+        if (plan.request.placement != EColumnPlacement::None &&
+            (!location || location->first != plan.request.destinationColumnIndex || location->second != plan.request.destinationRowIndex))
+            appendUnique(violations, "moved.expected-location");
+    }
+    return violations;
+}
+
+SMutationResult executeMutation(const SMutationRequest& request, IMutationOperations& operations) {
+    SMutationResult result;
+    result.plan.request = request;
+    bool controllerMoved = false;
+    bool preStateComplete = false;
+    try {
+        operations.checkpoint(EMutationPhase::Apply, EMutationStep::SnapshotPreState, EFaultWhen::Before);
+        result.before = operations.snapshotPreState(request);
+        preStateComplete = true;
+        operations.checkpoint(EMutationPhase::Apply, EMutationStep::SnapshotPreState, EFaultWhen::After);
+        result.plan = buildMutationPlan(result.before, request);
+        if (!result.plan.valid) {
+            result.error = result.plan.error;
+            return result;
+        }
+        if (result.plan.noOp) {
+            result.after = result.before;
+            result.outcome = EMutationOutcome::Committed;
+            return result;
+        }
+        if (result.plan.crossWorkspace) {
+            operations.checkpoint(EMutationPhase::Apply, EMutationStep::ControllerMove, EFaultWhen::Before);
+            operations.controllerMove(result.plan, false);
+            controllerMoved = true;
+            operations.checkpoint(EMutationPhase::Apply, EMutationStep::ControllerMove, EFaultWhen::After);
+            operation(operations, EMutationPhase::Apply, EMutationStep::ReResolve, [&] { operations.reResolve(result.plan, false); });
+        } else {
+            operation(operations, EMutationPhase::Apply, EMutationStep::RemoveTarget, [&] { operations.removeTarget(result.plan); });
+        }
+        if (!result.plan.mixedFallback)
+            operation(operations, EMutationPhase::Apply, EMutationStep::AddTarget, [&] { operations.addTarget(result.plan); });
+        operation(operations, EMutationPhase::Apply, EMutationStep::RestoreWidths, [&] { operations.restoreWidths(result.before, result.plan, false); });
+        operation(operations, EMutationPhase::Apply, EMutationStep::RestoreSizes, [&] { operations.restoreSizes(result.before, result.plan, false); });
+        operation(operations, EMutationPhase::Apply, EMutationStep::Recalculate, [&] { operations.recalculate(result.plan, false); });
+        operation(operations, EMutationPhase::Apply, EMutationStep::SnapshotPostState, [&] { result.after = operations.snapshotPostState(result.plan, false); });
+        operation(operations, EMutationPhase::Apply, EMutationStep::VerifyPostconditions,
+                  [&] { result.violatedInvariantIDs = verifyPostconditions(result.before, result.after, result.plan, false); });
+        if (!result.violatedInvariantIDs.empty())
+            throw std::runtime_error("mutation postconditions failed");
+        result.outcome = EMutationOutcome::Committed;
+        return result;
+    } catch (const std::exception& error) {
+        result.error = error.what();
+    } catch (...) {
+        result.error = "unknown mutation exception";
+    }
+
+    result.failedApplyState = result.after;
+    result.applyViolationIDs = result.violatedInvariantIDs;
+
+    if (!preStateComplete) {
+        result.outcome = EMutationOutcome::Rejected;
+        return result;
+    }
+
+    try {
+        if (controllerMoved) {
+            operation(operations, EMutationPhase::Rollback, EMutationStep::ReverseControllerMove, [&] { operations.controllerMove(result.plan, true); });
+            operation(operations, EMutationPhase::Rollback, EMutationStep::ReResolve, [&] { operations.reResolve(result.plan, true); });
+        }
+        operation(operations, EMutationPhase::Rollback, EMutationStep::RestorePreState, [&] { operations.restorePreState(result.before, result.plan); });
+        operation(operations, EMutationPhase::Rollback, EMutationStep::RestoreWidths, [&] { operations.restoreWidths(result.before, result.plan, true); });
+        operation(operations, EMutationPhase::Rollback, EMutationStep::RestoreSizes, [&] { operations.restoreSizes(result.before, result.plan, true); });
+        operation(operations, EMutationPhase::Rollback, EMutationStep::Recalculate, [&] { operations.recalculate(result.plan, true); });
+        operation(operations, EMutationPhase::Rollback, EMutationStep::SnapshotPostState, [&] { result.after = operations.snapshotPostState(result.plan, true); });
+        operation(operations, EMutationPhase::Rollback, EMutationStep::VerifyPostconditions,
+                  [&] { result.violatedInvariantIDs = verifyPostconditions(result.before, result.after, result.plan, true); });
+        if (!result.violatedInvariantIDs.empty())
+            throw std::runtime_error("rollback postconditions failed");
+        result.outcome = EMutationOutcome::RolledBack;
+        return result;
+    } catch (const std::exception& error) {
+        if (result.error.empty())
+            result.error = error.what();
+        else
+            result.error += "; rollback: " + std::string{error.what()};
+    } catch (...) {
+        result.error += "; rollback: unknown exception";
+    }
+    if (result.violatedInvariantIDs.empty())
+        result.violatedInvariantIDs.push_back("rollback.boundary-failure");
+    result.outcome = EMutationOutcome::RollbackFailed;
+    return result;
+}
+
+SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequest& request, std::optional<SFaultInjection> fault) {
+    CInMemoryOperations operations{std::move(initial), fault};
+    operations.setBeforeSnapshot(operations.m_state);
+    auto result = executeMutation(request, operations);
+    return {.result = std::move(result), .state = std::move(operations.m_state), .boundaries = std::move(operations.m_boundaries),
+            .controllerMoveCount = operations.m_controllerMoveCount, .reverseMoveCount = operations.m_reverseMoveCount};
+}
+
+std::string_view mutationKindName(EDropKind kind) {
+    switch (kind) {
+        case EDropKind::Invalid: return "invalid";
+        case EDropKind::NoOp: return "no-op-release";
+        case EDropKind::ExistingColumn: return "existing-column";
+        case EDropKind::NewColumnBefore: return "new-column-before";
+        case EDropKind::NewColumnAfter: return "new-column-after";
+        case EDropKind::CrossWorkspace: return "cross-scrolling";
+        case EDropKind::MixedFallback: return "mixed-workspace";
+        case EDropKind::TerminalWorkspace: return "terminal-workspace";
+    }
+    return "invalid";
+}
+
+std::string_view columnPlacementName(EColumnPlacement placement) {
+    switch (placement) {
+        case EColumnPlacement::None: return "none";
+        case EColumnPlacement::Existing: return "existing";
+        case EColumnPlacement::Before: return "before";
+        case EColumnPlacement::After: return "after";
+    }
+    return "none";
+}
+
+SMutationDebugRequest parseMutationDebugRequest(const std::string& argument) {
+    SMutationDebugRequest parsed;
+    std::istringstream input{argument};
+    std::string kind;
+    std::string fault;
+    std::string extra;
+    if (!(input >> parsed.requestID >> parsed.sourceWorkspaceID >> parsed.targetStableID >> kind >> parsed.destinationWorkspaceID >> parsed.destinationColumnIndex >> parsed.destinationRowIndex)) {
+        parsed.error = "expected REQUEST_ID SOURCE_WORKSPACE TARGET_STABLE_ID KIND DESTINATION_WORKSPACE COLUMN ROW [FAULT]";
+        return parsed;
+    }
+    input >> fault;
+    if (input >> extra) {
+        parsed.error = "native mutation request has trailing fields";
+        return parsed;
+    }
+    if (!validRequestID(parsed.requestID)) {
+        parsed.error = "request ID must be 1-64 ASCII letters, digits, dot, underscore, or dash";
+        return parsed;
+    }
+    if (parsed.sourceWorkspaceID <= 0 || parsed.targetStableID == 0 || parsed.destinationWorkspaceID < 0) {
+        parsed.error = "workspace and target identities must be positive";
+        return parsed;
+    }
+
+    if (kind == "same-column" || kind == "existing-column") {
+        parsed.kind = EDropKind::ExistingColumn;
+        parsed.placement = EColumnPlacement::Existing;
+    } else if (kind == "new-before" || kind == "new-column-before") {
+        parsed.kind = EDropKind::NewColumnBefore;
+        parsed.placement = EColumnPlacement::Before;
+    } else if (kind == "new-after" || kind == "new-column-after") {
+        parsed.kind = EDropKind::NewColumnAfter;
+        parsed.placement = EColumnPlacement::After;
+    } else if (kind == "cross-scrolling") {
+        parsed.kind = EDropKind::CrossWorkspace;
+        parsed.placement = EColumnPlacement::Existing;
+    } else if (kind == "mixed-workspace") {
+        parsed.kind = EDropKind::MixedFallback;
+    } else if (kind == "terminal-workspace") {
+        parsed.kind = EDropKind::TerminalWorkspace;
+        parsed.createDestination = true;
+    } else if (kind == "no-op-release") {
+        parsed.kind = EDropKind::NoOp;
+        parsed.placement = EColumnPlacement::Existing;
+    } else {
+        parsed.error = "mutation kind is not supported";
+        return parsed;
+    }
+
+    const bool sameWorkspaceKind = parsed.kind == EDropKind::ExistingColumn || parsed.kind == EDropKind::NewColumnBefore || parsed.kind == EDropKind::NewColumnAfter || parsed.kind == EDropKind::NoOp;
+    if (sameWorkspaceKind && parsed.destinationWorkspaceID != parsed.sourceWorkspaceID) {
+        parsed.error = "same-workspace mutation kind requires matching workspace IDs";
+        return parsed;
+    }
+    if (parsed.kind == EDropKind::TerminalWorkspace) {
+        if (parsed.destinationWorkspaceID != 0) {
+            parsed.error = "terminal mutation destination must be zero before next-empty resolution";
+            return parsed;
+        }
+    } else if (parsed.destinationWorkspaceID <= 0) {
+        parsed.error = "destination workspace must be positive";
+        return parsed;
+    }
+
+    if (!fault.empty()) {
+        if (fault != "apply:add-target:after") {
+            parsed.error = "fault must be apply:add-target:after";
+            return parsed;
+        }
+        parsed.fault = SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::AddTarget, .when = EFaultWhen::After};
+    }
+    parsed.valid = true;
+    return parsed;
+}
+
+int64_t nextUnusedOrdinaryWorkspaceID(const std::vector<int64_t>& workspaceIDs) {
+    std::set<int64_t> used;
+    for (const auto workspaceID : workspaceIDs)
+        if (workspaceID > 0)
+            used.insert(workspaceID);
+    for (int64_t candidate = 1; candidate < std::numeric_limits<int64_t>::max(); ++candidate)
+        if (!used.contains(candidate))
+            return candidate;
+    return 0;
+}
+
+std::vector<double> expectedCommittedTargetSizes(const SMutationState& before, const SMutationPlan&, int64_t workspaceID, uint64_t columnIdentity,
+                                                 const std::vector<uint64_t>& targetIdentities) {
+    if (targetIdentities.empty())
+        return {};
+    const auto* workspace = workspaceFor(before, workspaceID);
+    const SMutationColumn* oldColumn = nullptr;
+    if (workspace) {
+        const auto found = std::ranges::find(workspace->columns, columnIdentity, &SMutationColumn::identity);
+        if (found != workspace->columns.end())
+            oldColumn = &*found;
+    }
+    if (!oldColumn)
+        return std::vector<double>(targetIdentities.size(), 1.0 / static_cast<double>(targetIdentities.size()));
+
+    const auto oldContainsAll = oldColumn->targets.size() == targetIdentities.size() && std::ranges::all_of(oldColumn->targets, [&](const auto& oldTarget) {
+        return std::ranges::find(targetIdentities, oldTarget.identity) != targetIdentities.end();
+    });
+    if (oldContainsAll) {
+        std::vector<double> exact;
+        exact.reserve(targetIdentities.size());
+        for (const auto identity : targetIdentities)
+            exact.push_back(std::ranges::find(oldColumn->targets, identity, &SMutationTarget::identity)->size);
+        return exact;
+    }
+
+    size_t newTargets = 0;
+    double oldWeight = 0.0;
+    for (const auto identity : targetIdentities) {
+        const auto oldTarget = std::ranges::find(oldColumn->targets, identity, &SMutationTarget::identity);
+        if (oldTarget == oldColumn->targets.end())
+            ++newTargets;
+        else
+            oldWeight += std::max(0.0, oldTarget->size);
+    }
+    const double newShare = newTargets == 0 ? 0.0 : 1.0 / static_cast<double>(targetIdentities.size());
+    const double existingTotal = std::max(0.0, 1.0 - newShare * static_cast<double>(newTargets));
+    std::vector<double> result;
+    result.reserve(targetIdentities.size());
+    for (const auto identity : targetIdentities) {
+        const auto oldTarget = std::ranges::find(oldColumn->targets, identity, &SMutationTarget::identity);
+        if (oldTarget == oldColumn->targets.end())
+            result.push_back(newShare);
+        else if (oldWeight > 0.0)
+            result.push_back(existingTotal * std::max(0.0, oldTarget->size) / oldWeight);
+        else
+            result.push_back(existingTotal / static_cast<double>(targetIdentities.size() - newTargets));
+    }
+    return result;
+}
+
+}

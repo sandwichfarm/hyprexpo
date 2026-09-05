@@ -16,6 +16,37 @@ bind = SUPER, g, hyprexpo:expo, toggle
 | `bring` | move the top mapped window from the hovered workspace into the current workspace |
 | `1`..`9` | select that workspace by ID while overview is open; otherwise dispatch a normal workspace switch |
 
+Append `all` to open on every monitor at once instead of only the one under the
+cursor. Each monitor renders its own grid, honoring per-monitor
+[workspace placement](../guides/multi-monitor).
+
+```ini
+bind = SUPER, g, hyprexpo:expo, toggle all
+```
+
+| option | description |
+| --- | --- |
+| `all` | shorthand for `toggle all` |
+| `toggle all` | show the overview on every monitor if hidden, hide it everywhere if shown |
+| `on all` or `enable all` | show the overview on every monitor; if some are already open, fills any missing monitor overviews |
+
+The qualifier only affects opening. `off`, `cancel` and `select` always apply to
+every open overview, so a single bind closes them all. Selecting a workspace
+applies only on the monitor you acted on; the others dismiss without changing
+their workspace.
+
+`on all` and `enable all` are idempotent. Repeating either command keeps the
+existing entries and fills any missing monitor overviews. `toggle all` keeps its
+toggle behavior: if any overview is open, it closes every open overview instead
+of filling the missing monitors. Every successful keyboard, pointer, or touch
+selection also closes every open overview; only the overview that owns the
+selected tile changes workspace.
+
+Pointer-driven `select` and `bring` always act on the overview for the monitor under the pointer.
+This remains true after keyboard focus has crossed to another
+monitor: `bring` moves the chosen window into the pointer monitor's active
+workspace rather than the keyboard-owned or compositor-focused monitor.
+
 Keyboard navigation dispatchers are active during overview:
 
 | dispatcher | argument | description |
@@ -28,3 +59,29 @@ Keyboard navigation dispatchers are active during overview:
 | `hyprexpo:move_window` | `source target [address]` | move a window between 1-based visible tile indices; defaults to the top mapped source-window |
 
 Hyprland may briefly report invalid dispatcher messages during startup if binds are parsed before plugins are loaded. Those messages are cosmetic; the dispatchers work once the plugin is loaded.
+
+## Scrolling diagnostics
+
+These dispatchers are for disposable acceptance sessions, not normal binds:
+
+| dispatcher | argument | description |
+| --- | --- | --- |
+| `hyprexpo:scrolling_debug` | `REQUEST_ID active` or `REQUEST_ID workspace:ID` | emit one read-only, request-correlated native topology record |
+| `hyprexpo:scrolling_input_test` | `REQUEST_ID|EVENT_SEQUENCE` | run strict deterministic input transitions when `scrolling_input_debug = 1` |
+| `hyprexpo:scrolling_mutation_test` | `REQUEST_ID SOURCE_WORKSPACE TARGET_STABLE_ID KIND DESTINATION_WORKSPACE COLUMN ROW [FAULT]` | execute one loaded native acceptance transaction when `scrolling_input_debug = 1` |
+
+Topology records are logged with `HYPREXPO_SCROLLING_DIAGNOSTIC`; input records
+use `HYPREXPO_SCROLLING_INPUT`; positional releases use
+`HYPREXPO_SCROLLING_MUTATION`. Request IDs accept only ASCII letters, digits,
+dot, underscore, and dash and are capped at 64 characters. Diagnostics copy
+native state and compare it before/after; they do not move the native tape,
+focus, cursor, or windows. Mutation records include outcome, rollback status,
+invariant IDs, and secret-free topology hashes.
+
+The mutation acceptance dispatcher is intended only for the disposable nested
+validator. `KIND` is one of `same-column`, `existing-column`,
+`new-column-before`, `new-column-after`, `cross-scrolling`, `mixed-workspace`,
+`terminal-workspace`, or `no-op-release`. Terminal requests use destination
+workspace `0`, which is resolved to the next empty workspace at release time.
+The sole accepted fault is `apply:add-target:after`; it is scoped to that one
+request and proves rollback after a real native mutation.

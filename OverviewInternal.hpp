@@ -53,6 +53,8 @@ uint32_t framebufferFormatWithAlpha(uint32_t drmFormat);
 bool isTransformRotated(wl_output_transform t);
 
 std::string trimString(std::string value);
+WORKSPACEID workspaceIDForMonitor(const PHLMONITOR& monitor, const std::string& selector);
+WORKSPACEID nextEmptyWorkspaceIDForMonitor(const PHLMONITOR& monitor);
 std::vector<std::string> splitCommaList(const std::string& value);
 std::string lowerString(std::string value);
 std::string fallbackTokenForVisibleIndex(int visibleIndex);
@@ -74,7 +76,6 @@ void restorePinnedWindowPreviewState(const std::vector<SPinnedWindowPreviewState
 bool windowVisibleOnWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace);
 void settleWorkspaceMoveAnimation(const PHLWINDOW& window);
 void settleWorkspaceMoveAnimations();
-void ensureFramebuffer(COverview::SWorkspaceImage& image, const CBox& monbox, uint32_t drmFormat);
 std::vector<SWindowPreviewState> applyWorkspaceWindowGoalState(const PHLWORKSPACE& workspace);
 void restoreWorkspaceWindowGoalState(const std::vector<SWindowPreviewState>& states);
 PHLWORKSPACE activateWorkspaceForPreview(PHLMONITOR monitor, const PHLWORKSPACE& workspace);
