@@ -24,6 +24,10 @@ ____
 
 ## Install
 
+`master` targets tagged Hyprland **v0.56.1 and v0.56.2**. Build against the
+exact revision and dependencies used by your compositor. Hyprland-git is a
+separate compatibility target; see [compatibility and release provenance](docs/reference/compatibility.md).
+
 ### hyprpm
 
 ```bash
@@ -33,6 +37,9 @@ hyprpm reload
 ```
 
 The repository name in `hyprpm.toml` is `hyprexpo`, and the built plugin output is `hyprexpo.so`.
+The release pins from PR #112 intentionally select earlier compatible plugin
+commits for v0.56.1 and v0.56.2. A source fix on master does not automatically
+change those pins.
 
 ### Build From Source
 
@@ -107,6 +114,9 @@ cmake --build build
 Nix users should build HyprExpo through the Nix Hyprland plugin path instead of mixing a `hyprpm` artifact into a Nix-managed Hyprland session. This repository includes `default.nix`, which uses `hyprlandPlugins.mkHyprlandPlugin` so the plugin follows the Hyprland input supplied by the caller.
 
 Hyprland plugins are ABI-sensitive. Keep the plugin build and running Hyprland revision aligned.
+The flake defaults to the v0.56.2 release. Override its Hyprland input to the
+same supported release used by your system; an unpinned Hyprland-git input is
+not covered by the release compatibility checks.
 
 ## Quick Config
 

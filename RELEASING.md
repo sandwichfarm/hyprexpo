@@ -9,6 +9,12 @@ tag can never drift apart.
 
 Run this from updated `master`, after all compatibility work has landed:
 
+First verify the candidate against the exact Hyprland v0.56.1 and v0.56.2 tags
+with tests and forced builds in separate output directories, as described in
+[the compatibility guide](docs/reference/compatibility.md). Keep the release
+pins from PR #112 until the replacement commit has matching build and load
+evidence. The flake's default must stay on an explicit supported release.
+
 ```sh
 make check-pins        # 1. verify every hyprpm plugin pin is on master's history
 make version v0.56.2   # 2. write + commit the VERSION file
@@ -25,6 +31,9 @@ non-ancestor hashes before a release is tagged.
 The `version`, `tag`, and `publish` targets repeat the relevant pin check, and
 the `Release` workflow verifies both the pins and the `VERSION`/tag match before
 it runs the tests, builds `hyprexpo.so`, and publishes a GitHub release.
+The workflow builds against the Hyprland package installed in its Arch
+container; inspect its provenance before distributing that artifact. That
+single distro build does not replace the two-tag compatibility checks above.
 
 ### Notes
 
