@@ -21,7 +21,7 @@ commit_pins = [
 ]
 
 [hyprexpo]
-description = "hyprexpo+ — keyboard selection, labels, gaps, and Hyprland-style borders"
+description = "Exposé-style workspace and window overviews for Hyprland"
 authors = ["sandwich"]
 output = "hyprexpo.so"
 build = [
