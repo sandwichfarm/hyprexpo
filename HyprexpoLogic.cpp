@@ -191,6 +191,10 @@ ENumberKeyMode numberKeyModeFromString(const std::string& mode) {
     return ENumberKeyMode::Workspace;
 }
 
+bool shouldAbortOverviewCloseForWorkspaceMove(bool windowPinned, bool movedOnOverviewMonitor) {
+    return !windowPinned && movedOnOverviewMonitor;
+}
+
 SDropIntentGeometry computeDropIntentGeometry(const SDropIntentInput& input) {
     SDropIntentGeometry geometry;
 
