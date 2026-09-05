@@ -963,6 +963,27 @@ WORKSPACEID workspaceIDForMonitor(const PHLMONITOR& monitor, const std::string& 
     return getWorkspaceIDNameFromString(selector).id;
 }
 
+WORKSPACEID nextEmptyWorkspaceIDForMonitor(const PHLMONITOR& monitor) {
+    if (!monitor)
+        return WORKSPACE_INVALID;
+
+    const auto workspaces = State::workspaceState()->workspacesCopy();
+    // Unlike emptynm, r+ excludes existing foreign-owned workspaces as well as
+    // foreign bindings. At most workspaces.size() candidates can be occupied.
+    for (size_t step = 1; step <= workspaces.size() + 1; ++step) {
+        const auto id = workspaceIDForMonitor(monitor, "r+" + std::to_string(step));
+        if (id == WORKSPACE_INVALID)
+            break;
+        if (id <= 0 || id <= monitor->activeWorkspaceID())
+            continue;
+
+        const auto workspace = std::ranges::find_if(workspaces, [&](const auto& ws) { return ws->m_id == id; });
+        if (workspace == workspaces.end() || ((*workspace)->m_monitor == monitor && (*workspace)->getWindowCount() == 0))
+            return id;
+    }
+    return WORKSPACE_INVALID;
+}
+
 // Returns pair of {isCenter, startWorkspaceID} for the requested monitor.
 static std::pair<bool, int> getWorkspaceMethodForMonitor(PHLMONITOR monitor) {
     static auto const* PMETHOD = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:workspace_method")->getDataStaticPtr();

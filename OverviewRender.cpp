@@ -163,7 +163,7 @@ void COverview::close(bool switchToSelection) {
         // If this tile's workspace was WORKSPACE_INVALID, move to the next
         // empty workspace. This should only happen if skip_empty is on, in
         // which case some tiles will be left with this ID intentionally.
-        const WORKSPACEID NEWID = TILE.workspaceID == WORKSPACE_INVALID ? workspaceIDForMonitor(MON, "emptynm") : TILE.workspaceID;
+        const WORKSPACEID NEWID = TILE.workspaceID == WORKSPACE_INVALID ? nextEmptyWorkspaceIDForMonitor(MON) : TILE.workspaceID;
 
         // A tile can name a workspace that does not exist yet -- an anchored
         // grid (workspace_method "<output> first N") lays out max_workspace

@@ -434,8 +434,12 @@ int main() {
            "focus-only selection cannot apply an OUT animation to its unchanged workspace");
     expect(closeOverview.find("State::workspaceState()->create(NEWID, MON->m_id") != std::string::npos,
            "skip-empty creation is bound to the selected overview monitor");
-    expect(closeOverview.find("workspaceIDForMonitor(MON, \"emptynm\")") != std::string::npos,
+    expect(closeOverview.find("nextEmptyWorkspaceIDForMonitor(MON)") != std::string::npos,
            "empty-workspace selection resolves against the selected monitor");
+    const auto emptySelector = extractFunction(source, "WORKSPACEID nextEmptyWorkspaceIDForMonitor(");
+    expectContains(emptySelector, "workspaceIDForMonitor(monitor, \"r+\"", "empty selection excludes foreign monitor bindings and ownership");
+    expectContains(emptySelector, "(*workspace)->m_monitor == monitor", "existing empty candidates must belong to the selected monitor");
+    expectContains(emptySelector, "workspaces.size() + 1", "empty selection has a finite materialized-workspace search bound");
     const auto selectorHelper = extractFunction(source, "WORKSPACEID workspaceIDForMonitor(");
     expect(selectorHelper.find("CScopeGuard") != std::string::npos && selectorHelper.find("FOCUS->m_focusMonitor = previousMonitor;") != std::string::npos,
            "monitor-relative enumeration restores the focus context on every return");

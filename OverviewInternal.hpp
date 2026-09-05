@@ -54,6 +54,7 @@ bool isTransformRotated(wl_output_transform t);
 
 std::string trimString(std::string value);
 WORKSPACEID workspaceIDForMonitor(const PHLMONITOR& monitor, const std::string& selector);
+WORKSPACEID nextEmptyWorkspaceIDForMonitor(const PHLMONITOR& monitor);
 std::vector<std::string> splitCommaList(const std::string& value);
 std::string lowerString(std::string value);
 std::string fallbackTokenForVisibleIndex(int visibleIndex);
