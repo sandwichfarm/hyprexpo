@@ -64,3 +64,22 @@ adaptations rather than copying the release branch's C++ files over them.
 The cleanup PR records a disposable rehearsal against the branch tips available
 when it was prepared. Repeat these checks against current tips before performing
 the real reconciliation; the rehearsal does not modify the published branches.
+
+### Rehearsal checkpoint
+
+The cleanup was rehearsed with pre-cleanup `master` at
+`d4e3c6ba207da56f6bc47ecb3eb88091d2a2a742` and `hyprland-git` at
+`e20d9ad7fe29aaee3bab4b5ecaaa523aae1b7e92`:
+
+- The baseline merge had one conflict: the independently added `flake.lock`.
+  Retaining the development lock preserved its exact upstream and dependencies.
+- The subsequent layout merge applied cleanly. All 36 development C++ source
+  and header files retained identical contents under `src/`; development Lua
+  transport, helper fixes, release pins, and the restored demo video survived.
+- The three C++ suites, four Python checks, and 39-case input oracle passed.
+  An actual Nix build against the retained development commit produced the same
+  plugin bytes as before cleanup. Both released targets also retained identical
+  Nix plugin bytes after relocation.
+
+These results validate the strategy at those checkpoints. Recheck conflicts and
+verification whenever either published branch has advanced.

@@ -139,13 +139,13 @@ record PASS make-build 'Make suites, ASan/UBSan, forced plugin build, and ldd'
 cmake -S . -B "$EVIDENCE_DIR/cmake" -DBUILD_TESTING=ON > "$EVIDENCE_DIR/cmake-configure.log" 2>&1
 cmake --build "$EVIDENCE_DIR/cmake" > "$EVIDENCE_DIR/cmake-build.log" 2>&1
 ctest --test-dir "$EVIDENCE_DIR/cmake" --output-on-failure > "$EVIDENCE_DIR/ctest.log" 2>&1
-rg -Fq '100% tests passed, 0 tests failed out of 3' "$EVIDENCE_DIR/ctest.log" || fail 'CTest did not run three passing suites' cmake-ctest
+rg -q '^100% tests passed(, 0 tests failed)? out of 3[[:space:]]*$' "$EVIDENCE_DIR/ctest.log" || fail 'CTest did not run three passing suites' cmake-ctest
 record PASS cmake-ctest 'HyprexpoLogicTests, OverviewSourceTests and RegistryTeardownTests 3/3'
 
 meson setup "$EVIDENCE_DIR/meson" . > "$EVIDENCE_DIR/meson-setup.log" 2>&1
 meson compile -C "$EVIDENCE_DIR/meson" > "$EVIDENCE_DIR/meson-build.log" 2>&1
 meson test -C "$EVIDENCE_DIR/meson" --print-errorlogs > "$EVIDENCE_DIR/meson-test.log" 2>&1
-rg -Eq '^Ok:[[:space:]]+3[[:space:]]*$' "$EVIDENCE_DIR/meson-test.log" || fail 'Meson did not run three passing suites' meson-test
+rg -q '^Ok:[[:space:]]+3[[:space:]]*$' "$EVIDENCE_DIR/meson-test.log" || fail 'Meson did not run three passing suites' meson-test
 record PASS meson-test 'HyprexpoLogicTests, OverviewSourceTests and RegistryTeardownTests 3/3'
 
 npm --prefix docs run docs:build > "$EVIDENCE_DIR/docs-build.log" 2>&1
