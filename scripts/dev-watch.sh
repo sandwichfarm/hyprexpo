@@ -93,11 +93,14 @@ launch_nested
 echo "[dev-watch] watching sources... (press Ctrl-C to stop)"
 command -v inotifywait >/dev/null 2>&1 || { echo "[dev-watch] please install inotify-tools"; exit 1; }
 
-mapfile -t watch_paths < <(find "$REPO_ROOT" -maxdepth 1 -type f \( -name '*.cpp' -o -name '*.hpp' -o -name 'Makefile' -o -name 'meson.build' -o -name 'CMakeLists.txt' \) | sort)
-
+# Watch directories so atomic replacements and newly created files remain visible.
 inotifywait -qm -e close_write,move,create,delete --format '%w%f' \
-  "${watch_paths[@]}" "$REPO_ROOT/tests" \
+  "$REPO_ROOT" "$REPO_ROOT/src" "$REPO_ROOT/tests" \
   | while read -r changed; do
+      case "$changed" in
+        "$REPO_ROOT"/src/*|"$REPO_ROOT"/tests/*|"$REPO_ROOT"/Makefile|"$REPO_ROOT"/meson.build|"$REPO_ROOT"/CMakeLists.txt|"$REPO_ROOT"/VERSION) ;;
+        *) continue ;;
+      esac
       echo "[dev-watch] change detected: $changed"
       if build; then
         stop_nested

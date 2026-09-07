@@ -82,13 +82,13 @@ void expectLastOrder(const std::string& source, const std::string& first, const 
 }
 
 int main() {
-    const auto lifecycleSource = readFile("main.cpp");
+    const auto lifecycleSource = readFile("src/main.cpp");
     expect(lifecycleSource.find("m_events.monitor.removed.listen") != std::string::npos &&
                lifecycleSource.find("destroyOverview(OV);") != std::string::npos,
            "disconnecting an output unregisters its overview without waiting for a frame on that output");
-    const auto source = readFile("Overview.cpp");
-    const auto overviewHeader = readFile("Overview.hpp");
-    expect(!source.empty(), "Overview.cpp can be read from repo root");
+    const auto source = readFile("src/Overview.cpp");
+    const auto overviewHeader = readFile("src/Overview.hpp");
+    expect(!source.empty(), "src/Overview.cpp can be read from repo root");
 
     const auto function = extractFunction(source, "void removeOverview(");
     expect(!function.empty(), "removeOverview function exists");
@@ -106,15 +106,15 @@ int main() {
     expect(resetPos < damagePos, "monitor damage happens after overview reset");
     expect(damagePos < schedulePos, "frame scheduling follows monitor damage");
 
-    const auto mainSource = readFile("main.cpp");
-    expect(!mainSource.empty(), "main.cpp can be read from repo root");
+    const auto mainSource = readFile("src/main.cpp");
+    expect(!mainSource.empty(), "src/main.cpp can be read from repo root");
     expect(mainSource.find("const Time::steady_tp& now") != std::string::npos, "render hook uses the Hyprland 0.56 time-point ABI");
     expect(mainSource.find("_ZN7Monitor8CMonitor9addDamageERKN9Hyprutils4Math4CBoxE") != std::string::npos,
            "damage hook uses the Hyprland 0.56 namespaced monitor symbol");
     expect(mainSource.find("_ZN8CMonitor9addDamageERKN9Hyprutils4Math4CBoxE") == std::string::npos,
            "damage hook no longer uses the pre-0.56 monitor symbol");
 
-    const auto configSource = readFile("PluginConfig.cpp");
+    const auto configSource = readFile("src/PluginConfig.cpp");
     expect(configSource.find("plugin:hyprexpo:drag_drop_enable") != std::string::npos,
            "drag/drop enable configuration is registered");
     expect(source.find("plugin:hyprexpo:drag_drop_enable") != std::string::npos,
@@ -124,13 +124,13 @@ int main() {
     expect(source.find("if (**PDRAGDROPENABLE && SOURCE)") != std::string::npos && source.find("SOURCE->finishWindowDrag()") != std::string::npos,
            "drag/drop enable configuration gates drag completion");
 
-    const auto dispatchersSource = readFile("Dispatchers.cpp");
-    expect(!dispatchersSource.empty(), "Dispatchers.cpp can be read from repo root");
-    const auto gestureHeader = readFile("ExpoGesture.hpp");
-    expect(!gestureHeader.empty(), "ExpoGesture.hpp can be read from repo root");
-    const auto gestureSource = readFile("ExpoGesture.cpp");
-    expect(!gestureSource.empty(), "ExpoGesture.cpp can be read from repo root");
-    expect(!overviewHeader.empty(), "Overview.hpp can be read from repo root");
+    const auto dispatchersSource = readFile("src/Dispatchers.cpp");
+    expect(!dispatchersSource.empty(), "src/Dispatchers.cpp can be read from repo root");
+    const auto gestureHeader = readFile("src/ExpoGesture.hpp");
+    expect(!gestureHeader.empty(), "src/ExpoGesture.hpp can be read from repo root");
+    const auto gestureSource = readFile("src/ExpoGesture.cpp");
+    expect(!gestureSource.empty(), "src/ExpoGesture.cpp can be read from repo root");
+    expect(!overviewHeader.empty(), "src/Overview.hpp can be read from repo root");
     const auto expoDispatcher = extractFunction(dispatchersSource, "static SDispatchResult onExpoDispatcher(std::string arg) {");
     expect(!expoDispatcher.empty(), "expo dispatcher function exists");
 
@@ -168,8 +168,8 @@ int main() {
     expect(mainSource.find("if (shouldSelectWorkspaceFromKey(event))\n            info.cancelled = true;") != std::string::npos,
            "raw key events are cancelled only when the mode-specific handler consumes them");
 
-    const auto interactionSource = readFile("OverviewInteraction.cpp");
-    expect(!interactionSource.empty(), "OverviewInteraction.cpp can be read from repo root");
+    const auto interactionSource = readFile("src/OverviewInteraction.cpp");
+    expect(!interactionSource.empty(), "src/OverviewInteraction.cpp can be read from repo root");
 
     const auto enterSubmap = extractFunction(interactionSource, "void enterOverviewSubmap(bool& submapActive) {");
     expect(!enterSubmap.empty(), "keyboard navigation submap entry function exists");
@@ -339,7 +339,7 @@ int main() {
     expect(cancelTimerPos != std::string::npos && restoreCursorPos != std::string::npos && cancelTimerPos < restoreCursorPos,
            "overview teardown cancels and detaches settle timers before cursor restoration can re-enter callbacks");
 
-    const auto headerSource = readFile("Overview.hpp");
+    const auto headerSource = readFile("src/Overview.hpp");
     expect(headerSource.find("dragStartLocal") == std::string::npos && headerSource.find("dragSourceID") == std::string::npos && headerSource.find("dragWindow") == std::string::npos,
            "per-overview drag ownership fields are removed in favor of the registry session");
     const auto beginDrag  = extractFunction(interactionSource, "void COverview::beginWindowDrag() {");
@@ -429,8 +429,8 @@ int main() {
     expect(centerBranch.find("if (currentID >= firstID)") != std::string::npos && centerBranch.find("if (i > 0 && currentID <= firstID)") != std::string::npos,
            "skip-empty center traversal retains lower and forward wrap guards");
 
-    const auto renderSource = readFile("OverviewRender.cpp");
-    expect(!renderSource.empty(), "OverviewRender.cpp can be read from repo root");
+    const auto renderSource = readFile("src/OverviewRender.cpp");
+    expect(!renderSource.empty(), "src/OverviewRender.cpp can be read from repo root");
     const auto closeOverview = extractFunction(renderSource, "void COverview::close(bool switchToSelection) {");
     expect(!closeOverview.empty(), "overview close function exists");
     expect(closeOverview.find("resetSubmapIfNeeded();") != std::string::npos,
@@ -675,17 +675,17 @@ int main() {
            "dispatcher reference distinguishes idempotent enabling from toggle close and peer dismissal");
     expect(dispatcherDocs.find("monitor under the pointer") != std::string::npos,
            "dispatcher reference identifies cursor ownership for pointer select and bring");
-    const auto adapterHeader = readFile("ScrollingLayoutAdapter.hpp");
-    const auto adapterSource = readFile("ScrollingLayoutAdapter.cpp");
-    const auto mutationHeader = readFile("ScrollingMutationTransaction.hpp");
-    const auto mutationSource = readFile("ScrollingMutationTransaction.cpp");
-    const auto scrollingHeader = readFile("ScrollingOverview.hpp");
-    const auto scrollingSource = readFile("ScrollingOverview.cpp");
+    const auto adapterHeader = readFile("src/ScrollingLayoutAdapter.hpp");
+    const auto adapterSource = readFile("src/ScrollingLayoutAdapter.cpp");
+    const auto mutationHeader = readFile("src/ScrollingMutationTransaction.hpp");
+    const auto mutationSource = readFile("src/ScrollingMutationTransaction.cpp");
+    const auto scrollingHeader = readFile("src/ScrollingOverview.hpp");
+    const auto scrollingSource = readFile("src/ScrollingOverview.cpp");
     const auto scrollingCommit = extractFunction(scrollingSource, "bool CScrollingOverview::commitSelection(");
     expect(scrollingCommit.find("Desktop::focusState()->monitor() != MON") != std::string::npos,
            "selecting an already-active scrolling workspace also focuses its monitor");
-    const auto requestIdHeader = readFile("ScrollingRequestId.hpp");
-    const auto diagnosticSource = readFile("ScrollingDiagnostics.cpp");
+    const auto requestIdHeader = readFile("src/ScrollingRequestId.hpp");
+    const auto diagnosticSource = readFile("src/ScrollingDiagnostics.cpp");
     const auto diagnosticScript = readFile("scripts/read-scrolling-diagnostic.sh");
     expect(!adapterHeader.empty() && !adapterSource.empty(), "scrolling adapter source can be read from repo root");
     expect(!mutationHeader.empty() && !mutationSource.empty(), "scrolling transaction source can be read from repo root");
@@ -775,9 +775,9 @@ int main() {
     expectContains(diagnosticScript, "expected exactly one diagnostic record", "reader rejects missing or duplicate request records");
     expectContains(diagnosticScript, "valid_request_id", "reader validates the request ID before filtering logs");
 
-    const auto captureHeader = readFile("OverviewCapture.hpp");
-    const auto captureSource = readFile("OverviewCapture.cpp");
-    const auto configHeader  = readFile("HyprexpoConfig.hpp");
+    const auto captureHeader = readFile("src/OverviewCapture.hpp");
+    const auto captureSource = readFile("src/OverviewCapture.cpp");
+    const auto configHeader  = readFile("src/HyprexpoConfig.hpp");
     const auto makefile      = readFile("Makefile");
     const auto cmake         = readFile("CMakeLists.txt");
     const auto meson         = readFile("meson.build");
@@ -821,21 +821,21 @@ int main() {
     expectContains(configSource, "HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_DEFAULT", "scrolling thumbnail budget registration uses the resolved default");
     expectContains(configSource, ".min = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN", "scrolling thumbnail budget registration enforces the minimum");
     expectContains(configSource, ".max = HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MAX", "scrolling thumbnail budget registration enforces the maximum");
-    expectContains(makefile, "OverviewCapture.cpp", "Make production sources include the shared capture boundary");
-    expectContains(makefile, "OverviewCapture.hpp", "Make headers include the shared capture boundary");
+    expectContains(makefile, "src/OverviewCapture.cpp", "Make production sources include the shared capture boundary");
+    expectContains(makefile, "src/OverviewCapture.hpp", "Make headers include the shared capture boundary");
 
     const std::string buildDefinitions = makefile + cmake + meson;
     expect(!cmake.empty() && !meson.empty(), "CMake and Meson build definitions can be read from repo root");
-    for (const auto& productionSource : {"main.cpp", "Dispatchers.cpp", "PluginConfig.cpp", "IOverviewSession.cpp", "Overview.cpp", "OverviewInteraction.cpp",
-                                         "OverviewRender.cpp", "OverviewCapture.cpp", "ScrollingOverview.cpp", "ScrollingInputState.cpp", "ExpoGesture.cpp",
-                                         "OverviewPassElement.cpp", "HyprexpoLogic.cpp", "ScrollingOverviewLogic.cpp", "ScrollingMutationTransaction.cpp",
-                                         "ScrollingLayoutAdapter.cpp", "ScrollingDiagnostics.cpp"}) {
+    for (const auto& productionSource : {"src/main.cpp", "src/Dispatchers.cpp", "src/PluginConfig.cpp", "src/IOverviewSession.cpp", "src/Overview.cpp", "src/OverviewInteraction.cpp",
+                                         "src/OverviewRender.cpp", "src/OverviewCapture.cpp", "src/ScrollingOverview.cpp", "src/ScrollingInputState.cpp", "src/ExpoGesture.cpp",
+                                         "src/OverviewPassElement.cpp", "src/HyprexpoLogic.cpp", "src/ScrollingOverviewLogic.cpp", "src/ScrollingMutationTransaction.cpp",
+                                         "src/ScrollingLayoutAdapter.cpp", "src/ScrollingDiagnostics.cpp"}) {
         expectContains(makefile, productionSource, "Make includes production source " + std::string{productionSource});
         expectContains(cmake, productionSource, "CMake includes production source " + std::string{productionSource});
         expectContains(meson, productionSource, "Meson includes production source " + std::string{productionSource});
     }
 
-    for (const auto& pureSource : {"HyprexpoLogic.cpp", "ScrollingOverviewLogic.cpp", "ScrollingInputState.cpp", "ScrollingMutationTransaction.cpp"}) {
+    for (const auto& pureSource : {"src/HyprexpoLogic.cpp", "src/ScrollingOverviewLogic.cpp", "src/ScrollingInputState.cpp", "src/ScrollingMutationTransaction.cpp"}) {
         expectContains(cmake, pureSource, "CMake logic tests include pure source " + std::string{pureSource});
         expectContains(meson, pureSource, "Meson logic tests include pure source " + std::string{pureSource});
     }
@@ -874,9 +874,9 @@ int main() {
                               "hyprexpo:scrolling_debug", "hyprexpo:scrolling_input_test", "not full Niri parity"})
         expectContains(publicDocs, token, "public docs describe scrolling contract token " + std::string{token});
 
-    const auto sessionHeader   = readFile("IOverviewSession.hpp");
-    const auto sessionSource   = readFile("IOverviewSession.cpp");
-    const auto passSource      = readFile("OverviewPassElement.cpp");
+    const auto sessionHeader   = readFile("src/IOverviewSession.hpp");
+    const auto sessionSource   = readFile("src/IOverviewSession.cpp");
+    const auto passSource      = readFile("src/OverviewPassElement.cpp");
     expect(!sessionHeader.empty() && !sessionSource.empty(), "common overview session interface and factory can be read from repo root");
     expect(!scrollingHeader.empty() && !scrollingSource.empty(), "read-only scrolling session source can be read from repo root");
 
@@ -960,8 +960,8 @@ int main() {
     for (const auto& token : {"beginDragTarget", "moveWindowToWorkspace", ".moveTape(", ".setOffset(", ".addStrip(", ".removeStrip(", ".setColumnWidth(", ".setTargetSize(", ".recalculate("})
         expectAbsent(scrollingSource, token, "scrolling input emits intents without native mutation: " + std::string{token});
 
-    const auto inputHeader = readFile("ScrollingInputState.hpp");
-    const auto inputSource = readFile("ScrollingInputState.cpp");
+    const auto inputHeader = readFile("src/ScrollingInputState.hpp");
+    const auto inputSource = readFile("src/ScrollingInputState.cpp");
     const auto inputScript = readFile("scripts/inject-scrolling-input.sh");
     expect(!inputHeader.empty() && !inputSource.empty(), "pure scrolling input state source can be read from repo root");
     expect(!inputScript.empty(), "deterministic scrolling input injection harness can be read from repo root");
@@ -1064,14 +1064,14 @@ int main() {
     expectContains(scrollingSource, "parseInputSequence(sequence)", "runtime injection delegates strict parsing to the pure boundary");
     expectContains(scrollingSource, "inputDiagnosticJson(parsed.requestId", "runtime injection delegates readback serialization to the oracle-covered boundary");
 
-    expectContains(makefile, "IOverviewSession.cpp", "Make production sources include the overview factory");
-    expectContains(makefile, "ScrollingOverview.cpp", "Make production sources include the scrolling renderer");
-    expectContains(makefile, "ScrollingInputState.cpp", "Make production and logic tests include the pure input model");
-    expectContains(makefile, "ScrollingMutationTransaction.cpp", "Make production and logic tests include the pure transaction model");
-    expectContains(makefile, "ScrollingMutationTransaction.hpp", "Make headers include the transaction contract");
+    expectContains(makefile, "src/IOverviewSession.cpp", "Make production sources include the overview factory");
+    expectContains(makefile, "src/ScrollingOverview.cpp", "Make production sources include the scrolling renderer");
+    expectContains(makefile, "src/ScrollingInputState.cpp", "Make production and logic tests include the pure input model");
+    expectContains(makefile, "src/ScrollingMutationTransaction.cpp", "Make production and logic tests include the pure transaction model");
+    expectContains(makefile, "src/ScrollingMutationTransaction.hpp", "Make headers include the transaction contract");
     expectContains(makefile, "scripts/inject-scrolling-input.sh", "Make source tests track the deterministic input harness");
-    expectContains(makefile, "IOverviewSession.hpp", "Make headers include the overview interface");
-    expectContains(makefile, "ScrollingOverview.hpp", "Make headers include the scrolling renderer contract");
+    expectContains(makefile, "src/IOverviewSession.hpp", "Make headers include the overview interface");
+    expectContains(makefile, "src/ScrollingOverview.hpp", "Make headers include the scrolling renderer contract");
 
     if (failures != 0)
         return 1;

@@ -52,6 +52,7 @@ export default defineConfig({
           { text: "Dispatchers", link: "/reference/dispatchers" },
           { text: "Compatibility", link: "/reference/compatibility" },
           { text: "Branches and Releases", link: "/reference/branch-policy" },
+          { text: "Repository Layout", link: "/reference/repository-layout" },
           { text: "Workflow Validation", link: "/reference/workflow-validation" },
           { text: "Troubleshooting", link: "/troubleshooting" },
         ],

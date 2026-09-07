@@ -8,23 +8,23 @@ project(hyprexpo
 set(CMAKE_CXX_STANDARD 23)
 
 set(HYPREXPO_SRC
-    main.cpp
-    Dispatchers.cpp
-    PluginConfig.cpp
-    IOverviewSession.cpp
-    Overview.cpp
-    OverviewInteraction.cpp
-    OverviewRender.cpp
-    OverviewCapture.cpp
-    ScrollingOverview.cpp
-    ScrollingInputState.cpp
-    ExpoGesture.cpp
-    OverviewPassElement.cpp
-    HyprexpoLogic.cpp
-    ScrollingOverviewLogic.cpp
-    ScrollingMutationTransaction.cpp
-    ScrollingLayoutAdapter.cpp
-    ScrollingDiagnostics.cpp
+    src/main.cpp
+    src/Dispatchers.cpp
+    src/PluginConfig.cpp
+    src/IOverviewSession.cpp
+    src/Overview.cpp
+    src/OverviewInteraction.cpp
+    src/OverviewRender.cpp
+    src/OverviewCapture.cpp
+    src/ScrollingOverview.cpp
+    src/ScrollingInputState.cpp
+    src/ExpoGesture.cpp
+    src/OverviewPassElement.cpp
+    src/HyprexpoLogic.cpp
+    src/ScrollingOverviewLogic.cpp
+    src/ScrollingMutationTransaction.cpp
+    src/ScrollingLayoutAdapter.cpp
+    src/ScrollingDiagnostics.cpp
 )
 
 add_library(hyprexpo SHARED ${HYPREXPO_SRC})
@@ -73,10 +73,10 @@ target_link_libraries(hyprexpo PRIVATE rt PkgConfig::deps PkgConfig::HYPREXPO_LU
 
 enable_testing()
 add_executable(HyprexpoLogicTests
-    HyprexpoLogic.cpp
-    ScrollingOverviewLogic.cpp
-    ScrollingInputState.cpp
-    ScrollingMutationTransaction.cpp
+    src/HyprexpoLogic.cpp
+    src/ScrollingOverviewLogic.cpp
+    src/ScrollingInputState.cpp
+    src/ScrollingMutationTransaction.cpp
     tests/HyprexpoLogicTests.cpp
 )
 add_test(NAME HyprexpoLogicTests COMMAND HyprexpoLogicTests)
@@ -88,9 +88,9 @@ add_test(NAME OverviewSourceTests COMMAND OverviewSourceTests)
 add_executable(RegistryTeardownTests tests/RegistryTeardownTests.cpp)
 add_test(NAME RegistryTeardownTests COMMAND RegistryTeardownTests)
 add_executable(ScrollingInputOracle
-    HyprexpoLogic.cpp
-    ScrollingOverviewLogic.cpp
-    ScrollingInputState.cpp
+    src/HyprexpoLogic.cpp
+    src/ScrollingOverviewLogic.cpp
+    src/ScrollingInputState.cpp
     tests/ScrollingInputOracle.cpp
 )
 set_tests_properties(OverviewSourceTests PROPERTIES

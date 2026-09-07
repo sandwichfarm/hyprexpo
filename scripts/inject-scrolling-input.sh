@@ -142,11 +142,11 @@ source_contract() {
     local token name
     for token in 'm_events.input.mouse.move.listen' 'm_events.input.mouse.button.listen' 'm_events.input.mouse.axis.listen' 'm_events.input.touch.down.listen' \
         'm_events.input.touch.motion.listen' 'm_events.input.touch.up.listen' 'm_events.input.touch.cancel.listen' 'info.cancelled = info.cancelled || effects.consume' 'transitionInput(' 'touchToGlobalLogical('; do
-        rg -Fq "$token" ScrollingOverview.cpp
+        rg -Fq "$token" src/ScrollingOverview.cpp
     done
-    rg -Fq 'plugin:hyprexpo:scrolling_input_debug' PluginConfig.cpp Dispatchers.cpp
-    rg -Fq 'hyprexpo:scrolling_input_test' Dispatchers.cpp
-    rg -Fq 'HYPREXPO_SCROLLING_INPUT {}' Dispatchers.cpp
+    rg -Fq 'plugin:hyprexpo:scrolling_input_debug' src/PluginConfig.cpp src/Dispatchers.cpp
+    rg -Fq 'hyprexpo:scrolling_input_test' src/Dispatchers.cpp
+    rg -Fq 'HYPREXPO_SCROLLING_INPUT {}' src/Dispatchers.cpp
     make test ScrollingInputOracle
     for name in "${!cases[@]}"; do
         printf 'oracle %s\n' "$name"

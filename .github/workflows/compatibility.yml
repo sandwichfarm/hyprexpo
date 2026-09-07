@@ -45,7 +45,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Verify target contract and negative cases
-        run: python3 -m unittest discover -s ci/tests -v
+        run: python3 -m unittest discover -s tests -p 'test_ci_*.py' -v
       - name: Compile and run all standalone regression suites
         run: make -B test
       - name: Verify every historical release pin is reachable
