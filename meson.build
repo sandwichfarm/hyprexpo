@@ -23,23 +23,23 @@ version_baked = run_command('sh', meson.current_source_dir() / 'scripts/version.
 add_project_arguments('-DHYPREXPO_VERSION="' + version_baked + '"', language: 'cpp')
 
 src = files(
-  'main.cpp',
-  'Dispatchers.cpp',
-  'PluginConfig.cpp',
-  'IOverviewSession.cpp',
-  'Overview.cpp',
-  'OverviewInteraction.cpp',
-  'OverviewRender.cpp',
-  'OverviewCapture.cpp',
-  'ScrollingOverview.cpp',
-  'ScrollingInputState.cpp',
-  'ExpoGesture.cpp',
-  'OverviewPassElement.cpp',
-  'HyprexpoLogic.cpp',
-  'ScrollingOverviewLogic.cpp',
-  'ScrollingMutationTransaction.cpp',
-  'ScrollingLayoutAdapter.cpp',
-  'ScrollingDiagnostics.cpp',
+  'src/main.cpp',
+  'src/Dispatchers.cpp',
+  'src/PluginConfig.cpp',
+  'src/IOverviewSession.cpp',
+  'src/Overview.cpp',
+  'src/OverviewInteraction.cpp',
+  'src/OverviewRender.cpp',
+  'src/OverviewCapture.cpp',
+  'src/ScrollingOverview.cpp',
+  'src/ScrollingInputState.cpp',
+  'src/ExpoGesture.cpp',
+  'src/OverviewPassElement.cpp',
+  'src/HyprexpoLogic.cpp',
+  'src/ScrollingOverviewLogic.cpp',
+  'src/ScrollingMutationTransaction.cpp',
+  'src/ScrollingLayoutAdapter.cpp',
+  'src/ScrollingDiagnostics.cpp',
 )
 
 hyprland = dependency('hyprland')
@@ -65,10 +65,10 @@ shared_module(meson.project_name(), src,
 
 logic_tests = executable('HyprexpoLogicTests',
   files(
-    'HyprexpoLogic.cpp',
-    'ScrollingOverviewLogic.cpp',
-    'ScrollingInputState.cpp',
-    'ScrollingMutationTransaction.cpp',
+    'src/HyprexpoLogic.cpp',
+    'src/ScrollingOverviewLogic.cpp',
+    'src/ScrollingInputState.cpp',
+    'src/ScrollingMutationTransaction.cpp',
     'tests/HyprexpoLogicTests.cpp',
   ),
 )
@@ -87,8 +87,8 @@ registry_tests = executable('RegistryTeardownTests', files('tests/RegistryTeardo
 test('RegistryTeardownTests', registry_tests)
 
 executable('ScrollingInputOracle', files(
-  'HyprexpoLogic.cpp',
-  'ScrollingOverviewLogic.cpp',
-  'ScrollingInputState.cpp',
+  'src/HyprexpoLogic.cpp',
+  'src/ScrollingOverviewLogic.cpp',
+  'src/ScrollingInputState.cpp',
   'tests/ScrollingInputOracle.cpp',
 ))

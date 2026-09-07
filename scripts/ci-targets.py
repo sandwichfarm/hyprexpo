@@ -10,7 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def targets(path=ROOT / "ci/hyprland-targets.json"):
+def targets(path=ROOT / "scripts/hyprland-targets.json"):
     data = json.loads(path.read_text())
     if set(data) != {"release", "development"}:
         raise ValueError("target file must contain release and development")

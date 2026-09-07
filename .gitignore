@@ -58,6 +58,7 @@ test_hash
 hyprexpo_logic_tests
 HyprexpoLogicTests
 OverviewSourceTests
+RegistryTeardownTests
 ScrollingInputOracle
 
 # Planning files
@@ -68,3 +69,6 @@ AGENTS.md
 # Clangd
 .cache/
 compile_commands.json
+
+# Local, disposable experiments
+/spikes/

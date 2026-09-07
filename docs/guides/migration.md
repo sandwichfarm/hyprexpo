@@ -5,7 +5,7 @@ Legacy `hyprexpo_workspace_method` and `hyprexpo_gesture` lines are no longer re
 ## Dry Run
 
 ```bash
-python3 tools/hyprexpo-migrate-config.py ~/.config/hypr/hyprland.conf
+python3 scripts/hyprexpo-migrate-config.py ~/.config/hypr/hyprland.conf
 ```
 
 Dry-run behavior:
@@ -18,7 +18,7 @@ Dry-run behavior:
 ## Write Changes
 
 ```bash
-python3 tools/hyprexpo-migrate-config.py \
+python3 scripts/hyprexpo-migrate-config.py \
     --write \
     --lua-out ~/.config/hypr/hyprexpo.lua \
     ~/.config/hypr/hyprland.conf
