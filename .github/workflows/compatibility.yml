@@ -83,21 +83,11 @@ jobs:
           path: ${{ runner.temp }}/evidence-${{ matrix.name }}
           if-no-files-found: error
 
-  release-gate:
-    name: Release gate
-    if: ${{ always() && (github.base_ref || inputs.target_branch || github.ref_name) == 'master' }}
-    needs: [targets, regressions, build]
-    runs-on: ubuntu-24.04
-    steps:
-      - env:
-          TARGETS_RESULT: ${{ needs.targets.result }}
-          TEST_RESULT: ${{ needs.regressions.result }}
-          BUILD_RESULT: ${{ needs.build.result }}
-        run: test "$TARGETS_RESULT" = success && test "$TEST_RESULT" = success && test "$BUILD_RESULT" = success
-
-  development-gate:
-    name: Development gate
-    if: ${{ always() && (github.base_ref || inputs.target_branch || github.ref_name) == 'hyprland-git' }}
+  gate:
+    # Never emit a skipped opposite-track gate: GitHub accepts skipped checks
+    # for protection, including another workflow run on the same commit.
+    name: ${{ (github.base_ref || inputs.target_branch || github.ref_name) == 'master' && 'Release gate' || 'Development gate' }}
+    if: always()
     needs: [targets, regressions, build]
     runs-on: ubuntu-24.04
     steps:
