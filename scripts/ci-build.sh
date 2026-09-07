@@ -40,10 +40,14 @@ cp flake.lock "$evidence/flake.lock"
 sha256sum flake.lock >> "$evidence/provenance.txt"
 
 # Nix store paths bind source, generated headers and dependencies together.
-# --rebuild also forces this candidate to compile when its output was cached.
+# Establish an output first: --rebuild refuses never-built derivations. Then
+# force compilation and compare it with the first output, including cache hits.
+nix build "path:$snapshot#hyprexpo" "${flake_args[@]}" --no-update-lock-file \
+    --no-link --json --print-build-logs \
+    > "$evidence/build.json" 2> >(tee "$evidence/build.log" >&2)
 nix build "path:$snapshot#hyprexpo" "${flake_args[@]}" --no-update-lock-file \
     --rebuild --no-link --json --print-build-logs \
-    > "$evidence/build.json" 2> >(tee "$evidence/build.log" >&2)
+    > "$evidence/rebuild.json" 2> >(tee "$evidence/rebuild.log" >&2)
 output=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[0]["outputs"]["out"])' "$evidence/build.json")
 drv=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[0]["drvPath"])' "$evidence/build.json")
 nix derivation show "$drv" > "$evidence/derivation.json"
