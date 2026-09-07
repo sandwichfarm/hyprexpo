@@ -1,5 +1,5 @@
-#include "../ScrollingInputState.hpp"
-#include "../ScrollingOverviewLogic.hpp"
+#include "../src/ScrollingInputState.hpp"
+#include "../src/ScrollingOverviewLogic.hpp"
 
 #include <iostream>
 

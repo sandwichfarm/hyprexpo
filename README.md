@@ -2,6 +2,8 @@
 
 HyprExpo is a maintained Hyprland plugin for expose-style workspace overview with keyboard selection, drag-drop window movement, labels, configurable gaps and borders, multi-monitor placement, and Lua gestures.
 
+https://github.com/user-attachments/assets/861baa26-46b6-4fa8-8d37-65cbb9ecbed4
+
 Native Hyprland scrolling-layout workspaces open a separate window-level
 scrolling overview. It preserves the full offscreen tape, supports pointer,
 touch, keyboard, panning, and positional window moves, and reuses grid captures
@@ -288,6 +290,8 @@ plugin {
 For more options, see the [configuration options](https://hyprexpo.lol/docs/configuration/options/).
 
 ## Next Steps
+
+- [Repository layout and development-branch reconciliation](docs/reference/repository-layout.md)
 
 - [Installation details](https://hyprexpo.lol/docs/getting-started/installation/)
 - [Quick start](https://hyprexpo.lol/docs/getting-started/quick-start/)
