@@ -42,6 +42,8 @@ export default defineConfig({
           { text: "Multi-Monitor Layouts", link: "/guides/multi-monitor" },
           { text: "Migration", link: "/guides/migration" },
           { text: "Runtime Smoke", link: "/guides/runtime-smoke" },
+          { text: "Release Promotion", link: "/guides/release-promotion" },
+          { text: "Development Installation", link: "/guides/development-installation" },
         ],
       },
       {
@@ -50,6 +52,7 @@ export default defineConfig({
           { text: "Dispatchers", link: "/reference/dispatchers" },
           { text: "Compatibility", link: "/reference/compatibility" },
           { text: "Branches and Releases", link: "/reference/branch-policy" },
+          { text: "Workflow Validation", link: "/reference/workflow-validation" },
           { text: "Troubleshooting", link: "/troubleshooting" },
         ],
       },
