@@ -444,6 +444,22 @@ static int luaKbSelectIndex(lua_State* L) {
     return luaDispatchResult(L, "hyprexpo.kb_selecti", onKbSelectIndexDispatcher(luaIntegerArg(L, 1, "hyprexpo.kb_selecti")));
 }
 
+static int luaMoveWindow(lua_State* L) {
+    return luaDispatchResult(L, "hyprexpo.move_window", onMovePreviewWindowDispatcher(luaStringArg(L, 1, "hyprexpo.move_window")));
+}
+
+static int luaScrollingDebug(lua_State* L) {
+    return luaDispatchResult(L, "hyprexpo.scrolling_debug", onScrollingDebugDispatcher(luaStringArg(L, 1, "hyprexpo.scrolling_debug")));
+}
+
+static int luaScrollingInputTest(lua_State* L) {
+    return luaDispatchResult(L, "hyprexpo.scrolling_input_test", onScrollingInputTestDispatcher(luaStringArg(L, 1, "hyprexpo.scrolling_input_test")));
+}
+
+static int luaScrollingMutationTest(lua_State* L) {
+    return luaDispatchResult(L, "hyprexpo.scrolling_mutation_test", onScrollingMutationTestDispatcher(luaStringArg(L, 1, "hyprexpo.scrolling_mutation_test")));
+}
+
 static int luaGesture(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
 
@@ -773,5 +789,9 @@ void registerHyprexpoDispatchers() {
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_selectn", luaKbSelectNumber);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_select", luaKbSelectToken);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "kb_selecti", luaKbSelectIndex);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "move_window", luaMoveWindow);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "scrolling_debug", luaScrollingDebug);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "scrolling_input_test", luaScrollingInputTest);
+    HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "scrolling_mutation_test", luaScrollingMutationTest);
     HyprlandAPI::addLuaFunction(PHANDLE, "hyprexpo", "gesture", luaGesture);
 }

@@ -1,6 +1,8 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <tuple>
+#include <vector>
 
 namespace {
 
@@ -637,6 +639,19 @@ int main() {
     expect(interactionSource.find("#include <hyprland/src/keybinds/Manager.hpp>") != std::string::npos &&
                interactionSource.find("Keybinds::mgr()->currentSubmap()") != std::string::npos,
            "submap ownership captures the exact active submap through the development keybind manager API");
+
+    for (const auto& [luaName, wrapper, handler] : std::vector<std::tuple<std::string, std::string, std::string>>{
+             {"move_window", "luaMoveWindow", "onMovePreviewWindowDispatcher"},
+             {"scrolling_debug", "luaScrollingDebug", "onScrollingDebugDispatcher"},
+             {"scrolling_input_test", "luaScrollingInputTest", "onScrollingInputTestDispatcher"},
+             {"scrolling_mutation_test", "luaScrollingMutationTest", "onScrollingMutationTestDispatcher"},
+         }) {
+        const auto body = extractFunction(dispatchersSource, "static int " + wrapper + "(");
+        expectContains(body, "luaDispatchResult(L, \"hyprexpo." + luaName + "\", " + handler + "(luaStringArg(L, 1, \"hyprexpo." + luaName + "\")))",
+                       luaName + " Lua path shares string validation, native handler and error propagation");
+        expectContains(dispatchersSource, "HyprlandAPI::addLuaFunction(PHANDLE, \"hyprexpo\", \"" + luaName + "\", " + wrapper + ")",
+                       luaName + " remains callable when upstream disables legacy dispatcher registration");
+    }
 
     const auto exitFunction = extractFunction(mainSource, "APICALL EXPORT void PLUGIN_EXIT(");
     expect(!exitFunction.empty(), "PLUGIN_EXIT exists");
