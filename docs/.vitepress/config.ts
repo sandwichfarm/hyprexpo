@@ -49,6 +49,7 @@ export default defineConfig({
         items: [
           { text: "Dispatchers", link: "/reference/dispatchers" },
           { text: "Compatibility", link: "/reference/compatibility" },
+          { text: "Branches and Releases", link: "/reference/branch-policy" },
           { text: "Troubleshooting", link: "/troubleshooting" },
         ],
       },
