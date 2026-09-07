@@ -7,6 +7,10 @@ tag can never drift apart.
 
 ## Cutting a release
 
+For a new upstream compatibility target, first complete the
+[promotion checklist](docs/guides/release-promotion.md) and its evidence receipt.
+An existing supported tag can be used for a rehearsal without publishing it again.
+
 Run this from updated `master`, after all compatibility work has landed:
 
 First verify the candidate against the exact Hyprland v0.56.1 and v0.56.2 tags

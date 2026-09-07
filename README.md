@@ -32,7 +32,7 @@ ____
 ## Branches and Releases
 
 `master` is the default branch for supported, released Hyprland versions.
-The planned `hyprland-git` branch will track explicitly tested upstream
+The separate `hyprland-git` track targets explicitly tested upstream
 development commits. Compatible fixes flow from `master` into the chase branch;
 support for a new Hyprland release is promoted back through a validated PR
 using the compatible candidate commit. Older `release/*` branches are optional
@@ -40,6 +40,8 @@ and require an explicit maintenance commitment.
 
 See the [branch and release policy](docs/reference/branch-policy.md) for branch
 contracts, promotion gates, package and pin handling, and the rollout checklist.
+Use the [development installation guide](docs/guides/development-installation.md)
+for explicit hyprpm revision selection and aligned Nix inputs.
 
 ## Install
 

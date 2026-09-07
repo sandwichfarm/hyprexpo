@@ -6,9 +6,10 @@ Hyprland development, and promote support for a new Hyprland release.
 ## Status and Branch Contracts
 
 `master` remains the default branch for released Hyprland versions. The
-`hyprland-git` branch and any older maintenance branches described here are
-rollout targets; publishing this document does not create them or establish
-compatibility with development Hyprland. Check the
+`hyprland-git` branch is the separate development track. Creating a branch
+does not establish compatibility: use a candidate with recorded build and
+runtime evidence for its exact upstream commit. Older maintenance branches
+remain optional. Check the
 [compatibility reference](./compatibility.md) for the supported release matrix
 and recorded verification boundaries.
 
@@ -64,6 +65,9 @@ and identify them as awaiting that target. Their presence does not make them
 eligible for a merge into the release-compatible default.
 
 ## Promoting a Hyprland Release
+
+Use the [promotion checklist](../guides/release-promotion.md) to record immutable
+inputs, validation evidence, and the maintainer approval boundary.
 
 Promotion follows a specific upstream release and tested plugin commit. It is
 not a periodic merge of the entire moving chase branch.
