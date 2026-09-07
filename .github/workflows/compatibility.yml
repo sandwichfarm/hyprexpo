@@ -1,0 +1,108 @@
+name: Compatibility
+
+on:
+  pull_request:
+    branches: [master, hyprland-git]
+  push:
+    branches: [master, hyprland-git]
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Compatibility contract to test on the selected workflow ref
+        required: true
+        default: master
+        type: choice
+        options: [master, hyprland-git]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compatibility-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  targets:
+    name: Resolve compatibility targets
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - id: resolve
+        env:
+          TARGET_BRANCH: ${{ github.base_ref || inputs.target_branch || github.ref_name }}
+        run: echo "matrix=$(python3 scripts/ci-targets.py matrix "$TARGET_BRANCH")" >> "$GITHUB_OUTPUT"
+
+  regressions:
+    name: Regression tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify target contract and negative cases
+        run: python3 -m unittest discover -s ci/tests -v
+      - name: Compile and run all standalone regression suites
+        run: make -B test
+      - name: Verify every historical release pin is reachable
+        run: make check-pins REF=HEAD
+
+  build:
+    name: Build / ${{ matrix.name }}
+    needs: targets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.targets.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            sandbox = true
+      - name: Build exact source and record dependency / generated-header provenance
+        env:
+          UPSTREAM_REV: ${{ matrix.rev }}
+          CI_TARGET_BRANCH: ${{ github.base_ref || inputs.target_branch || github.ref_name }}
+          EVIDENCE_DIR: ${{ runner.temp }}/evidence-${{ matrix.name }}
+        run: ./scripts/ci-build.sh "$UPSTREAM_REV" "$EVIDENCE_DIR"
+      - name: Preserve artifacts and failure logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: compatibility-${{ matrix.name }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence-${{ matrix.name }}
+          if-no-files-found: error
+
+  release-gate:
+    name: Release gate
+    if: ${{ always() && (github.base_ref || inputs.target_branch || github.ref_name) == 'master' }}
+    needs: [targets, regressions, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          TARGETS_RESULT: ${{ needs.targets.result }}
+          TEST_RESULT: ${{ needs.regressions.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: test "$TARGETS_RESULT" = success && test "$TEST_RESULT" = success && test "$BUILD_RESULT" = success
+
+  development-gate:
+    name: Development gate
+    if: ${{ always() && (github.base_ref || inputs.target_branch || github.ref_name) == 'hyprland-git' }}
+    needs: [targets, regressions, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - env:
+          TARGETS_RESULT: ${{ needs.targets.result }}
+          TEST_RESULT: ${{ needs.regressions.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+        run: test "$TARGETS_RESULT" = success && test "$TEST_RESULT" = success && test "$BUILD_RESULT" = success
