@@ -556,7 +556,7 @@ void disableExpoGestureRegistration() {
 }
 
 static void reportGestureConfigError(const std::string& error) {
-    Log::logger->log(Log::ERR, "[hyprexpo] {}", error);
+    Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] {}", error);
     HyprlandAPI::addNotification(PHANDLE, "[hyprexpo] " + error, CHyprColor{1.0, 0.2, 0.2, 1.0}, 5000);
 }
 
@@ -691,7 +691,7 @@ static SDispatchResult onScrollingDebugDispatcher(std::string arg) {
     if (!emission.validRequest)
         return {.success = false, .error = emission.error};
 
-    Log::logger->log(Log::INFO, "HYPREXPO_SCROLLING_DIAGNOSTIC {}", emission.json);
+    Log::logger->log(Log::INFO, Log::logFnName(), "HYPREXPO_SCROLLING_DIAGNOSTIC {}", emission.json);
     if (!emission.success)
         return {.success = false, .error = emission.error};
     return {};
@@ -709,7 +709,7 @@ static SDispatchResult onScrollingInputTestDispatcher(std::string arg) {
     const auto emission = OV->injectScrollingInput(arg);
     if (!emission)
         return {.success = false, .error = emission.error()};
-    Log::logger->log(Log::INFO, "HYPREXPO_SCROLLING_INPUT {}", *emission);
+    Log::logger->log(Log::INFO, Log::logFnName(), "HYPREXPO_SCROLLING_INPUT {}", *emission);
     return {};
 }
 
@@ -726,7 +726,7 @@ static SDispatchResult onScrollingMutationTestDispatcher(std::string arg) {
     if (!result)
         return {.success = false, .error = result.error()};
     const auto diagnostic = Hyprexpo::Scrolling::mutationDiagnosticJson(*result);
-    Log::logger->log(result->outcome == Hyprexpo::Scrolling::EMutationOutcome::RollbackFailed ? Log::ERR : Log::INFO,
+    Log::logger->log(result->outcome == Hyprexpo::Scrolling::EMutationOutcome::RollbackFailed ? Log::ERR : Log::INFO, Log::logFnName(),
                      "HYPREXPO_SCROLLING_MUTATION {}", diagnostic);
     if (result->outcome == Hyprexpo::Scrolling::EMutationOutcome::RollbackFailed || result->outcome == Hyprexpo::Scrolling::EMutationOutcome::Rejected)
         return {.success = false, .error = result->error};
