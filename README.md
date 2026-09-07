@@ -285,6 +285,8 @@ For more options, see the [configuration options](https://hyprexpo.lol/docs/conf
 
 ## Next Steps
 
+- [Repository layout and development-branch reconciliation](docs/reference/repository-layout.md)
+
 - [Installation details](https://hyprexpo.lol/docs/getting-started/installation/)
 - [Quick start](https://hyprexpo.lol/docs/getting-started/quick-start/)
 - [All configuration options](https://hyprexpo.lol/docs/configuration/options/)

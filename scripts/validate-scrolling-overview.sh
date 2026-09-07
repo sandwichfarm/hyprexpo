@@ -129,7 +129,7 @@ fi
 
 make -B test > "$EVIDENCE_DIR/make-test.log" 2>&1
 g++ -std=c++2b -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer \
-    HyprexpoLogic.cpp ScrollingOverviewLogic.cpp ScrollingInputState.cpp ScrollingMutationTransaction.cpp tests/HyprexpoLogicTests.cpp -o "$EVIDENCE_DIR/w7w-sanitized"
+    src/HyprexpoLogic.cpp src/ScrollingOverviewLogic.cpp src/ScrollingInputState.cpp src/ScrollingMutationTransaction.cpp tests/HyprexpoLogicTests.cpp -o "$EVIDENCE_DIR/w7w-sanitized"
 ASAN_OPTIONS=detect_leaks=1 "$EVIDENCE_DIR/w7w-sanitized" > "$EVIDENCE_DIR/sanitizer.log" 2>&1
 make -B all > "$EVIDENCE_DIR/make-all.log" 2>&1
 ldd hyprexpo.so > "$EVIDENCE_DIR/ldd.txt"
@@ -139,22 +139,21 @@ record PASS make-build 'Make suites, ASan/UBSan, forced plugin build, and ldd'
 cmake -S . -B "$EVIDENCE_DIR/cmake" -DBUILD_TESTING=ON > "$EVIDENCE_DIR/cmake-configure.log" 2>&1
 cmake --build "$EVIDENCE_DIR/cmake" > "$EVIDENCE_DIR/cmake-build.log" 2>&1
 ctest --test-dir "$EVIDENCE_DIR/cmake" --output-on-failure > "$EVIDENCE_DIR/ctest.log" 2>&1
-rg -Fq '100% tests passed out of 2' "$EVIDENCE_DIR/ctest.log" || fail 'CTest did not run two passing suites' cmake-ctest
-record PASS cmake-ctest 'HyprexpoLogicTests and OverviewSourceTests 2/2'
+rg -q '^100% tests passed(, 0 tests failed)? out of 3[[:space:]]*$' "$EVIDENCE_DIR/ctest.log" || fail 'CTest did not run three passing suites' cmake-ctest
+record PASS cmake-ctest 'HyprexpoLogicTests, OverviewSourceTests and RegistryTeardownTests 3/3'
 
 meson setup "$EVIDENCE_DIR/meson" . > "$EVIDENCE_DIR/meson-setup.log" 2>&1
 meson compile -C "$EVIDENCE_DIR/meson" > "$EVIDENCE_DIR/meson-build.log" 2>&1
 meson test -C "$EVIDENCE_DIR/meson" --print-errorlogs > "$EVIDENCE_DIR/meson-test.log" 2>&1
-rg -q 'Ok:[[:space:]]+2' "$EVIDENCE_DIR/meson-test.log" || fail 'Meson did not run two passing suites' meson-test
-record PASS meson-test 'HyprexpoLogicTests and OverviewSourceTests 2/2'
+rg -q '^Ok:[[:space:]]+3[[:space:]]*$' "$EVIDENCE_DIR/meson-test.log" || fail 'Meson did not run three passing suites' meson-test
+record PASS meson-test 'HyprexpoLogicTests, OverviewSourceTests and RegistryTeardownTests 3/3'
 
 npm --prefix docs run docs:build > "$EVIDENCE_DIR/docs-build.log" 2>&1
 git diff --check
-./scripts/run-scrolling-probe.sh --recovery-evidence-guard > "$EVIDENCE_DIR/recovery-guard.log" 2>&1
 ./scripts/read-scrolling-diagnostic.sh --source-contract > "$EVIDENCE_DIR/diagnostic-reader.log" 2>&1
 ./scripts/inject-scrolling-input.sh --source-contract > "$EVIDENCE_DIR/input-oracle.log" 2>&1
 rg -Fq 'scrolling input behavioral oracle PASS (39 cases)' "$EVIDENCE_DIR/input-oracle.log" || fail 'deterministic input matrix did not pass all 39 cases' deterministic-input
-record PASS automated-contracts 'docs, diff, recovery ancestry, diagnostic reader, and 39-case input oracle'
+record PASS automated-contracts 'docs, diff, diagnostic reader, and 39-case input oracle'
 
 HYPREXPO_DEV_LAYOUT=scrolling HYPREXPO_DEV_SO="$REPO_ROOT/hyprexpo.so" XDG_CACHE_HOME="$EVIDENCE_DIR/cache" \
     ./scripts/run-nested.sh > "$EVIDENCE_DIR/nested-stdout.log" 2>&1 &

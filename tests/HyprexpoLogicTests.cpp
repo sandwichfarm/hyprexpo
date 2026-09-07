@@ -1,9 +1,9 @@
-#include "../HyprexpoLogic.hpp"
-#include "../HyprexpoConfig.hpp"
-#include "../ScrollingOverviewLogic.hpp"
-#include "../ScrollingInputState.hpp"
-#include "../ScrollingMutationTransaction.hpp"
-#include "../ScrollingRequestId.hpp"
+#include "../src/HyprexpoLogic.hpp"
+#include "../src/HyprexpoConfig.hpp"
+#include "../src/ScrollingOverviewLogic.hpp"
+#include "../src/ScrollingInputState.hpp"
+#include "../src/ScrollingMutationTransaction.hpp"
+#include "../src/ScrollingRequestId.hpp"
 
 #include <algorithm>
 #include <cmath>
