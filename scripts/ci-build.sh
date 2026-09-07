@@ -48,7 +48,7 @@ output=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[0]["out
 drv=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[0]["drvPath"])' "$evidence/build.json")
 nix derivation show "$drv" > "$evidence/derivation.json"
 nix path-info --recursive --json "$output" > "$evidence/closure.json"
-mapfile -t plugins < <(find "$output" -type f -name hyprexpo.so)
+mapfile -t plugins < <(find "$output" -type f \( -name hyprexpo.so -o -name libhyprexpo.so \))
 [[ ${#plugins[@]} -eq 1 ]] || { echo 'Expected exactly one plugin artifact' >&2; exit 1; }
 cp "${plugins[0]}" "$evidence/hyprexpo.so"
 sha256sum "$evidence/hyprexpo.so" >> "$evidence/provenance.txt"
