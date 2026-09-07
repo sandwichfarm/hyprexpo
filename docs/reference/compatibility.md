@@ -79,6 +79,9 @@ whether the compiler accepts the code.
 
 ## Future Hyprland-git Support
 
+See the [branch and release policy](./branch-policy.md) for contribution targets,
+release promotion rules, and the checklist for establishing the chase branch.
+
 Develop git support on a separate branch based on the release-compatible
 master. Pin that branch's Hyprland input to an explicit upstream commit and
 record its dependency ABI; an unpinned input makes failures unreproducible.
