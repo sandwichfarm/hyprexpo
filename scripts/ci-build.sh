@@ -61,6 +61,6 @@ sha256sum "$evidence/hyprexpo.so" >> "$evidence/provenance.txt"
 nix build "path:$snapshot#hyprland.dev" "${flake_args[@]}" --no-update-lock-file \
     --no-link --json > "$evidence/headers-build.json"
 headers=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[0]["outputs"]["dev"])' "$evidence/headers-build.json")
-find "$headers" -type f \( -name version.h -o -name '*-protocol.h' \) -print0 \
+find "$headers" -type f \( -name version.h -o -path '*/include/hyprland/protocols/*' \) -print0 \
     | sort -z | xargs -0 -r sha256sum > "$evidence/generated-headers.sha256"
 [[ -s "$evidence/generated-headers.sha256" ]] || { echo 'No generated header provenance found' >&2; exit 1; }
