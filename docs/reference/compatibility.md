@@ -56,7 +56,8 @@ and loaded against both supported releases before the pins moved.
 See [feature integration](./feature-integration.md) for the historical integration
 checkpoints, release revalidation and remaining test boundaries.
 
-The flake has an explicit v0.56.2 reference. Nix users should keep the plugin's
+The `master` flake has an explicit v0.56.2 reference; this development candidate
+pins `34eb03bd8da01024596c367fba66485a8c9b8ca7`. Nix users should keep the plugin's
 Hyprland input aligned with their system input through `default.nix` and the
 Hyprland plugin packaging path. Overrides must select a supported release;
 following an arbitrary development revision is not a compatibility guarantee.
@@ -77,10 +78,15 @@ Do not patch newer headers to stand in for a release. Repeat tests and builds
 after resolving PR conflicts, and review feature preservation separately from
 whether the compiler accepts the code.
 
-## Future Hyprland-git Support
+## Hyprland-git Support
+
+See the [workflow validation receipt](./workflow-validation.md) for the tested
+release and development artifacts, consumer evidence, and verification limits.
 
 See the [branch and release policy](./branch-policy.md) for contribution targets,
-release promotion rules, and the checklist for establishing the chase branch.
+release promotion rules, and the chase workflow. The
+[development installation guide](../guides/development-installation.md) explains
+explicit hyprpm revision selection, Nix input alignment, and rollback.
 
 Develop git support on a separate branch based on the release-compatible
 master. Pin that branch's Hyprland input to an explicit upstream commit and

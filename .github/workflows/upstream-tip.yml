@@ -1,0 +1,54 @@
+name: Upstream tip probe
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-tip-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: Advisory upstream tip
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      # Scheduled workflows live on the default branch, but probe chase source.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: hyprland-git
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            sandbox = true
+      - name: Resolve upstream tip once
+        id: upstream
+        run: |
+          rev=$(git ls-remote https://github.com/hyprwm/Hyprland.git refs/heads/main | cut -f1)
+          [[ "$rev" =~ ^[0-9a-f]{40}$ ]]
+          echo "rev=$rev" >> "$GITHUB_OUTPUT"
+          echo "Probing plugin $(git rev-parse HEAD) against Hyprland $rev" >> "$GITHUB_STEP_SUMMARY"
+      - name: Probe without changing the development pin
+        env:
+          UPSTREAM_REV: ${{ steps.upstream.outputs.rev }}
+        run: ./scripts/ci-build.sh "$UPSTREAM_REV" "$RUNNER_TEMP/upstream-tip-evidence"
+      - name: Explain advisory failure
+        if: failure()
+        run: |
+          echo '::warning::Upstream-tip probe failed. Inspect build.log before classifying API drift or infrastructure failure; pinned PR checks are independent.'
+          echo 'Probe failed; no pins or branches were changed. Inspect retained logs for API drift or infrastructure failures.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve probe evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: upstream-tip-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/upstream-tip-evidence
+          if-no-files-found: warn
