@@ -12,6 +12,18 @@ hyprpm reload
 
 The plugin repository is named `hyprexpo` in `hyprpm.toml`, and the built output is `hyprexpo.so`.
 
+When registering from a source checkout, use the guarded wrapper:
+
+```bash
+./scripts/hyprpm-add.sh https://github.com/sandwichfarm/hyprexpo
+```
+
+It also accepts a revision argument for the [development track](../guides/development-installation.md).
+Before invoking hyprpm, an explicit revision is checked in a fresh clone against
+maintained branch or release-tag history. A temporary PR branch or a PR-only
+commit is rejected. A locally available commit is not sufficient: squash merges
+can leave it unavailable to a future normal clone.
+
 ## Build From Source
 
 Build dependencies are a C++23 compiler, `pkg-config`, Hyprland development headers, and these pkg-config packages:
@@ -72,6 +84,15 @@ make install
 hyprpm reload
 ```
 
+`make install` and `scripts/dev-link.sh` check the saved `repository.rev` before
+changing a managed destination. The preflight uses Git and Python 3.11+ and
+requires network access only for an explicit revision. Run it independently
+with `make check-hyprpm-state` (`INSTALL_USER` and `INSTALL_DIR` select the same
+destination as `make install`). Failed or unreadable state stops replacement;
+see [saved-revision recovery](../troubleshooting.md#hyprpm-cannot-check-out-a-saved-revision).
+These commands never persist a test revision. Use the development load commands
+above for PR testing.
+
 If the hyprpm artifact path is root-owned, keep the privilege at the command
 line and preserve the target user explicitly:
 
@@ -83,8 +104,9 @@ hyprpm reload
 Equivalent manual install:
 
 ```bash
+make check-hyprpm-state &&
 install -Dm755 hyprexpo.so \
-    /var/cache/hyprpm/$USER/hyprexpo/hyprexpo.so
+    "/var/cache/hyprpm/$USER/hyprexpo/hyprexpo.so"
 hyprpm reload
 ```
 

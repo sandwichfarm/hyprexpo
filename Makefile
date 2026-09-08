@@ -63,9 +63,12 @@ dev-reload: dev-build
 dev-nested:
 	./scripts/run-nested.sh
 
-install: $(TARGET)
+check-hyprpm-state:
+	@python3 scripts/check-hyprpm-state.py "$(INSTALL_DIR)/state.toml"
+
+install: check-hyprpm-state $(TARGET)
 	@echo "Installing for $(INSTALL_USER) into $(INSTALL_DIR)/$(INSTALL_NAME)"
-	install -Dm755 $(TARGET) $(INSTALL_DIR)/$(INSTALL_NAME)
+	install -Dm755 "$(TARGET)" "$(INSTALL_DIR)/$(INSTALL_NAME)"
 
 clean:
 	rm -f ./$(TARGET) ./$(TEST_TARGET) ./$(SOURCE_TEST_TARGET) ./$(REGISTRY_TEST_TARGET) ./$(INPUT_ORACLE_TARGET)
@@ -74,6 +77,9 @@ test: $(TEST_TARGET) $(SOURCE_TEST_TARGET) $(REGISTRY_TEST_TARGET)
 	./$(TEST_TARGET)
 	./$(SOURCE_TEST_TARGET)
 	./$(REGISTRY_TEST_TARGET)
+
+test-tooling:
+	python3 -m unittest discover -s tests -p 'test_*.py' -v
 
 $(TEST_TARGET): src/HyprexpoLogic.cpp src/HyprexpoLogic.hpp src/HyprexpoConfig.hpp src/ScrollingOverviewLogic.cpp src/ScrollingOverviewLogic.hpp src/ScrollingInputState.cpp src/ScrollingInputState.hpp src/ScrollingRequestId.hpp src/ScrollingMutationTransaction.cpp src/ScrollingMutationTransaction.hpp tests/HyprexpoLogicTests.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror src/HyprexpoLogic.cpp src/ScrollingOverviewLogic.cpp src/ScrollingInputState.cpp src/ScrollingMutationTransaction.cpp tests/HyprexpoLogicTests.cpp -o $@
@@ -104,7 +110,8 @@ endif
 SET_VERSION := $(if $(VERSION_ARG),$(VERSION_ARG),$(v))
 
 version:
-	@if [ -z '$(SET_VERSION)' ]; then \
+	@set -e; \
+	if [ -z '$(SET_VERSION)' ]; then \
 		printf '%s\n' '$(VERSION)'; \
 	else \
 		printf '%s' '$(SET_VERSION)' | grep -Eq '$(VERSION_REGEX)' \
@@ -119,7 +126,8 @@ version:
 	fi
 
 tag:
-	@v='$(VERSION_BASE)'; \
+	@set -e; \
+	v='$(VERSION_BASE)'; \
 	printf '%s' "$$v" | grep -Eq '$(VERSION_REGEX)' \
 		|| { echo "error: VERSION file '$$v' must look like v1.2.3 or v1.2.3+4"; exit 1; }; \
 	if [ -n "$$(git status --porcelain -- $(VERSION_FILE))" ]; then \
@@ -133,7 +141,8 @@ tag:
 	echo "created tag $$v. next: make publish"
 
 publish:
-	@v='$(VERSION_BASE)'; \
+	@set -e; \
+	v='$(VERSION_BASE)'; \
 	if ! git rev-parse -q --verify "refs/tags/$$v" >/dev/null; then \
 		echo "error: tag $$v does not exist; run 'make tag' first"; exit 1; fi; \
 	./scripts/check-commit-pins.sh "$$v"; \
@@ -159,4 +168,4 @@ check-version:
 		|| { echo "::error::VERSION ($$file_ver) does not match tag ($$tag_ver)"; exit 1; }; \
 	echo "version aligned: $$file_ver"
 
-.PHONY: all clean install test dev-build dev-load dev-reload dev-nested version tag publish check-pins check-version
+.PHONY: all clean install test test-tooling dev-build dev-load dev-reload dev-nested version tag publish check-pins check-version check-hyprpm-state
