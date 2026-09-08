@@ -1,5 +1,46 @@
 # Troubleshooting
 
+## hyprpm Cannot Check Out a Saved Revision
+
+If `hyprpm update` prints `Plugin has revision set, resetting` followed by
+`Could not parse object`, inspect `repository.rev` in
+`/var/cache/hyprpm/$USER/hyprexpo/state.toml`. An explicit revision overrides
+the repository's compatibility pins. A PR commit can disappear from normal
+clones after a squash merge and deletion of its temporary branch; retaining
+the object in a developer checkout does not make the installation updateable.
+
+From a source checkout, run `make check-hyprpm-state`. The check makes no changes.
+It accepts unpinned state offline, and verifies explicit revisions using a fresh
+clone. Failed network access also refuses replacement instead of assuming the
+revision is safe. It cannot establish ABI compatibility or guarantee that an
+upstream maintainer will preserve the accepted refs in the future.
+
+To restore normal pin selection on a **supported released Hyprland**, first
+back up the installed state and binary, then re-register without a revision:
+
+```bash
+backup_root="${XDG_STATE_HOME:-$HOME/.local/state}/hyprexpo"
+mkdir -p "$backup_root" &&
+backup_dir="$(mktemp -d "$backup_root/revision-recovery.XXXXXX")" &&
+cp -a "/var/cache/hyprpm/$USER/hyprexpo" "$backup_dir/" &&
+hyprpm remove hyprexpo &&
+./scripts/hyprpm-add.sh https://github.com/sandwichfarm/hyprexpo &&
+hyprpm enable hyprexpo &&
+hyprpm reload &&
+hyprctl reload
+```
+
+Keep the backup until loading succeeds. Run hyprpm as your normal user and
+authenticate its sudo prompt in your terminal. If a command fails, stop and
+retain the output and backup. Do not delete the entire cache or replace `rev`
+with another temporary PR hash. Development-track installations must retain
+their matching compositor and use the [development recovery procedure](./guides/development-installation.md#troubleshooting-and-rollback).
+
+Verify `hyprctl version`, `hyprctl plugin list`, and `hyprctl configerrors` after
+recovery. A failed install can unload the plugin and cause `unknown config key
+'plugin.hyprexpo.…'` errors until it is loaded again. Finish loading and reload
+the config before treating these as removed options.
+
 ## Plugin Load Fails With API or Hash Mismatch
 
 Rebuild HyprExpo against the same Hyprland revision that is running, then reload the plugin.
