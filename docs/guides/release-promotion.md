@@ -5,6 +5,8 @@ Hyprland development track. It stops at a reviewable, validated promotion PR;
 merging, tagging, and publishing require the maintainer's release decision.
 See the [branch policy](../reference/branch-policy.md) for contribution flow and
 [compatibility reference](../reference/compatibility.md) for current targets.
+Use [chasing Hyprland](./chasing-hyprland.md) to discover and prepare a target;
+this guide remains the promotion and publication gate.
 
 ## Select Immutable Inputs
 

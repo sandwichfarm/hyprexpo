@@ -20,6 +20,18 @@ class TargetContractTests(unittest.TestCase):
     def test_current_contract_has_exact_commits(self):
         ci.targets()
 
+    def test_only_configured_same_repository_draft_tracker_uses_development_contract(self):
+        result = ci.contract("sandwichfarm/hyprexpo", 123, "master", "sandwichfarm/hyprexpo", "hyprland-git", True)
+        self.assertEqual(result, {"track": "hyprland-git", "gate": "Tracking gate", "kind": "tracking"})
+        cases = (
+            (124, "master", "sandwichfarm/hyprexpo", "hyprland-git", True),
+            (123, "hyprland-git", "sandwichfarm/hyprexpo", "hyprland-git", True),
+            (123, "master", "fork/hyprexpo", "hyprland-git", True),
+            (123, "master", "sandwichfarm/hyprexpo", "hyprland-git", False),
+        )
+        for number, base, repository, head, draft in cases:
+            self.assertEqual(ci.contract("sandwichfarm/hyprexpo", number, base, repository, head, draft)["kind"], "promotion_or_development")
+
     def test_reject_moving_ref_or_empty_matrix(self):
         for change in ("moving", "empty", "duplicate"):
             data = ci.targets()

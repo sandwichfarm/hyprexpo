@@ -3,6 +3,10 @@
 Follow the [branch policy](docs/reference/branch-policy.md) and validate against
 the Hyprland revisions affected by your change.
 
+For periodic development compatibility work, follow
+[chasing Hyprland](docs/guides/chasing-hyprland.md). It keeps upstream
+observation, candidate repair, and release preparation separate.
+
 ## Local Installation Contract
 
 These rules apply to maintainers, contributors, and coding agents.
