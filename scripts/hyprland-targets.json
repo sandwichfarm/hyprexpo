@@ -5,5 +5,11 @@
   ],
   "development": [
     {"name": "hyprland-git", "rev": "34eb03bd8da01024596c367fba66485a8c9b8ca7"}
-  ]
+  ],
+  "tracker": {
+    "repository": "sandwichfarm/hyprexpo",
+    "number": 123,
+    "base": "master",
+    "head": "hyprland-git"
+  }
 }

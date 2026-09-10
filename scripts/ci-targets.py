@@ -12,9 +12,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def targets(path=ROOT / "scripts/hyprland-targets.json"):
     data = json.loads(path.read_text())
-    if set(data) != {"release", "development"}:
-        raise ValueError("target file must contain release and development")
-    for track, rows in data.items():
+    if set(data) != {"release", "development", "tracker"}:
+        raise ValueError("target file must contain release, development and tracker")
+    for track in ("release", "development"):
+        rows = data[track]
         if not rows or (track == "development" and len(rows) != 1):
             raise ValueError(f"invalid number of {track} targets")
         names = set()
@@ -30,6 +31,9 @@ def targets(path=ROOT / "scripts/hyprland-targets.json"):
                 raise ValueError("duplicate target")
             names.add(row["name"])
             revisions.add(row["rev"])
+    tracker = data["tracker"]
+    if set(tracker) != {"repository", "number", "base", "head"} or not isinstance(tracker["number"], int):
+        raise ValueError("tracker contract is invalid")
     return data
 
 
@@ -38,6 +42,21 @@ def track_for_branch(branch):
     if branch not in mapping:
         raise ValueError(f"unrecognized target branch: {branch}")
     return mapping[branch]
+
+
+def contract(repository, number, base, head_repository, head, draft):
+    tracker = targets()["tracker"]
+    if (
+        draft
+        and repository == tracker["repository"]
+        and head_repository == tracker["repository"]
+        and number == tracker["number"]
+        and base == tracker["base"]
+        and head == tracker["head"]
+    ):
+        return {"track": "hyprland-git", "gate": "Tracking gate", "kind": "tracking"}
+    track = track_for_branch(base)
+    return {"track": track, "gate": "Release gate" if track == "release" else "Development gate", "kind": "promotion_or_development"}
 
 
 def verify_lock(metadata, expected):
@@ -64,11 +83,20 @@ def main():
     branch_lock = commands.add_parser("verify-branch-lock")
     branch_lock.add_argument("metadata", type=Path)
     branch_lock.add_argument("branch", choices=["master", "hyprland-git"])
+    contract_command = commands.add_parser("contract")
+    contract_command.add_argument("--repository", required=True)
+    contract_command.add_argument("--number", type=int, default=0)
+    contract_command.add_argument("--base", required=True)
+    contract_command.add_argument("--head-repository", required=True)
+    contract_command.add_argument("--head", required=True)
+    contract_command.add_argument("--draft", choices=["true", "false"], default="false")
     args = parser.parse_args()
     if args.command == "matrix":
         print(json.dumps({"include": targets()[track_for_branch(args.branch)]}))
     elif args.command == "verify-lock":
         verify_lock(json.loads(args.metadata.read_text()), args.rev)
+    elif args.command == "contract":
+        print(json.dumps(contract(args.repository, args.number, args.base, args.head_repository, args.head, args.draft == "true")))
     else:
         metadata = json.loads(args.metadata.read_text())
         locks = metadata["locks"]

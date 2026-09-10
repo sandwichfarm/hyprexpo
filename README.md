@@ -285,6 +285,7 @@ For more options, see the [configuration options](https://hyprexpo.lol/docs/conf
 
 ## Next Steps
 
+- [Chasing Hyprland](https://hyprexpo.lol/docs/guides/chasing-hyprland/)
 - [Repository layout and development-branch reconciliation](docs/reference/repository-layout.md)
 
 - [Installation details](https://hyprexpo.lol/docs/getting-started/installation/)
