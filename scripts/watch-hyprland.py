@@ -152,12 +152,15 @@ def discover_live() -> dict[str, Any]:
     evidence: list[dict[str, Any]] = []
     for workflow in ("upstream-tip.yml", "compatibility.yml"):
         runs = json_command("gh", "run", "list", "-R", REPOSITORY, "--workflow", workflow, "--limit", "10", "--json", "databaseId,status,conclusion,headSha,createdAt,event,url")
+        inspected = 0
         for run in runs:
             if run.get("status") == "completed":
                 records = artifact_evidence(run, workflow)
                 evidence.extend(records)
                 if records:
-                    break
+                    inspected += 1
+                    if inspected == 3:
+                        break
             else:
                 evidence.append({"run_id": run["databaseId"], "run_url": run.get("url"), "workflow": workflow, "run_status": run.get("status"), "conclusion": run.get("conclusion"), "state": "insufficient", "reason": "run_incomplete"})
     return {
