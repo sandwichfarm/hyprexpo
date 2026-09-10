@@ -395,7 +395,7 @@ int main() {
            "regular workspace bounds are collected only for consecutive traversal");
     expect(boundsScanPos != std::string::npos && overviewConstructor.find("!workspace", boundsScanPos) != std::string::npos,
            "center-current bounds ignore null workspace entries");
-    expect(boundsScanPos != std::string::npos && overviewConstructor.find("workspace->m_isSpecialWorkspace", boundsScanPos) != std::string::npos,
+    expect(boundsScanPos != std::string::npos && overviewConstructor.find("workspace->type() == Workspace::eWorkspaceType::SPECIAL", boundsScanPos) != std::string::npos,
            "center-current bounds exclude special workspaces");
     expect(boundsScanPos != std::string::npos && overviewConstructor.find("workspace->m_monitor != PMONITOR", boundsScanPos) != std::string::npos,
            "center-current bounds exclude workspaces owned by other monitors");
@@ -418,7 +418,7 @@ int main() {
     const auto restoreAnchorPos = overviewConstructor.find("pMonitor->m_activeWorkspace = startedOn;", centerBranchEnd);
     expect(anchorPos != std::string::npos && anchorPos < centerBranchStart && restoreAnchorPos < cappedBranchStart,
            "explicit first and capped center selectors share a temporary anchor restored before capture");
-    expect(overviewConstructor.find("!methodCenter || (!skipEmpty && maxWorkspace > 0 && methodStartID != startedOn->m_id)") != std::string::npos,
+    expect(overviewConstructor.find("!methodCenter || (!skipEmpty && maxWorkspace > 0 && methodStartID != workspaceID(startedOn))") != std::string::npos,
            "capped explicit centers anchor relative traversal without changing legacy skip-empty centering");
 
     const auto helperPos = centerBranch.find("Hyprexpo::centeredWorkspaceBacktrack(");
@@ -443,7 +443,7 @@ int main() {
            "selecting an already-active grid workspace also focuses its monitor");
     expect(closeOverview.find("if (CHANGE && OLDWS != MON->m_activeWorkspace)") != std::string::npos,
            "focus-only selection cannot apply an OUT animation to its unchanged workspace");
-    expect(closeOverview.find("State::workspaceState()->create(NEWID, MON->m_id") != std::string::npos,
+    expect(closeOverview.find("createWorkspaceForMonitor(NEWID, MON)") != std::string::npos,
            "skip-empty creation is bound to the selected overview monitor");
     expect(closeOverview.find("nextEmptyWorkspaceIDForMonitor(MON)") != std::string::npos,
            "empty-workspace selection resolves against the selected monitor");
@@ -452,8 +452,8 @@ int main() {
     expectContains(emptySelector, "(*workspace)->m_monitor == monitor", "existing empty candidates must belong to the selected monitor");
     expectContains(emptySelector, "workspaces.size() + 1", "empty selection has a finite materialized-workspace search bound");
     const auto selectorHelper = extractFunction(source, "WORKSPACEID workspaceIDForMonitor(");
-    expect(selectorHelper.find("CScopeGuard") != std::string::npos && selectorHelper.find("FOCUS->m_focusMonitor = previousMonitor;") != std::string::npos,
-           "monitor-relative enumeration restores the focus context on every return");
+    expect(selectorHelper.find("workspaceIDForSelector(monitor, selector)") != std::string::npos,
+           "monitor-relative enumeration uses the upstream resolver with an explicit monitor");
     expect(overviewConstructor.find("getWorkspaceIDNameFromString(") == std::string::npos && overviewConstructor.find("workspaceIDForMonitor(PMONITOR,") != std::string::npos,
            "simultaneous grids do not enumerate through another monitor's focus context");
 
@@ -694,10 +694,10 @@ int main() {
     expectContains(requestIdHeader, "c == '.'", "shared request ID grammar accepts dots");
     expectContains(diagnosticSource, "validRequestID(request.requestID)", "topology diagnostics use the shared request ID validator");
 
-    for (const auto& token : {"NullWorkspace", "InertWorkspace", "MissingSpace", "MissingAlgorithm", "MissingTiledAlgorithm", "WrongAlgorithmName", "CastFailure", "ExpiredTarget",
+    for (const auto& token : {"NullWorkspace", "MissingSpace", "MissingAlgorithm", "MissingTiledAlgorithm", "WrongAlgorithmName", "CastFailure", "ExpiredTarget",
                               "ExpiredColumn", "ExpiredData", "MissingScrollingData", "ColumnCardinalityMismatch", "TargetCardinalityMismatch", "InvalidGeometry"})
         expectContains(adapterHeader, token, "adapter exposes typed fail-closed result " + std::string{token});
-    for (const auto& token : {"workspace->inert()", "workspace->m_space", "algorithm()", "tiledAlgo()", "algoMatcher()->getNameForTiledAlgo", "dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>",
+    for (const auto& token : {"workspace->space()", "algorithm()", "tiledAlgo()", "algoMatcher()->getNameForTiledAlgo", "dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>",
                               "dataFor(target)", ".lock()", "stripCount()", "getDirection()", "getOffset()", "getStrip(", "targetSizes.size()", "targetDatas.size()", "calculateStripStart(",
                               "calculateStripSize(", "layoutBox", "windowStableID", "algorithmFingerprint", "dataFingerprint"})
         expectContains(adapterSource, token, "adapter implements guarded snapshot token " + std::string{token});
@@ -732,7 +732,7 @@ int main() {
     expectContains(adapterSource, "controller->setOffset(workspaceState.offset)", "native transaction restores the exact pre-state offset after host structure changes");
 
     for (const auto& token : {"Desktop::globalWindowController()->moveWindowToWorkspace", "controllerMove", "reverse", "reResolve", "nextUnusedOrdinaryWorkspaceID",
-                              "State::workspaceState()->create", "m_monitor", "MixedFallback", "TerminalWorkspace"})
+                              "createWorkspaceForMonitor", "m_monitor", "MixedFallback", "TerminalWorkspace"})
         expectContains(adapterSource + mutationSource, token, "cross/terminal transaction exposes " + std::string{token});
     expectOrder(adapterSource, "moveWindowToWorkspace", "reResolve", "cross move discards stale ownership before destination positioning");
     expectContains(adapterSource, "if (reverse)", "rollback controller path explicitly reverses ownership");

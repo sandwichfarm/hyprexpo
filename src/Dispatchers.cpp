@@ -8,6 +8,7 @@
 #include "HyprlandConfigCompat.hpp"
 #include "IOverviewSession.hpp"
 #include "ScrollingDiagnostics.hpp"
+#include "WorkspaceCompat.hpp"
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/debug/log/Logger.hpp>
@@ -157,16 +158,10 @@ static SDispatchResult bringWindowFromWorkspace(int64_t sourceWorkspaceID, const
     if (!destinationMonitor || !destinationMonitor->m_activeWorkspace)
         return {.success = false, .error = "no active monitor/workspace"};
 
-    if (sourceWorkspaceID == destinationMonitor->activeWorkspaceID())
+    if (sourceWorkspaceID == activeWorkspaceID(destinationMonitor))
         return {};
 
-    PHLWORKSPACE sourceWorkspace;
-    for (const auto& w : State::workspaceState()->workspacesCopy()) {
-        if (w->m_id == sourceWorkspaceID) {
-            sourceWorkspace = w;
-            break;
-        }
-    }
+    const auto sourceWorkspace = findWorkspaceByID(sourceWorkspaceID);
     if (!sourceWorkspace)
         return {.success = false, .error = "selected workspace is not open"};
 
