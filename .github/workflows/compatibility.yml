@@ -93,6 +93,7 @@ jobs:
         env:
           UPSTREAM_REV: ${{ matrix.rev }}
           CI_TARGET_BRANCH: ${{ needs.targets.outputs.contract }}
+          EVIDENCE_KIND: compatibility
           EVIDENCE_DIR: ${{ runner.temp }}/evidence-${{ matrix.name }}
         run: ./scripts/ci-build.sh "$UPSTREAM_REV" "$EVIDENCE_DIR"
       - name: Preserve artifacts and failure logs
