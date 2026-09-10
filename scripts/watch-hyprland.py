@@ -81,6 +81,7 @@ def discover_live() -> dict[str, Any]:
     development = json_command("gh", "api", f"repos/{REPOSITORY}/git/ref/heads/hyprland-git")["object"]["sha"]
     upstream = json_command("gh", "api", f"repos/{UPSTREAM}/commits/main")
     releases = paginated_json("gh", "api", f"repos/{UPSTREAM}/releases?per_page=100")
+    tags = paginated_json("gh", "api", f"repos/{UPSTREAM}/tags?per_page=100")
     prs = json_command("gh", "pr", "list", "-R", REPOSITORY, "--state", "open", "--json", "number,title,headRefName,baseRefName,isDraft")
     runs = json_command("gh", "run", "list", "-R", REPOSITORY, "--workflow", "upstream-tip.yml", "--limit", "10", "--json", "databaseId,status,conclusion,headSha,createdAt,event")
     return {
@@ -89,6 +90,7 @@ def discover_live() -> dict[str, Any]:
         "upstream_main": upstream["sha"],
         "upstream_main_date": upstream["commit"]["committer"]["date"],
         "releases": releases,
+        "tags": {tag["name"]: tag["commit"]["sha"] for tag in tags if isinstance(tag.get("name"), str) and isinstance(tag.get("commit"), dict) and isinstance(tag["commit"].get("sha"), str)},
         "open_prs": prs,
         "probe_runs": runs,
         "contract": load_branch_contract(development),
@@ -99,14 +101,16 @@ def stable_releases(releases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [release for release in releases if not release.get("draft") and not release.get("prerelease") and semantic_version(release.get("tag_name", ""))]
 
 
-def release_candidates(releases: list[dict[str, Any]], supported: set[str]) -> list[dict[str, Any]]:
+def release_candidates(releases: list[dict[str, Any]], tags: dict[str, str], supported: set[str]) -> list[dict[str, Any]]:
     supported_versions = [semantic_version(tag) for tag in supported if semantic_version(tag)]
     floor = max(supported_versions) if supported_versions else None
     candidates = []
     for release in stable_releases(releases):
         version = semantic_version(release["tag_name"])
         if release["tag_name"] not in supported and (floor is None or version > floor):
-            candidates.append(release)
+            candidate = dict(release)
+            candidate["tag_commit"] = tags.get(release["tag_name"])
+            candidates.append(candidate)
     return candidates
 
 
@@ -126,7 +130,7 @@ def observe(data: dict[str, Any]) -> dict[str, Any]:
     if latest_probe and latest_probe.get("status") == "completed" and latest_probe.get("conclusion") != "success":
         failures.append("probe_failed")
     supported = {row.get("name") for row in contract.get("release_targets", [])}
-    eligible = release_candidates(data.get("releases", []), supported)
+    eligible = release_candidates(data.get("releases", []), data.get("tags", {}), supported)
     if candidates:
         status = "candidate_active"
     elif failures:
@@ -152,7 +156,7 @@ def observe(data: dict[str, Any]) -> dict[str, Any]:
         "failure_stages": failures,
         "candidate_prs": candidates,
         "eligible_releases": [
-            {"id": release.get("id"), "tag": release["tag_name"], "target": release.get("target_commitish"), "published_at": release.get("published_at")}
+            {"id": release.get("id"), "tag": release["tag_name"], "tag_commit": release.get("tag_commit"), "target": release.get("target_commitish"), "published_at": release.get("published_at")}
             for release in eligible
         ],
         "release_targets": contract.get("release_targets", []),
