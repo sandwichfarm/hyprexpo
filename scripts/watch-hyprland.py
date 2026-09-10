@@ -127,12 +127,12 @@ def observe(data: dict[str, Any]) -> dict[str, Any]:
         failures.append("probe_failed")
     supported = {row.get("name") for row in contract.get("release_targets", [])}
     eligible = release_candidates(data.get("releases", []), supported)
-    if failures:
+    if candidates:
+        status = "candidate_active"
+    elif failures:
         status = "incomplete" if "probe_incomplete" in failures else "needs_diagnosis"
     elif main == target:
         status = "up_to_date"
-    elif candidates:
-        status = "candidate_active"
     else:
         status = "new_upstream_target"
     return {
@@ -157,8 +157,8 @@ def observe(data: dict[str, Any]) -> dict[str, Any]:
         ],
         "release_targets": contract.get("release_targets", []),
         "next_action": (
+            "reuse active candidate and inspect its receipt" if candidates else
             "inspect failed probe evidence before repair" if failures else
-            "reuse active candidate" if candidates else
             "prepare one development candidate" if main != target else
             "no development repair required"
         ),

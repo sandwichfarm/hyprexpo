@@ -57,6 +57,12 @@ class WatchHyprlandTests(unittest.TestCase):
         self.assertEqual(report["status"], "candidate_active")
         self.assertEqual(report["candidate_prs"][0]["number"], 7)
 
+    def test_existing_candidate_wins_over_prior_failed_probe(self):
+        main = "b" * 40
+        report = json.loads(run(fixture(probe="failure", prs=[{"number": 7, "title": "chase", "headRefName": f"chase/hyprland-{main}", "baseRefName": "hyprland-git", "isDraft": True}])).stdout)
+        self.assertEqual(report["status"], "candidate_active")
+        self.assertIn("probe_failed", report["failure_stages"])
+
     def test_failed_probe_requires_diagnosis(self):
         result = run(fixture(probe="failure"))
         report = json.loads(result.stdout)
