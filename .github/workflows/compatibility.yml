@@ -27,6 +27,8 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.resolve.outputs.matrix }}
+      contract: ${{ steps.resolve.outputs.contract }}
+      gate: ${{ steps.resolve.outputs.gate }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -34,7 +36,25 @@ jobs:
       - id: resolve
         env:
           TARGET_BRANCH: ${{ github.base_ref || inputs.target_branch || github.ref_name }}
-        run: echo "matrix=$(python3 scripts/ci-targets.py matrix "$TARGET_BRANCH")" >> "$GITHUB_OUTPUT"
+          PR_NUMBER: ${{ github.event.pull_request.number || 0 }}
+          PR_DRAFT: ${{ github.event.pull_request.draft || false }}
+          PR_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          PR_HEAD: ${{ github.head_ref || github.ref_name }}
+        run: |
+          descriptor=$(python3 scripts/ci-targets.py contract \
+            --repository "$GITHUB_REPOSITORY" --number "$PR_NUMBER" \
+            --base "$TARGET_BRANCH" --head-repository "$PR_HEAD_REPOSITORY" \
+            --head "$PR_HEAD" --draft "$PR_DRAFT")
+          CONTRACT="$descriptor" python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          import os
+          import subprocess
+          descriptor = json.loads(os.environ["CONTRACT"])
+          matrix = subprocess.check_output(["python3", "scripts/ci-targets.py", "matrix", descriptor["track"]], text=True).strip()
+          print(f"contract={descriptor['track']}")
+          print(f"gate={descriptor['gate']}")
+          print(f"matrix={matrix}")
+          PY
 
   regressions:
     name: Regression tests
@@ -44,8 +64,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify target contract and negative cases
-        run: python3 -m unittest discover -s tests -p 'test_ci_*.py' -v
+      - name: Verify tooling contracts and negative cases
+        run: make test-tooling
       - name: Compile and run all standalone regression suites
         run: make -B test
       - name: Verify every historical release pin is reachable
@@ -72,7 +92,7 @@ jobs:
       - name: Build exact source and record dependency / generated-header provenance
         env:
           UPSTREAM_REV: ${{ matrix.rev }}
-          CI_TARGET_BRANCH: ${{ github.base_ref || inputs.target_branch || github.ref_name }}
+          CI_TARGET_BRANCH: ${{ needs.targets.outputs.contract }}
           EVIDENCE_DIR: ${{ runner.temp }}/evidence-${{ matrix.name }}
         run: ./scripts/ci-build.sh "$UPSTREAM_REV" "$EVIDENCE_DIR"
       - name: Preserve artifacts and failure logs
@@ -86,7 +106,7 @@ jobs:
   gate:
     # Never emit a skipped opposite-track gate: GitHub accepts skipped checks
     # for protection, including another workflow run on the same commit.
-    name: ${{ (github.base_ref || inputs.target_branch || github.ref_name) == 'master' && 'Release gate' || 'Development gate' }}
+    name: ${{ needs.targets.outputs.gate }}
     if: always()
     needs: [targets, regressions, build]
     runs-on: ubuntu-24.04

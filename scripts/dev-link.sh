@@ -167,7 +167,7 @@ if [[ -z "$target_so" || $do_list -eq 1 || $do_interactive -eq 1 ]]; then
   filtered=()
   for c in "${candidates[@]}"; do
     ca="$(readlink -f "$c" 2>/dev/null || true)"
-    [[ -n "$ca" && "$ca" != "$local_abs" ]] && filtered+=("$ca")
+    [[ -n "$ca" && "$ca" != "$local_abs" ]] && filtered+=("$c")
   done
 
   if (( do_list )); then
@@ -206,6 +206,7 @@ fi
 
 msg "Target: $target_so"
 ensure_writable_target "$target_so"
+python3 "$script_dir/check-hyprpm-state.py" "$(dirname "$target_so")/state.toml"
 
 local_abs="$(readlink -f "$local_so")"
 target_abs="$(readlink -f "$target_so" 2>/dev/null || true)"

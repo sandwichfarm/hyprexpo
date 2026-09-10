@@ -7,13 +7,36 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 concurrency:
   group: upstream-tip-probe
   cancel-in-progress: false
 
 jobs:
+  observe:
+    name: Observe upstream state
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Record actionable upstream state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/watch-hyprland.py --format markdown | tee upstream-observation.md
+      - name: Preserve observation
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: upstream-observation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: upstream-observation.md
+          if-no-files-found: warn
+
   probe:
+    needs: observe
     name: Advisory upstream tip
     runs-on: ubuntu-24.04
     timeout-minutes: 120
