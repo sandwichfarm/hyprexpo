@@ -11,22 +11,22 @@ flake lock and the running compositor's `hyprctl version` output against the
 [validation receipt](../reference/workflow-validation.md). Test in a disposable
 compositor before changing a desktop.
 
-While [PR #122](https://github.com/sandwichfarm/hyprexpo/pull/122) is unmerged,
-its implementation is on `integration/chase-validation`. For candidate testing,
-use `origin/integration/chase-validation` with hyprpm or that candidate's full
-commit in the Nix URL. Commands below using `hyprland-git` assume that branch
-contains the validated candidate and matching lock; branch creation alone is
-insufficient.
+Commands below using `hyprland-git` assume that branch contains the validated
+candidate and matching lock; branch creation alone is insufficient. Test an
+unmerged candidate from its checkout in a disposable compositor. Do not save
+its PR hash or temporary branch in a desktop's hyprpm registration: a later
+squash merge or branch deletion can break updates.
 
 ## hyprpm Revision Selection
 
 Hyprpm accepts an optional Git revision after the repository URL. Its
 implementation clones the repository and resets to that revision. For a
-non-default branch, use its remote-tracking ref in the fresh clone:
+non-default branch, use its remote-tracking ref in the fresh clone. From a
+HyprExpo checkout, use the guarded registration wrapper:
 
 ```sh
 hyprpm update
-hyprpm add https://github.com/sandwichfarm/hyprexpo origin/hyprland-git
+./scripts/hyprpm-add.sh https://github.com/sandwichfarm/hyprexpo origin/hyprland-git
 hyprpm enable hyprexpo
 hyprpm reload
 ```
@@ -36,11 +36,17 @@ chase track; do not use it on released Hyprland to bypass a failed compatibility
 check. A bare `hyprland-git` name does not resolve in a fresh clone where only
 `master` exists locally. `origin/hyprland-git` does.
 
-For an immutable plugin candidate, use its full commit hash in place of
-`origin/hyprland-git`. Keep the corresponding compositor revision and dependency
-environment together. The same mechanism can validate an unmerged candidate
-using its published `origin/<candidate-branch>` ref; this does not establish
-support for a different published branch tip.
+For an immutable plugin candidate already retained by maintained history, use
+its full commit hash in place of `origin/hyprland-git`. The guard accepts hashes
+reachable from `master`, `hyprland-git`, declared `release/<version>` branches,
+or versioned release tags in a fresh clone. Temporary branch names and commits
+reachable only through PR history are rejected before registration. Keep the
+corresponding compositor revision and dependency environment together.
+
+For unmerged PR tests, use `make dev-reload` or `./scripts/run-nested.sh` in the
+test checkout without changing managed state. Direct revision-specific hyprpm
+tests belong in a disposable environment whose registration is discarded with
+the test. They do not establish a persistent installation or future availability.
 
 Hyprpm cannot add the same repository twice. To change the selected revision,
 first disable and remove the existing registration, then add the intended
@@ -149,7 +155,7 @@ session. Preserve the old consumer lock and system generation for rollback.
 
 | Symptom | Check and recovery |
 | --- | --- |
-| Git revision cannot be checked out | Use `origin/hyprland-git` or a full commit reachable from the repository; verify it in a fresh clone. |
+| Git revision cannot be checked out | Check the saved override and follow [saved-revision recovery](../troubleshooting.md#hyprpm-cannot-check-out-a-saved-revision). Verify any replacement against maintained history in a fresh clone. |
 | Missing or changed C++ APIs | Compare the source revision with the exact compositor target. Select a compatible candidate before retrying. |
 | Header or plugin ABI mismatch | Confirm the running session matches the installed compositor, then regenerate headers/rebuild with its dependency environment. Restart into the intended compositor when disk and running versions differ. |
 | Nix input follows the system but build fails | Check source compatibility and the complete lock, not only the top-level Hyprland input. Retain the failing build log. |
