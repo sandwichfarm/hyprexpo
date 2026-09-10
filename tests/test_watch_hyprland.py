@@ -9,7 +9,27 @@ ROOT = Path(__file__).resolve().parents[1]
 WATCHER = ROOT / "scripts/watch-hyprland.py"
 
 
-def fixture(main="b" * 40, target="a" * 40, lock=None, probe="success", releases=None, tags=None, prs=None):
+def evidence(tree, target, conclusion="success", status="completed", run_id=1, lock=None, **extra):
+    return {
+        "run_id": run_id,
+        "run_url": f"https://example.test/runs/{run_id}",
+        "workflow": "compatibility.yml",
+        "run_status": status,
+        "conclusion": conclusion,
+        "workflow_head": "h" * 40,
+        "created_at": f"2026-09-10T00:00:{run_id:02}Z",
+        "attempt": 1,
+        "job": "build",
+        "plugin_commit": "c" * 40,
+        "plugin_tree": tree,
+        "hyprland_commit": target,
+        "branch_lock_revision": target if lock is None else lock,
+        "provenance": "structured",
+        **extra,
+    }
+
+
+def fixture(main="a" * 40, target="a" * 40, lock=None, records=None, prs=None):
     return {
         "master": "m" * 40,
         "development_branch": "d" * 40,
@@ -19,12 +39,13 @@ def fixture(main="b" * 40, target="a" * 40, lock=None, probe="success", releases
             "development_revision": target,
             "lock_revision": target if lock is None else lock,
             "lock_matches_target": lock is None or lock == target,
+            "branch_tree": "t" * 40,
             "release_targets": [{"name": "v0.56.2", "rev": "r" * 40}],
         },
-        "releases": [] if releases is None else releases,
-        "tags": {} if tags is None else tags,
+        "releases": [],
+        "tags": {},
         "open_prs": [] if prs is None else prs,
-        "probe_runs": [{"databaseId": 1, "status": "completed", "conclusion": probe, "headSha": "m" * 40, "createdAt": "2026-09-10T00:00:00Z"}],
+        "evidence": [] if records is None else records,
     }
 
 
@@ -38,64 +59,72 @@ def run(data, form="json"):
 
 
 class WatchHyprlandTests(unittest.TestCase):
-    def test_up_to_date_has_no_candidate_work(self):
-        result = run(fixture(main="a" * 40))
-        report = json.loads(result.stdout)
-        self.assertEqual(result.returncode, 0)
+    def test_validated_merged_repair_makes_old_failed_probe_historical(self):
+        target = "a" * 40
+        current = evidence("t" * 40, target, run_id=2)
+        old_failed = evidence("o" * 40, target, conclusion="failure", run_id=1, workflow="upstream-tip.yml")
+        report = json.loads(run(fixture(records=[old_failed, current])).stdout)
         self.assertEqual(report["status"], "up_to_date")
-        self.assertEqual(report["eligible_releases"], [])
+        self.assertEqual(report["selected_validation"]["run_id"], 2)
+        self.assertEqual(report["evidence"][0]["state"], "historical")
 
-    def test_new_target_requests_one_candidate(self):
-        result = run(fixture())
-        report = json.loads(result.stdout)
-        self.assertEqual(report["status"], "new_upstream_target")
-        self.assertEqual(report["next_action"], "prepare one development candidate")
-
-    def test_existing_exact_candidate_deduplicates(self):
-        main = "b" * 40
-        result = run(fixture(prs=[{"number": 7, "title": "chase", "headRefName": f"chase/hyprland-{main}", "baseRefName": "hyprland-git", "isDraft": True}]))
-        report = json.loads(result.stdout)
-        self.assertEqual(report["status"], "candidate_active")
-        self.assertEqual(report["candidate_prs"][0]["number"], 7)
-
-    def test_existing_candidate_wins_over_prior_failed_probe(self):
-        main = "b" * 40
-        report = json.loads(run(fixture(probe="failure", prs=[{"number": 7, "title": "chase", "headRefName": f"chase/hyprland-{main}", "baseRefName": "hyprland-git", "isDraft": True}])).stdout)
-        self.assertEqual(report["status"], "candidate_active")
-        self.assertIn("probe_failed", report["failure_stages"])
-
-    def test_failed_probe_requires_diagnosis(self):
-        result = run(fixture(probe="failure"))
-        report = json.loads(result.stdout)
+    def test_current_failure_beats_earlier_success(self):
+        target = "a" * 40
+        old_success = evidence("t" * 40, target, run_id=1)
+        current_failure = evidence("t" * 40, target, conclusion="failure", run_id=2)
+        report = json.loads(run(fixture(records=[old_success, current_failure])).stdout)
         self.assertEqual(report["status"], "needs_diagnosis")
-        self.assertIn("probe_failed", report["failure_stages"])
+        self.assertEqual(report["failure_stages"], ["validation_failed"])
 
-    def test_lock_mismatch_is_never_compatible(self):
-        result = run(fixture(lock="c" * 40))
-        report = json.loads(result.stdout)
+    def test_upstream_advance_needs_new_candidate_even_with_prior_validation(self):
+        target = "a" * 40
+        report = json.loads(run(fixture(main="b" * 40, records=[evidence("t" * 40, target)])).stdout)
+        self.assertEqual(report["status"], "new_upstream_target")
+
+    def test_plugin_tree_change_rejects_same_target_success(self):
+        target = "a" * 40
+        report = json.loads(run(fixture(records=[evidence("o" * 40, target)])).stdout)
+        self.assertEqual(report["status"], "incomplete")
+        self.assertIn("validation_missing", report["failure_stages"])
+        self.assertEqual(report["evidence"][0]["state"], "historical")
+
+    def test_workflow_head_does_not_decide_identity(self):
+        target = "a" * 40
+        report = json.loads(run(fixture(records=[evidence("t" * 40, target, workflow_head="m" * 40)])).stdout)
+        self.assertEqual(report["status"], "up_to_date")
+        self.assertEqual(report["selected_validation"]["workflow_head"], "m" * 40)
+
+    def test_missing_pending_and_cancelled_provenance_stay_explicit(self):
+        target = "a" * 40
+        missing = {"run_id": 1, "run_url": "https://example.test/runs/1", "workflow": "upstream-tip.yml", "state": "insufficient", "reason": "provenance_missing"}
+        pending = evidence("t" * 40, target, status="in_progress", conclusion=None, run_id=2)
+        report = json.loads(run(fixture(records=[missing, pending])).stdout)
+        self.assertEqual(report["status"], "incomplete")
+        self.assertIn("validation_pending", report["failure_stages"])
+        self.assertEqual(report["evidence"][0]["state"], "insufficient")
+
+    def test_cancelled_current_validation_is_incomplete(self):
+        target = "a" * 40
+        cancelled = evidence("t" * 40, target, status="completed", conclusion="cancelled")
+        report = json.loads(run(fixture(records=[cancelled])).stdout)
+        self.assertEqual(report["status"], "incomplete")
+        self.assertEqual(report["failure_stages"], ["validation_cancelled"])
+
+    def test_lock_mismatch_never_uses_matching_build(self):
+        target = "a" * 40
+        report = json.loads(run(fixture(lock="b" * 40, records=[evidence("t" * 40, target)])).stdout)
         self.assertEqual(report["status"], "needs_diagnosis")
         self.assertIn("development_lock_mismatch", report["failure_stages"])
 
-    def test_new_stable_release_is_reported_but_drafts_are_ignored(self):
-        releases = [
-            {"id": 1, "tag_name": "v0.56.2", "draft": False, "prerelease": False},
-            {"id": 2, "tag_name": "v0.57.0", "draft": False, "prerelease": False, "target_commitish": "z" * 40},
-            {"id": 3, "tag_name": "v0.58.0", "draft": True, "prerelease": False},
-            {"id": 4, "tag_name": "v0.59.0-rc.1", "draft": False, "prerelease": True},
-        ]
-        report = json.loads(run(fixture(releases=releases, tags={"v0.57.0": "p" * 40})).stdout)
-        self.assertEqual(report["eligible_releases"], [{"id": 2, "tag": "v0.57.0", "tag_commit": "p" * 40, "target": "z" * 40, "published_at": None}])
-
-    def test_older_unsupported_releases_are_not_new_work(self):
-        releases = [{"id": 1, "tag_name": "v0.55.4", "draft": False, "prerelease": False}]
-        report = json.loads(run(fixture(main="a" * 40, releases=releases)).stdout)
-        self.assertEqual(report["eligible_releases"], [])
-
-    def test_markdown_exposes_failure_and_release_work(self):
-        result = run(fixture(probe="failure", releases=[{"id": 2, "tag_name": "v0.57.0", "draft": False, "prerelease": False}]), "markdown")
+    def test_candidate_detection_and_markdown_evidence(self):
+        target = "a" * 40
+        main = "b" * 40
+        candidate = {"number": 7, "title": "chase", "headRefName": f"chase/hyprland-{main}", "baseRefName": "hyprland-git", "isDraft": True}
+        result = run(fixture(main=main, records=[evidence("t" * 40, target)], prs=[candidate]), "markdown")
         self.assertEqual(result.returncode, 0)
-        self.assertIn("probe_failed", result.stdout)
-        self.assertIn("v0.57.0", result.stdout)
+        self.assertIn("candidate_active", result.stdout)
+        self.assertIn("Selected validation", result.stdout)
+        self.assertIn("run 1", result.stdout)
 
 
 if __name__ == "__main__":
