@@ -18,6 +18,7 @@ SCHEMA_VERSION = 2
 REPOSITORY = "sandwichfarm/hyprexpo"
 UPSTREAM = "hyprwm/Hyprland"
 SEMVER = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+PRERELEASE_TAG = re.compile(r"^v\d+\.\d+\.\d+(?:[-.]?[A-Za-z][0-9A-Za-z.-]*)$")
 ATTEMPT = re.compile(r"-(\d+)$")
 
 
@@ -180,17 +181,58 @@ def stable_releases(releases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [release for release in releases if not release.get("draft") and not release.get("prerelease") and semantic_version(release.get("tag_name", ""))]
 
 
-def release_candidates(releases: list[dict[str, Any]], tags: dict[str, str], supported: set[str]) -> list[dict[str, Any]]:
+def release_is_new_supported_line(version: tuple[int, int, int], supported: set[str]) -> bool:
     supported_versions = [semantic_version(tag) for tag in supported if semantic_version(tag)]
-    floor = max(supported_versions) if supported_versions else None
+    if not supported_versions:
+        return True
+    same_line = [candidate for candidate in supported_versions if candidate[:2] == version[:2]]
+    if same_line:
+        return version > max(same_line)
+    return version > max(supported_versions)
+
+
+def release_candidates(releases: list[dict[str, Any]], tags: dict[str, str], supported: set[str]) -> list[dict[str, Any]]:
     candidates = []
     for release in stable_releases(releases):
         version = semantic_version(release["tag_name"])
-        if release["tag_name"] not in supported and (floor is None or version > floor):
+        tag_commit = tags.get(release["tag_name"])
+        target = release.get("target_commitish")
+        if not isinstance(tag_commit, str) or not re.fullmatch(r"[0-9a-f]{40}", tag_commit):
+            continue
+        if isinstance(target, str) and re.fullmatch(r"[0-9a-f]{40}", target) and target != tag_commit:
+            continue
+        if release["tag_name"] not in supported and release_is_new_supported_line(version, supported):
             candidate = dict(release)
-            candidate["tag_commit"] = tags.get(release["tag_name"])
+            candidate["tag_commit"] = tag_commit
             candidates.append(candidate)
     return candidates
+
+
+def release_reviews(releases: list[dict[str, Any]], tags: dict[str, str], supported: set[str]) -> list[dict[str, Any]]:
+    release_tags = {release.get("tag_name") for release in releases if isinstance(release.get("tag_name"), str)}
+    reviews: list[dict[str, Any]] = []
+    for release in releases:
+        tag = release.get("tag_name")
+        if release.get("draft") or release.get("prerelease"):
+            continue
+        if isinstance(tag, str) and PRERELEASE_TAG.fullmatch(tag):
+            continue
+        version = semantic_version(tag) if isinstance(tag, str) else None
+        if not version:
+            reviews.append({"id": release.get("id"), "tag": tag, "status": "review", "reason": "unsupported_release_tag"})
+            continue
+        tag_commit = tags.get(tag)
+        if not tag_commit:
+            reviews.append({"id": release.get("id"), "tag": tag, "status": "review", "reason": "tag_commit_missing"})
+            continue
+        target = release.get("target_commitish")
+        if isinstance(target, str) and re.fullmatch(r"[0-9a-f]{40}", target) and target != tag_commit:
+            reviews.append({"id": release.get("id"), "tag": tag, "tag_commit": tag_commit, "status": "review", "reason": "tag_identity_mismatch"})
+    for tag, commit in tags.items():
+        version = semantic_version(tag)
+        if version and tag not in release_tags and release_is_new_supported_line(version, supported):
+            reviews.append({"tag": tag, "tag_commit": commit, "status": "review", "reason": "tag_without_release"})
+    return reviews
 
 
 def classify_evidence(records: list[dict[str, Any]], contract: dict[str, Any], target: str) -> list[dict[str, Any]]:
@@ -239,6 +281,7 @@ def observe(data: dict[str, Any]) -> dict[str, Any]:
         failures.append("validation_missing")
     supported = {row.get("name") for row in contract.get("release_targets", [])}
     eligible = release_candidates(data.get("releases", []), data.get("tags", {}), supported)
+    reviews = release_reviews(data.get("releases", []), data.get("tags", {}), supported)
     if failures:
         status = "incomplete" if any(stage in failures for stage in ("validation_pending", "validation_cancelled", "validation_missing")) else "needs_diagnosis"
     elif candidates:
@@ -265,6 +308,7 @@ def observe(data: dict[str, Any]) -> dict[str, Any]:
         "failure_stages": failures,
         "candidate_prs": candidates,
         "eligible_releases": [{"id": release.get("id"), "tag": release["tag_name"], "tag_commit": release.get("tag_commit"), "target": release.get("target_commitish"), "published_at": release.get("published_at")} for release in eligible],
+        "release_reviews": reviews,
         "release_targets": contract.get("release_targets", []),
         "next_action": "inspect current validation evidence" if failures else "reuse active candidate" if candidates else "prepare one development candidate" if main != target else "no development repair required",
     }
@@ -284,6 +328,8 @@ def markdown(report: dict[str, Any]) -> str:
         lines.extend(["## Existing candidates", "", *[f"- #{pr['number']} {pr['title']}" for pr in report["candidate_prs"]], ""])
     if report["eligible_releases"]:
         lines.extend(["## New released targets", "", *[f"- `{release['tag']}` (release ID `{release['id']}`)" for release in report["eligible_releases"]], ""])
+    if report.get("release_reviews"):
+        lines.extend(["## Release review items", "", *[f"- `{item.get('tag')}`: `{item['reason']}`" for item in report["release_reviews"]], ""])
     return "\n".join(lines)
 
 

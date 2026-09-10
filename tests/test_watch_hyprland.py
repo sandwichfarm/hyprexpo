@@ -29,7 +29,7 @@ def evidence(tree, target, conclusion="success", status="completed", run_id=1, l
     }
 
 
-def fixture(main="a" * 40, target="a" * 40, lock=None, records=None, prs=None):
+def fixture(main="a" * 40, target="a" * 40, lock=None, records=None, prs=None, release_targets=None, releases=None, tags=None):
     return {
         "master": "m" * 40,
         "development_branch": "d" * 40,
@@ -40,10 +40,10 @@ def fixture(main="a" * 40, target="a" * 40, lock=None, records=None, prs=None):
             "lock_revision": target if lock is None else lock,
             "lock_matches_target": lock is None or lock == target,
             "branch_tree": "t" * 40,
-            "release_targets": [{"name": "v0.56.2", "rev": "r" * 40}],
+            "release_targets": [{"name": "v0.56.2", "rev": "r" * 40}] if release_targets is None else release_targets,
         },
-        "releases": [],
-        "tags": {},
+        "releases": [] if releases is None else releases,
+        "tags": {} if tags is None else tags,
         "open_prs": [] if prs is None else prs,
         "evidence": [] if records is None else records,
     }
@@ -125,6 +125,33 @@ class WatchHyprlandTests(unittest.TestCase):
         self.assertIn("candidate_active", result.stdout)
         self.assertIn("Selected validation", result.stdout)
         self.assertIn("run 1", result.stdout)
+
+    def test_new_patch_in_maintained_older_line_is_eligible(self):
+        release = {"id": 9, "tag_name": "v0.55.3", "target_commitish": "c" * 40}
+        report = json.loads(run(fixture(
+            release_targets=[{"name": "v0.55.2", "rev": "r" * 40}, {"name": "v0.56.2", "rev": "s" * 40}],
+            releases=[release],
+            tags={"v0.55.3": "c" * 40},
+        )).stdout)
+        self.assertEqual([item["tag"] for item in report["eligible_releases"]], ["v0.55.3"])
+        self.assertEqual(report["release_reviews"], [])
+
+    def test_tag_only_malformed_and_retargeted_releases_are_review_items(self):
+        releases = [
+            {"id": 1, "tag_name": "nightly", "target_commitish": "main"},
+            {"id": 2, "tag_name": "v0.57.0", "target_commitish": "d" * 40},
+            {"id": 3, "tag_name": "v0.57.0beta", "target_commitish": "e" * 40, "prerelease": False},
+        ]
+        report = json.loads(run(fixture(
+            releases=releases,
+            tags={"nightly": "n" * 40, "v0.57.0": "c" * 40, "v0.57.1": "e" * 40},
+        )).stdout)
+        reviews = {(item.get("tag"), item["reason"]) for item in report["release_reviews"]}
+        self.assertIn(("nightly", "unsupported_release_tag"), reviews)
+        self.assertIn(("v0.57.0", "tag_identity_mismatch"), reviews)
+        self.assertIn(("v0.57.1", "tag_without_release"), reviews)
+        self.assertNotIn(("v0.57.0beta", "unsupported_release_tag"), reviews)
+        self.assertEqual(report["eligible_releases"], [])
 
 
 if __name__ == "__main__":
