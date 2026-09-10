@@ -18,6 +18,7 @@ SCHEMA_VERSION = 2
 REPOSITORY = "sandwichfarm/hyprexpo"
 UPSTREAM = "hyprwm/Hyprland"
 SEMVER = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+PRERELEASE_TAG = re.compile(r"^v\d+\.\d+\.\d+(?:[-.]?[A-Za-z][0-9A-Za-z.-]*)$")
 ATTEMPT = re.compile(r"-(\d+)$")
 
 
@@ -213,6 +214,8 @@ def release_reviews(releases: list[dict[str, Any]], tags: dict[str, str], suppor
     for release in releases:
         tag = release.get("tag_name")
         if release.get("draft") or release.get("prerelease"):
+            continue
+        if isinstance(tag, str) and PRERELEASE_TAG.fullmatch(tag):
             continue
         version = semantic_version(tag) if isinstance(tag, str) else None
         if not version:

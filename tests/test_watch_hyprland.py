@@ -140,6 +140,7 @@ class WatchHyprlandTests(unittest.TestCase):
         releases = [
             {"id": 1, "tag_name": "nightly", "target_commitish": "main"},
             {"id": 2, "tag_name": "v0.57.0", "target_commitish": "d" * 40},
+            {"id": 3, "tag_name": "v0.57.0beta", "target_commitish": "e" * 40, "prerelease": False},
         ]
         report = json.loads(run(fixture(
             releases=releases,
@@ -149,6 +150,7 @@ class WatchHyprlandTests(unittest.TestCase):
         self.assertIn(("nightly", "unsupported_release_tag"), reviews)
         self.assertIn(("v0.57.0", "tag_identity_mismatch"), reviews)
         self.assertIn(("v0.57.1", "tag_without_release"), reviews)
+        self.assertNotIn(("v0.57.0beta", "unsupported_release_tag"), reviews)
         self.assertEqual(report["eligible_releases"], [])
 
 
