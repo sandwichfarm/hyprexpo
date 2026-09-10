@@ -43,6 +43,7 @@ export default defineConfig({
           { text: "Migration", link: "/guides/migration" },
           { text: "Runtime Smoke", link: "/guides/runtime-smoke" },
           { text: "Release Promotion", link: "/guides/release-promotion" },
+          { text: "Chasing Hyprland", link: "/guides/chasing-hyprland" },
           { text: "Development Installation", link: "/guides/development-installation" },
         ],
       },
