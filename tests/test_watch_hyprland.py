@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WATCHER = ROOT / "scripts/watch-hyprland.py"
 
 
-def fixture(main="b" * 40, target="a" * 40, lock=None, probe="success", releases=None, prs=None):
+def fixture(main="b" * 40, target="a" * 40, lock=None, probe="success", releases=None, tags=None, prs=None):
     return {
         "master": "m" * 40,
         "development_branch": "d" * 40,
@@ -22,6 +22,7 @@ def fixture(main="b" * 40, target="a" * 40, lock=None, probe="success", releases
             "release_targets": [{"name": "v0.56.2", "rev": "r" * 40}],
         },
         "releases": [] if releases is None else releases,
+        "tags": {} if tags is None else tags,
         "open_prs": [] if prs is None else prs,
         "probe_runs": [{"databaseId": 1, "status": "completed", "conclusion": probe, "headSha": "m" * 40, "createdAt": "2026-09-10T00:00:00Z"}],
     }
@@ -82,8 +83,8 @@ class WatchHyprlandTests(unittest.TestCase):
             {"id": 3, "tag_name": "v0.58.0", "draft": True, "prerelease": False},
             {"id": 4, "tag_name": "v0.59.0-rc.1", "draft": False, "prerelease": True},
         ]
-        report = json.loads(run(fixture(releases=releases)).stdout)
-        self.assertEqual(report["eligible_releases"], [{"id": 2, "tag": "v0.57.0", "target": "z" * 40, "published_at": None}])
+        report = json.loads(run(fixture(releases=releases, tags={"v0.57.0": "p" * 40})).stdout)
+        self.assertEqual(report["eligible_releases"], [{"id": 2, "tag": "v0.57.0", "tag_commit": "p" * 40, "target": "z" * 40, "published_at": None}])
 
     def test_older_unsupported_releases_are_not_new_work(self):
         releases = [{"id": 1, "tag_name": "v0.55.4", "draft": False, "prerelease": False}]
