@@ -55,8 +55,8 @@ def contract(repository, number, base, head_repository, head, draft):
         and head == tracker["head"]
     ):
         return {"track": "hyprland-git", "gate": "Tracking gate", "kind": "tracking"}
-    track = track_for_branch(base)
-    return {"track": track, "gate": "Release gate" if track == "release" else "Development gate", "kind": "promotion_or_development"}
+    track_for_branch(base)
+    return {"track": base, "gate": "Release gate" if base == "master" else "Development gate", "kind": "promotion_or_development"}
 
 
 def verify_lock(metadata, expected):
