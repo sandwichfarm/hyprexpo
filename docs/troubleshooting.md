@@ -43,7 +43,21 @@ the config before treating these as removed options.
 
 ## Plugin Load Fails With API or Hash Mismatch
 
-Rebuild HyprExpo against the same Hyprland revision that is running, then reload the plugin.
+Rebuild HyprExpo against the same Hyprland revision that is running, then load
+the rebuilt plugin explicitly and reload the config:
+
+```
+hyprctl plugin load /var/cache/hyprpm/$USER/hyprexpo/hyprexpo.so   # hyprpm install
+hyprctl plugin load ~/.local/lib/hyprland-plugins/hyprexpo.so      # local install
+hyprctl reload
+```
+
+A plain `hyprctl reload` does not retry a config-declared load that already
+failed earlier in the session. Hyprland only re-attempts config-managed plugin
+loads when the declared plugin list changes, so a failed attempt stays sticky
+until the next session. Loading the rebuilt plugin manually clears the failure
+immediately, and the following `hyprctl reload` applies the plugin options and
+binds again.
 
 ## Plugin Load Fails Because Dependencies Are Missing
 
