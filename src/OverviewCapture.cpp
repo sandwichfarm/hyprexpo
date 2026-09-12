@@ -80,7 +80,7 @@ class CMonitorStateGuard {
                                                                                   m_transformedSize(monitor->m_transformedSize), m_pixelSize(monitor->m_pixelSize),
                                                                                   m_activeWorkspace(monitor->m_activeWorkspace),
                                                                                   m_activeSpecialWorkspace(monitor->m_activeSpecialWorkspace),
-                                                                                  m_startedOnVisible(startedOn ? startedOn->m_visible : false) {}
+                                                                                  m_startedOnVisible(startedOn ? startedOn->visible() : false) {}
 
     ~CMonitorStateGuard() {
         restore();
@@ -95,7 +95,7 @@ class CMonitorStateGuard {
         m_monitor->m_activeWorkspace        = m_activeWorkspace ? m_activeWorkspace : m_startedOn;
         m_monitor->m_activeSpecialWorkspace = m_activeSpecialWorkspace;
         if (m_startedOn)
-            m_startedOn->m_visible = m_startedOnVisible;
+            m_startedOn->setVisible(m_startedOnVisible);
         m_restored = true;
     }
 
@@ -143,7 +143,7 @@ int scrollingThumbnailBudgetMultiplier() {
         std::scoped_lock lock{g_budgetLogMutex};
         const auto generation = g_budgetGeneration.load(std::memory_order_relaxed);
         if (g_lastLoggedBudgetGeneration != generation) {
-            Log::logger->log(Log::ERR, "[hyprexpo] scrolling_thumbnail_budget {} is outside {}..{}; clamping to {}", raw, HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN,
+            Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] scrolling_thumbnail_budget {} is outside {}..{}; clamping to {}", raw, HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN,
                              HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MAX, clamped);
             g_lastLoggedBudgetGeneration = generation;
         }
@@ -181,7 +181,7 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render:
 
         if (monitorState.activeSpecialWorkspace())
             request.monitor->m_activeSpecialWorkspace.reset();
-        request.startedOn->m_visible = false;
+        request.startedOn->setVisible(false);
 
         CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
         if (!g_pHyprRenderer->beginRender(request.monitor, fakeDamage, Render::RENDER_MODE_FULL_FAKE, nullptr, framebuffer))
@@ -253,9 +253,9 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render:
 
         monitorState.restore();
         if (request.animateStartedOnRestore) {
-            request.startedOn->m_visible = false;
+            request.startedOn->setVisible(false);
             const auto activeWorkspace = monitorState.activeWorkspace() ? monitorState.activeWorkspace() : request.startedOn;
-            activeWorkspace->m_visible = true;
+            activeWorkspace->setVisible(true);
             if (activeWorkspace == request.startedOn)
                 Animation::Workspace::startAnimation(activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
         }

@@ -13,14 +13,49 @@ trap 'rm -rf "$snapshot"' EXIT
 git -C "$root" archive HEAD | tar -x -C "$snapshot"
 cd "$snapshot"
 
+branch_lock=$(python3 - <<'PY'
+import json
+lock = json.load(open("flake.lock"))
+root = lock["nodes"][lock["root"]]
+print(lock["nodes"][root["inputs"]["hyprland"]]["locked"]["rev"])
+PY
+)
+export root rev branch_lock
+
 {
     printf 'plugin_commit=%s\n' "$(git -C "$root" rev-parse HEAD)"
     printf 'plugin_tree=%s\n' "$(git -C "$root" rev-parse HEAD^{tree})"
     printf 'hyprland_commit=%s\n' "$rev"
+    printf 'branch_lock_revision=%s\n' "$branch_lock"
     printf 'run_url=%s/%s/actions/runs/%s\n' "${GITHUB_SERVER_URL:-local}" "${GITHUB_REPOSITORY:-local}" "${GITHUB_RUN_ID:-local}"
+    printf 'run_attempt=%s\n' "${GITHUB_RUN_ATTEMPT:-local}"
+    printf 'workflow_head=%s\n' "${GITHUB_SHA:-local}"
+    printf 'job=%s\n' "${GITHUB_JOB:-local}"
     nix --version
     uname -a
 } > "$evidence/provenance.txt"
+
+python3 - "$evidence/evidence.json" <<'PY'
+import json
+import os
+import subprocess
+import sys
+
+root = subprocess.check_output(["git", "-C", os.environ["root"], "rev-parse", "HEAD"], text=True).strip()
+tree = subprocess.check_output(["git", "-C", os.environ["root"], "rev-parse", "HEAD^{tree}"], text=True).strip()
+json.dump({
+    "schema_version": 1,
+    "plugin_commit": root,
+    "plugin_tree": tree,
+    "hyprland_commit": os.environ["rev"],
+    "branch_lock_revision": os.environ["branch_lock"],
+    "run_url": f"{os.environ.get('GITHUB_SERVER_URL', 'local')}/{os.environ.get('GITHUB_REPOSITORY', 'local')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', 'local')}",
+    "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", "local"),
+    "workflow_head": os.environ.get("GITHUB_SHA", "local"),
+    "job": os.environ.get("GITHUB_JOB", "local"),
+    "kind": os.environ.get("EVIDENCE_KIND", "local"),
+}, open(sys.argv[1], "w"), indent=2, sort_keys=True)
+PY
 
 flake_args=(--override-input hyprland "github:hyprwm/Hyprland/$rev" --no-write-lock-file)
 if [[ -n ${CI_TARGET_BRANCH:-} ]]; then

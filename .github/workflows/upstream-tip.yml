@@ -62,6 +62,7 @@ jobs:
       - name: Probe without changing the development pin
         env:
           UPSTREAM_REV: ${{ steps.upstream.outputs.rev }}
+          EVIDENCE_KIND: upstream-tip
         run: ./scripts/ci-build.sh "$UPSTREAM_REV" "$RUNNER_TEMP/upstream-tip-evidence"
       - name: Explain advisory failure
         if: failure()

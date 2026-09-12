@@ -16,7 +16,8 @@
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/config/shared/animation/AnimationTree.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
-#include <hyprland/src/desktop/view/Window.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
+#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
 #include <hyprland/src/layout/LayoutManager.hpp>
 #include <hyprland/src/layout/space/Space.hpp>
 #include <hyprland/src/animation/AnimationManager.hpp>
@@ -373,14 +374,14 @@ SWorkspacePreviewState applyWorkspacePreviewState(const PHLWORKSPACE& workspace)
     if (!workspace)
         return state;
 
-    state.visible        = workspace->m_visible;
+    state.visible        = workspace->visible();
     state.forceRendering = workspace->m_forceRendering;
     state.alphaValue     = workspace->m_alpha->value();
     state.alphaGoal      = workspace->m_alpha->goal();
     state.offsetValue    = workspace->m_renderOffset->value();
     state.offsetGoal     = workspace->m_renderOffset->goal();
 
-    workspace->m_visible        = true;
+    workspace->setVisible(true);
     workspace->m_forceRendering = true;
     workspace->m_alpha->setValueAndWarp(1.F);
     *workspace->m_alpha = 1.F;
@@ -394,7 +395,7 @@ void restoreWorkspacePreviewState(const PHLWORKSPACE& workspace, const SWorkspac
     if (!workspace)
         return;
 
-    workspace->m_visible        = state.visible;
+    workspace->setVisible(state.visible);
     workspace->m_forceRendering = state.forceRendering;
     workspace->m_alpha->setValueAndWarp(state.alphaValue);
     *workspace->m_alpha = state.alphaGoal;
@@ -413,7 +414,7 @@ std::vector<std::pair<PHLWORKSPACE, SWorkspacePreviewState>> applyExclusiveWorks
         states.push_back({
             workspace,
             {
-                .visible        = workspace->m_visible,
+                .visible        = workspace->visible(),
                 .forceRendering = workspace->m_forceRendering,
                 .alphaValue     = workspace->m_alpha->value(),
                 .alphaGoal      = workspace->m_alpha->goal(),
@@ -423,12 +424,12 @@ std::vector<std::pair<PHLWORKSPACE, SWorkspacePreviewState>> applyExclusiveWorks
         });
 
         if (workspace == targetWorkspace) {
-            workspace->m_visible        = true;
+            workspace->setVisible(true);
             workspace->m_forceRendering = true;
             workspace->m_alpha->setValueAndWarp(1.F);
             *workspace->m_alpha = 1.F;
         } else {
-            workspace->m_visible        = false;
+            workspace->setVisible(false);
             workspace->m_forceRendering = false;
             workspace->m_alpha->setValueAndWarp(0.F);
             *workspace->m_alpha = 0.F;
@@ -452,26 +453,26 @@ void normalizeMonitorWorkspaceRenderState(PHLMONITOR monitor) {
 
     for (const auto& workspaceRef : State::workspaceState()->workspaces()) {
         const auto workspace = workspaceRef.lock();
-        if (!workspace || workspace->m_monitor != monitor || workspace->m_isSpecialWorkspace)
+        if (!workspace || workspace->m_monitor != monitor || workspace->type() == Workspace::eWorkspaceType::SPECIAL)
             continue;
 
         const bool active = workspace == monitor->m_activeWorkspace;
         workspace->m_forceRendering = false;
 
         if (active) {
-            workspace->m_visible = true;
+            workspace->setVisible(true);
             Animation::Workspace::startAnimation(workspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
         } else if (!workspace->m_alpha->isBeingAnimated() && !workspace->m_renderOffset->isBeingAnimated()) {
-            workspace->m_visible = false;
+            workspace->setVisible(false);
         }
     }
 
     for (const auto& window : Desktop::windowState()->windows()) {
-        if (!window || !window->m_isMapped || window->isHidden() || window->m_pinned || !window->m_workspace || window->m_workspace->m_monitor != monitor)
+        if (!window || !window->mapped() || window->isHidden() || (window->m_state & Desktop::View::WINDOW_STATE_PINNED) || !window->m_workspace || window->m_workspace->m_monitor != monitor)
             continue;
 
-        window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE)->setValueAndWarp(1.F);
-        *window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE) = 1.F;
+        window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE)->setValueAndWarp(1.F);
+        *window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE) = 1.F;
     }
 }
 
@@ -486,16 +487,16 @@ std::vector<SPinnedWindowPreviewState> applyPinnedWindowPreviewState(bool showPi
         return states;
 
     for (const auto& window : Desktop::windowState()->windows()) {
-        if (!window || !window->m_isMapped || !window->m_pinned)
+        if (!window || !window->mapped() || !(window->m_state & Desktop::View::WINDOW_STATE_PINNED))
             continue;
 
         states.push_back({
-            .window = window,
+            .window    = window,
             .workspace = window->m_workspace,
-            .pinned = window->m_pinned,
+            .pinned    = true,
         });
 
-        window->m_pinned = false;
+        window->m_state &= ~Desktop::View::WINDOW_STATE_PINNED;
         window->m_workspace.reset();
     }
 
@@ -508,7 +509,8 @@ void restorePinnedWindowPreviewState(const std::vector<SPinnedWindowPreviewState
             continue;
 
         state.window->m_workspace = state.workspace;
-        state.window->m_pinned    = state.pinned;
+        if (state.pinned)
+            state.window->m_state |= Desktop::View::WINDOW_STATE_PINNED;
     }
 }
 
@@ -519,19 +521,19 @@ CPinnedWindowPreviewGuard::~CPinnedWindowPreviewGuard() {
 }
 
 bool windowVisibleOnWorkspace(const PHLWINDOW& window, const PHLWORKSPACE& workspace) {
-    return window && workspace && window->m_workspace == workspace && window->m_isMapped && !window->isHidden() && !window->m_pinned;
+    return window && workspace && window->m_workspace == workspace && window->mapped() && !window->isHidden() && !(window->m_state & Desktop::View::WINDOW_STATE_PINNED);
 }
 
 void settleWorkspaceMoveAnimation(const PHLWINDOW& window) {
     if (!window)
         return;
 
-    window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_TO_WORKSPACE)->resetAllCallbacks();
-    window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_TO_WORKSPACE)->setValueAndWarp(1.F);
-    *window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_TO_WORKSPACE) = 1.F;
-    window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE)->setValueAndWarp(1.F);
-    *window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE) = 1.F;
-    window->m_monitorMovedFrom                                      = -1;
+    window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_TO_WORKSPACE)->resetAllCallbacks();
+    window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_TO_WORKSPACE)->setValueAndWarp(1.F);
+    *window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_TO_WORKSPACE) = 1.F;
+    window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE)->setValueAndWarp(1.F);
+    *window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE) = 1.F;
+    window->presentation().resetMonitorMovedFrom();
 }
 
 void settleWorkspaceMoveAnimations() {
@@ -539,8 +541,8 @@ void settleWorkspaceMoveAnimations() {
         if (!window)
             continue;
 
-        const bool movingWorkspace = window->m_monitorMovedFrom != -1 || window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_TO_WORKSPACE)->isBeingAnimated() ||
-            window->alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE)->isBeingAnimated();
+        const bool movingWorkspace = window->presentation().movingFromMonitor() || window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_TO_WORKSPACE)->isBeingAnimated() ||
+            window->presentation().alpha(Desktop::View::WINDOW_ALPHA_MOVE_FROM_WORKSPACE)->isBeingAnimated();
         if (!movingWorkspace)
             continue;
 
@@ -585,8 +587,8 @@ void restoreWorkspaceWindowGoalState(const std::vector<SWindowPreviewState>& sta
 }
 
 static void recalculateWorkspaceLayout(const PHLWORKSPACE& workspace) {
-    if (workspace && workspace->m_space)
-        workspace->m_space->recalculate(Layout::RECALCULATE_REASON_WORKSPACE_CHANGE);
+    if (workspace && workspace->space())
+        workspace->space()->recalculate(Layout::RECALCULATE_REASON_WORKSPACE_CHANGE);
 }
 
 PHLWORKSPACE activateWorkspaceForPreview(PHLMONITOR monitor, const PHLWORKSPACE& workspace) {
@@ -953,15 +955,7 @@ static void ensureOverviewCursorVisible(bool forceOverviewShape = false, bool re
 }
 
 WORKSPACEID workspaceIDForMonitor(const PHLMONITOR& monitor, const std::string& selector) {
-    const auto FOCUS = Desktop::focusState();
-    if (!FOCUS || !monitor)
-        return WORKSPACE_INVALID;
-
-    const auto previousMonitor = FOCUS->m_focusMonitor;
-    Hyprutils::Utils::CScopeGuard restoreFocus{[&]() { FOCUS->m_focusMonitor = previousMonitor; }};
-    // Hyprland's selector API reads global focus; enumeration must not emit focus events.
-    FOCUS->m_focusMonitor = monitor;
-    return getWorkspaceIDNameFromString(selector).id;
+    return workspaceIDForSelector(monitor, selector);
 }
 
 WORKSPACEID nextEmptyWorkspaceIDForMonitor(const PHLMONITOR& monitor) {
@@ -975,10 +969,10 @@ WORKSPACEID nextEmptyWorkspaceIDForMonitor(const PHLMONITOR& monitor) {
         const auto id = workspaceIDForMonitor(monitor, "r+" + std::to_string(step));
         if (id == WORKSPACE_INVALID)
             break;
-        if (id <= 0 || id <= monitor->activeWorkspaceID())
+        if (id <= 0 || id <= activeWorkspaceID(monitor))
             continue;
 
-        const auto workspace = std::ranges::find_if(workspaces, [&](const auto& ws) { return ws->m_id == id; });
+        const auto workspace = std::ranges::find_if(workspaces, [&](const auto& ws) { return workspaceHasID(ws, id); });
         if (workspace == workspaces.end() || ((*workspace)->m_monitor == monitor && (*workspace)->getWindowCount() == 0))
             return id;
     }
@@ -993,9 +987,9 @@ static std::pair<bool, int> getWorkspaceMethodForMonitor(PHLMONITOR monitor) {
     const std::string configStr = std::string{*PMETHOD};
     const auto        parsed = Hyprexpo::resolveWorkspaceMethodForMonitor(configStr, monitorName);
 
-    int methodStartID = monitor->activeWorkspaceID();
+    int methodStartID = activeWorkspaceID(monitor);
     if (!parsed.valid) {
-        Log::logger->log(Log::ERR, "[hyprexpo] invalid workspace_method for monitor {}: {} ({})", monitorName, configStr, parsed.error);
+        Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] invalid workspace_method for monitor {}: {} ({})", monitorName, configStr, parsed.error);
         return {true, methodStartID};
     }
 
@@ -1003,7 +997,7 @@ static std::pair<bool, int> getWorkspaceMethodForMonitor(PHLMONITOR monitor) {
     if (parsed.workspace != "current") {
         methodStartID = workspaceIDForMonitor(monitor, parsed.workspace);
         if (methodStartID == WORKSPACE_INVALID)
-            methodStartID = monitor->activeWorkspaceID();
+            methodStartID = activeWorkspaceID(monitor);
     }
 
     return {methodCenter, methodStartID};
@@ -1112,24 +1106,24 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
     emptyTilesSelectable = skipEmpty;
 
     if (!methodCenter && !skipEmpty && maxWorkspace <= 0 && startedOn) {
-        const int columns = Hyprexpo::gridColumnsToIncludeWorkspace(gridShape.cols, methodStartID, (int)startedOn->m_id,
+        const int columns = Hyprexpo::gridColumnsToIncludeWorkspace(gridShape.cols, methodStartID, (int)workspaceID(startedOn),
                                                                    HyprexpoConfig::COLUMNS_MAX, **PROWS > 0 ? gridShape.rows : 0);
         gridShape = Hyprexpo::computeFixedGridShape(columns, **PROWS);
     }
 
     images.resize(gridShape.cols * gridShape.rows);
 
-    const bool anchorSelector = !methodCenter || (!skipEmpty && maxWorkspace > 0 && methodStartID != startedOn->m_id);
+    const bool anchorSelector = !methodCenter || (!skipEmpty && maxWorkspace > 0 && methodStartID != workspaceID(startedOn));
     if (anchorSelector) {
         PHLWORKSPACE PWORKSPACESTART;
         for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-            if (workspace->m_id == methodStartID) {
+            if (workspaceHasID(workspace, methodStartID)) {
                 PWORKSPACESTART = workspace;
                 break;
             }
         }
         if (!PWORKSPACESTART)
-            PWORKSPACESTART = CWorkspace::create(methodStartID, pMonitor.lock(), std::to_string(methodStartID));
+            PWORKSPACESTART = createWorkspaceForMonitor(methodStartID, pMonitor.lock());
 
         // Relative selectors must use an explicit first/center anchor, not the opened workspace.
         pMonitor->m_activeWorkspace = PWORKSPACESTART;
@@ -1143,11 +1137,12 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
         std::optional<int64_t> highestExistingID;
         if (!skipEmpty) {
             for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-                if (!workspace || workspace->m_isSpecialWorkspace || workspace->m_monitor != PMONITOR)
+                if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL || workspace->m_monitor != PMONITOR)
                     continue;
 
-                lowestExistingID  = lowestExistingID ? std::min(*lowestExistingID, workspace->m_id) : workspace->m_id;
-                highestExistingID = highestExistingID ? std::max(*highestExistingID, workspace->m_id) : workspace->m_id;
+                const auto id = workspaceID(workspace);
+                lowestExistingID  = lowestExistingID ? std::min(*lowestExistingID, id) : id;
+                highestExistingID = highestExistingID ? std::max(*highestExistingID, id) : id;
             }
         }
 
@@ -1215,13 +1210,13 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
     if (dynamicGrid) {
         std::vector<int64_t> visibleWorkspaceIDs;
         const auto MON = pMonitor.lock();
-        const int64_t currentWorkspaceID = startedOn ? startedOn->m_id : (MON ? MON->activeWorkspaceID() : WORKSPACE_INVALID);
+        const int64_t currentWorkspaceID = startedOn ? workspaceID(startedOn) : activeWorkspaceID(MON);
 
         for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-            if (!workspace || workspace->m_isSpecialWorkspace || workspace->m_monitor != MON || workspace->getWindowCount() <= 0)
+            if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL || workspace->m_monitor != MON || workspace->getWindowCount() <= 0)
                 continue;
 
-            visibleWorkspaceIDs.push_back(workspace->m_id);
+            visibleWorkspaceIDs.push_back(workspaceID(workspace));
         }
 
         if (visibleWorkspaceIDs.empty() && currentWorkspaceID != WORKSPACE_INVALID)
@@ -1233,7 +1228,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
             visibleWorkspaceIDs = *expandedWorkspaceIDs;
         else {
             visibleWorkspaceIDs = *Hyprexpo::expandDynamicWorkspaceIDs(visibleWorkspaceIDs, false, HyprexpoConfig::DYNAMIC_GRID_MAX_TILES);
-            Log::logger->log(Log::ERR, "[hyprexpo] fill_gaps range exceeds {} tiles; using sparse workspace IDs", HyprexpoConfig::DYNAMIC_GRID_MAX_TILES);
+            Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] fill_gaps range exceeds {} tiles; using sparse workspace IDs", HyprexpoConfig::DYNAMIC_GRID_MAX_TILES);
         }
 
         if (**PMRUSORT) {
@@ -1263,14 +1258,14 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
 
     settleWorkspaceMoveAnimations();
 
-    startedOn->m_visible = false;
+    startedOn->setVisible(false);
 
     for (size_t i = 0; i < images.size(); ++i) {
         COverview::SWorkspaceImage& image = images[i];
 
         PHLWORKSPACE PWORKSPACE;
         for (const auto& w : State::workspaceState()->workspacesCopy()) {
-            if (w->m_id == image.workspaceID) {
+            if (workspaceHasID(w, image.workspaceID)) {
                 PWORKSPACE = w;
                 break;
             }
@@ -1292,7 +1287,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
         image.box = tileBoxForIndex((int)i, pMonitor->m_size, GAP_WIDTH, 0.0, true);
     }
     PMONITOR->m_activeWorkspace        = startedOn;
-    startedOn->m_visible               = true;
+    startedOn->setVisible(true);
     Animation::Workspace::startAnimation(startedOn, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
 
     const auto initSize = zoomSizeForCurrentGrid(pMonitor->m_size);
