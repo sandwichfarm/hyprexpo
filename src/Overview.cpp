@@ -1407,9 +1407,6 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
         if (!TARGET || TARGET->closing)
             return;
 
-        // Touch coordinates are normalized for the device's bound output. Use
-        // them directly so selection does not depend on a stale mouse cursor or
-        // on another plugin warping the pointer before this callback runs.
         TARGET->lastMousePosLocal = event.pos * MON->m_size;
         TARGET->updateHoveredFromMouse();
 
