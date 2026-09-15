@@ -123,6 +123,13 @@ int main() {
            "drag/drop enable configuration gates drag start");
     expect(source.find("if (**PDRAGDROPENABLE && SOURCE)") != std::string::npos && source.find("SOURCE->finishWindowDrag()") != std::string::npos,
            "drag/drop enable configuration gates drag completion");
+    const auto touchSelect = extractFunction(source, "auto onTouchSelect =");
+    expectContains(touchSelect, "const ITouch::SDownEvent& event", "grid touch selection consumes the touch-down payload");
+    expectContains(touchSelect, "event.pos * MON->m_size", "grid touch selection hit-tests the touched logical position");
+    expectOrder(touchSelect, "State::monitorState()->query()", "MON = Desktop::focusState()->monitor()",
+                "automatic or unresolved touch-output bindings fall back to Hyprland's focused monitor");
+    expectOrder(touchSelect, "TARGET->lastMousePosLocal", "TARGET->selectHoveredWorkspace()", "grid touch position updates hover before selection");
+    expectAbsent(touchSelect, "getMouseCoordsInternal()", "grid touch selection is independent of stale mouse coordinates");
 
     const auto dispatchersSource = readFile("src/Dispatchers.cpp");
     expect(!dispatchersSource.empty(), "src/Dispatchers.cpp can be read from repo root");
