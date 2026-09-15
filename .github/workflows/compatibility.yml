@@ -91,6 +91,14 @@ jobs:
             sandbox = true
       - name: Build exact source and record dependency / generated-header provenance
         env:
+          BUNNY_CACHE_URL: ${{ vars.BUNNY_CACHE_URL }}
+          BUNNY_CACHE_PUBLIC_KEY: ${{ vars.BUNNY_CACHE_PUBLIC_KEY }}
+          BUNNY_CACHE_PREFIX: ${{ vars.BUNNY_CACHE_PREFIX }}
+          BUNNY_CACHE_STORAGE_ENDPOINT: ${{ vars.BUNNY_CACHE_STORAGE_ENDPOINT }}
+          BUNNY_CACHE_WRITE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && vars.BUNNY_CACHE_URL != '' }}
+          BUNNY_CACHE_SIGNING_KEY: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && secrets.BUNNY_CACHE_SIGNING_KEY || '' }}
+          BUNNY_CACHE_STORAGE_ZONE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && secrets.BUNNY_CACHE_STORAGE_ZONE || '' }}
+          BUNNY_CACHE_STORAGE_PASSWORD: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && secrets.BUNNY_CACHE_STORAGE_PASSWORD || '' }}
           UPSTREAM_REV: ${{ matrix.rev }}
           CI_TARGET_BRANCH: ${{ needs.targets.outputs.contract }}
           EVIDENCE_KIND: compatibility

@@ -47,6 +47,14 @@ jobs:
           ref: hyprland-git
           fetch-depth: 0
           persist-credentials: false
+      # The source branch can predate cache tooling. Use the immutable workflow
+      # revision for the builder while archiving/building hyprland-git source.
+      - name: Checkout workflow build tooling
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .ci-tooling
+          persist-credentials: false
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31
         with:
           extra_nix_config: |
@@ -61,9 +69,17 @@ jobs:
           echo "Probing plugin $(git rev-parse HEAD) against Hyprland $rev" >> "$GITHUB_STEP_SUMMARY"
       - name: Probe without changing the development pin
         env:
+          BUNNY_CACHE_URL: ${{ vars.BUNNY_CACHE_URL }}
+          BUNNY_CACHE_PUBLIC_KEY: ${{ vars.BUNNY_CACHE_PUBLIC_KEY }}
+          BUNNY_CACHE_PREFIX: ${{ vars.BUNNY_CACHE_PREFIX }}
+          BUNNY_CACHE_STORAGE_ENDPOINT: ${{ vars.BUNNY_CACHE_STORAGE_ENDPOINT }}
+          BUNNY_CACHE_WRITE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && vars.BUNNY_CACHE_URL != '' }}
+          BUNNY_CACHE_SIGNING_KEY: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && secrets.BUNNY_CACHE_SIGNING_KEY || '' }}
+          BUNNY_CACHE_STORAGE_ZONE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && secrets.BUNNY_CACHE_STORAGE_ZONE || '' }}
+          BUNNY_CACHE_STORAGE_PASSWORD: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && secrets.BUNNY_CACHE_STORAGE_PASSWORD || '' }}
           UPSTREAM_REV: ${{ steps.upstream.outputs.rev }}
           EVIDENCE_KIND: upstream-tip
-        run: ./scripts/ci-build.sh "$UPSTREAM_REV" "$RUNNER_TEMP/upstream-tip-evidence"
+        run: ./.ci-tooling/scripts/ci-build.sh "$UPSTREAM_REV" "$RUNNER_TEMP/upstream-tip-evidence"
       - name: Explain advisory failure
         if: failure()
         run: |
