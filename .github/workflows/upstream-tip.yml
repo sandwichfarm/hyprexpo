@@ -78,6 +78,7 @@ jobs:
           BUNNY_CACHE_STORAGE_ZONE: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && secrets.BUNNY_CACHE_STORAGE_ZONE || '' }}
           BUNNY_CACHE_STORAGE_PASSWORD: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && secrets.BUNNY_CACHE_STORAGE_PASSWORD || '' }}
           UPSTREAM_REV: ${{ steps.upstream.outputs.rev }}
+          EVIDENCE_KIND: upstream-tip
         run: ./.ci-tooling/scripts/ci-build.sh "$UPSTREAM_REV" "$RUNNER_TEMP/upstream-tip-evidence"
       - name: Explain advisory failure
         if: failure()

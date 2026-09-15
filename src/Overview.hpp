@@ -5,6 +5,7 @@
 #include "globals.hpp"
 #include "IOverviewSession.hpp"
 #include "HyprexpoLogic.hpp"
+#include "WorkspaceCompat.hpp"
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
 #include <hyprland/src/render/Texture.hpp>

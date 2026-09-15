@@ -101,6 +101,7 @@ jobs:
           BUNNY_CACHE_STORAGE_PASSWORD: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/hyprland-git') && secrets.BUNNY_CACHE_STORAGE_PASSWORD || '' }}
           UPSTREAM_REV: ${{ matrix.rev }}
           CI_TARGET_BRANCH: ${{ needs.targets.outputs.contract }}
+          EVIDENCE_KIND: compatibility
           EVIDENCE_DIR: ${{ runner.temp }}/evidence-${{ matrix.name }}
         run: ./scripts/ci-build.sh "$UPSTREAM_REV" "$EVIDENCE_DIR"
       - name: Preserve artifacts and failure logs

@@ -61,7 +61,7 @@ void COverview::redrawID(int id, bool forcelowres) {
     }
     else {
         for (const auto& w : State::workspaceState()->workspacesCopy()) {
-            if (w->m_id == image.workspaceID) {
+            if (workspaceHasID(w, image.workspaceID)) {
                 PWORKSPACE = w;
                 break;
             }
@@ -157,7 +157,7 @@ void COverview::close(bool switchToSelection) {
     redrawAll();
 
     if (switchToSelection && (TILE.workspaceID != WORKSPACE_INVALID || emptyTilesSelectable) &&
-        (TILE.workspaceID != MON->activeWorkspaceID() || Desktop::focusState()->monitor() != MON)) {
+        (TILE.workspaceID != activeWorkspaceID(MON) || Desktop::focusState()->monitor() != MON)) {
         MON->setSpecialWorkspace(0);
 
         // If this tile's workspace was WORKSPACE_INVALID, move to the next
@@ -178,7 +178,7 @@ void COverview::close(bool switchToSelection) {
 
         if (!NEWIDWS) {
             for (const auto& w : State::workspaceState()->workspacesCopy()) {
-                if (w->m_id == NEWID) {
+                if (workspaceHasID(w, NEWID)) {
                     NEWIDWS = w;
                     break;
                 }
@@ -188,11 +188,11 @@ void COverview::close(bool switchToSelection) {
         const auto OLDWS = MON->m_activeWorkspace;
 
         if (!NEWIDWS && NEWID != WORKSPACE_INVALID)
-            NEWIDWS = State::workspaceState()->create(NEWID, MON->m_id, std::to_string(NEWID), false);
+            NEWIDWS = createWorkspaceForMonitor(NEWID, MON);
 
         const auto CHANGE = Config::Actions::changeWorkspace(NEWIDWS);
         if (!CHANGE)
-            Log::logger->log(Log::ERR, "[hyprexpo] failed to change workspace: {}", CHANGE.error().message);
+            Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] failed to change workspace: {}", CHANGE.error().message);
 
         if (CHANGE && OLDWS != MON->m_activeWorkspace) {
             Animation::Workspace::startAnimation(MON->m_activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
@@ -223,7 +223,7 @@ void COverview::onWorkspaceChange() {
         startedOn = MON->m_activeWorkspace;
 
     for (size_t i = 0; i < images.size(); ++i) {
-        if (images[i].workspaceID != MON->activeWorkspaceID())
+        if (images[i].workspaceID != activeWorkspaceID(MON))
             continue;
 
         openedID = i;
@@ -388,15 +388,15 @@ void COverview::fullRender() {
             return {};
 
         const auto& image = images[id];
-        if (image.pWorkspace && !image.pWorkspace->m_name.empty())
-            return image.pWorkspace->m_name;
+        if (image.pWorkspace && !image.pWorkspace->displayName().empty())
+            return image.pWorkspace->displayName();
 
         for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-            if (!workspace || workspace->m_id != image.workspaceID)
+            if (!workspace || !workspaceHasID(workspace, image.workspaceID))
                 continue;
 
-            if (!workspace->m_name.empty())
-                return workspace->m_name;
+            if (!workspace->displayName().empty())
+                return workspace->displayName();
             break;
         }
 
@@ -508,7 +508,7 @@ void COverview::fullRender() {
                 CHyprColor color{parsedColor.r, parsedColor.g, parsedColor.b, parsedColor.a};
                 Render::GL::g_pHyprOpenGL->renderBorder(box, color, {.round = roundScaled, .roundingPower = ROUND_PWR, .borderSize = BWIDTH});
             } else {
-                Log::logger->log(Log::ERR, "[hyprexpo] invalid border color config: {}", effectiveSpec);
+                Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] invalid border color config: {}", effectiveSpec);
             }
         }
     };
@@ -536,7 +536,7 @@ void COverview::fullRender() {
 
         Hyprexpo::SColorRGBA parsedColor;
         if (!Hyprexpo::parseSolidColorSpec(effectiveSpec, parsedColor)) {
-            Log::logger->log(Log::ERR, "[hyprexpo] invalid drag_drop_proxy_border_color config: {}", effectiveSpec);
+            Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] invalid drag_drop_proxy_border_color config: {}", effectiveSpec);
             return;
         }
 

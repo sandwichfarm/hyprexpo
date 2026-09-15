@@ -92,7 +92,7 @@ EOutputTransform outputTransform(wl_output_transform transform) {
 
 CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe, uint64_t sessionGeneration, const std::optional<SWorkspaceSnapshot>& initialSnapshot) :
     m_startedOn(startedOn), m_monitor(monitor), m_sessionGeneration(sessionGeneration), m_isSwiping(swipe),
-    m_selectedWorkspaceID(startedOn ? startedOn->m_id : 0) {
+    m_selectedWorkspaceID(startedOn ? workspaceID(startedOn) : 0) {
     Animation::mgr()->createAnimation(0.F, m_transitionProgress, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
     m_transitionProgress->setUpdateCallback([monitorKey = overviewMonitorKey(monitor), generation = m_sessionGeneration](auto) {
         if (auto* const OV = overviewForSession(monitorKey, generation))
@@ -241,7 +241,7 @@ void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const S
                 const auto result = moveScrollingTarget(sourceRow->workspace, destinationRow ? destinationRow->workspace : PHLWORKSPACE{}, MON, request);
                 const auto diagnostic = mutationDiagnosticJson(result);
                 if (result.outcome == EMutationOutcome::RollbackFailed) {
-                    Log::logger->log(Log::ERR, "HYPREXPO_SCROLLING_MUTATION {}", diagnostic);
+                    Log::logger->log(Log::ERR, Log::logFnName(), "HYPREXPO_SCROLLING_MUTATION {}", diagnostic);
                     const auto generation = m_sessionGeneration;
                     const auto monitorKey = overviewMonitorKey(m_monitor.lock());
                     setClosing(true);
@@ -250,7 +250,7 @@ void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const S
                             OV->close(false);
                     });
                 } else {
-                    Log::logger->log(Log::INFO, "HYPREXPO_SCROLLING_MUTATION {}", diagnostic);
+                    Log::logger->log(Log::INFO, Log::logFnName(), "HYPREXPO_SCROLLING_MUTATION {}", diagnostic);
                     switch (result.outcome) {
                         case EMutationOutcome::Committed:
                         case EMutationOutcome::RolledBack:
@@ -407,7 +407,7 @@ CScrollingOverview::SCacheEntry* CScrollingOverview::cacheEntry(int64_t workspac
 }
 
 const CScrollingOverview::SWorkspaceRow* CScrollingOverview::workspaceRow(int64_t workspaceID) const {
-    const auto found = std::ranges::find_if(m_rows, [&](const auto& row) { return row.workspace && row.workspace->m_id == workspaceID; });
+    const auto found = std::ranges::find_if(m_rows, [&](const auto& row) { return workspaceHasID(row.workspace, workspaceID); });
     return found == m_rows.end() ? nullptr : &*found;
 }
 
@@ -417,12 +417,12 @@ bool CScrollingOverview::sceneTopologyCurrent() const {
         return false;
 
     const auto workspaces = State::workspaceState()->workspacesCopy();
-    const auto count = std::ranges::count_if(workspaces, [&](const auto& ws) { return ws && !ws->m_isSpecialWorkspace && ws->m_monitor == MON; });
+    const auto count = std::ranges::count_if(workspaces, [&](const auto& ws) { return ws && ws->type() != Workspace::eWorkspaceType::SPECIAL && ws->m_monitor == MON; });
     if (static_cast<size_t>(count) != m_rows.size())
         return false;
 
     for (const auto& row : m_rows) {
-        if (!row.workspace || row.workspace->inert() || row.workspace->m_monitor != MON)
+        if (!row.workspace || row.workspace->m_monitor != MON)
             return false;
         if (row.kind != EWorkspaceKind::Scrolling) {
             const bool empty = row.workspace->getWindowCount() <= 0;
@@ -459,7 +459,7 @@ bool CScrollingOverview::sceneTopologyCurrent() const {
 
 bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& initialSnapshot) {
     const auto MON = m_monitor.lock();
-    if (!MON || !m_startedOn || m_startedOn->inert())
+    if (!MON || !m_startedOn)
         return false;
 
     resetInputState(EResetReason::Refresh);
@@ -469,13 +469,13 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
 
     std::vector<PHLWORKSPACE> workspaces;
     for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-        if (!workspace || workspace->m_isSpecialWorkspace || workspace->m_monitor != MON)
+        if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL || workspace->m_monitor != MON)
             continue;
         workspaces.push_back(workspace);
     }
     if (std::ranges::find(workspaces, m_startedOn) == workspaces.end())
         workspaces.push_back(m_startedOn);
-    std::ranges::sort(workspaces, {}, [](const auto& workspace) { return workspace->m_id; });
+    std::ranges::sort(workspaces, {}, [](const auto& workspace) { return workspaceID(workspace); });
 
     std::vector<SWorkspaceSpec> specs;
     specs.reserve(workspaces.size());
@@ -483,7 +483,7 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
         auto result = workspace == m_startedOn && initialSnapshot ?
             SSnapshotResult{.failure = ESnapshotFailure::None, .error = {}, .snapshot = *initialSnapshot} : snapshotWorkspace(workspace);
         if (result.success()) {
-            SWorkspaceSpec spec{.workspaceID = workspace->m_id, .kind = EWorkspaceKind::Scrolling, .tape = {}};
+            SWorkspaceSpec spec{.workspaceID = workspaceID(workspace), .kind = EWorkspaceKind::Scrolling, .tape = {}};
             spec.tape.direction = parseDirection(result.snapshot->direction);
             for (const auto& column : result.snapshot->columns) {
                 SColumnSpec columnSpec{.token = static_cast<uint64_t>(column.fingerprint), .extent = column.primarySize, .targets = {}};
@@ -502,13 +502,13 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
         if (workspace == m_startedOn && !empty)
             return false;
         const auto kind = empty ? EWorkspaceKind::Empty : EWorkspaceKind::Mixed;
-        specs.push_back({.workspaceID = workspace->m_id, .kind = kind, .tape = {}});
+        specs.push_back({.workspaceID = workspaceID(workspace), .kind = kind, .tape = {}});
         m_rows.push_back({.workspace = workspace, .kind = kind, .snapshot = {}, .workspacePreview = {}});
     }
 
     if (specs.empty())
         return false;
-    const int64_t terminalWorkspaceID = std::max<int64_t>(1, workspaces.back()->m_id + 1);
+    const int64_t terminalWorkspaceID = std::max<int64_t>(1, workspaceID(workspaces.back()) + 1);
     const SSceneConfig sceneConfig{
         .viewportWidth = MON->m_size.x,
         .viewportHeight = MON->m_size.y,
@@ -517,10 +517,10 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
         .columnGap = std::max(8.0, MON->m_size.x * 0.008),
         .terminalWorkspaceID = terminalWorkspaceID,
     };
-    m_scene = buildScene(specs, m_startedOn->m_id, sceneConfig);
+    m_scene = buildScene(specs, workspaceID(m_startedOn), sceneConfig);
     if (!m_scene.valid)
         return false;
-    m_pan = initialPan(m_scene, m_startedOn->m_id, MON->m_size.y);
+    m_pan = initialPan(m_scene, workspaceID(m_startedOn), MON->m_size.y);
 
     std::unordered_set<uint64_t> seenTargets;
     for (const auto& row : m_rows) {
@@ -529,10 +529,10 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
         for (const auto& column : row.snapshot.columns) {
             for (const auto& target : column.targets) {
                 const auto token = targetToken(target);
-                const auto placed = std::ranges::find_if(m_scene.targets, [&](const auto& sceneTarget) { return sceneTarget.workspaceID == row.workspace->m_id && sceneTarget.token == token; });
+                const auto placed = std::ranges::find_if(m_scene.targets, [&](const auto& sceneTarget) { return sceneTarget.workspaceID == workspaceID(row.workspace) && sceneTarget.token == token; });
                 if (placed == m_scene.targets.end() || !seenTargets.insert(token).second)
                     continue;
-                m_renderTargets.push_back(SRenderTarget{.workspaceID = row.workspace->m_id,
+                m_renderTargets.push_back(SRenderTarget{.workspaceID = workspaceID(row.workspace),
                                            .targetToken = token,
                                            .windowStableID = target.windowStableID,
                                            .box = sceneBox(placed->box, 0.0),
@@ -545,7 +545,7 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
             }
         }
 
-        const auto placedRow = std::ranges::find_if(m_scene.workspaces, [&](const auto& sceneRow) { return sceneRow.workspaceID == row.workspace->m_id; });
+        const auto placedRow = std::ranges::find_if(m_scene.workspaces, [&](const auto& sceneRow) { return sceneRow.workspaceID == workspaceID(row.workspace); });
         if (placedRow == m_scene.workspaces.end())
             continue;
         for (const auto& target : row.snapshot.layoutTargets) {
@@ -559,7 +559,7 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
                                placedRow->box.y + localY / std::max(1.0, MON->m_size.y) * placedRow->box.h,
                                source.w / std::max(1.0, MON->m_size.x) * placedRow->box.w,
                                source.h / std::max(1.0, MON->m_size.y) * placedRow->box.h};
-            m_renderTargets.push_back(SRenderTarget{.workspaceID = row.workspace->m_id,
+            m_renderTargets.push_back(SRenderTarget{.workspaceID = workspaceID(row.workspace),
                                        .targetToken = token,
                                        .windowStableID = target.windowStableID,
                                        .box = overlay,
@@ -592,9 +592,9 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
     }
 
     refreshCache();
-    m_focus = {.kind = EHitKind::EmptyWorkspace, .workspaceID = m_startedOn->m_id};
+    m_focus = {.kind = EHitKind::EmptyWorkspace, .workspaceID = workspaceID(m_startedOn)};
     for (const auto& target : m_scene.targets) {
-        if (target.workspaceID == m_startedOn->m_id) {
+        if (target.workspaceID == workspaceID(m_startedOn)) {
             m_focus = {.kind = EHitKind::Target, .workspaceID = target.workspaceID, .targetToken = target.token};
             break;
         }
@@ -1011,7 +1011,7 @@ bool CScrollingOverview::selectVisibleIndex(size_t index) {
         return false;
     if (index >= m_rows.size() || !m_rows[index].workspace)
         return false;
-    return selectWorkspaceByID(m_rows[index].workspace->m_id);
+    return selectWorkspaceByID(workspaceID(m_rows[index].workspace));
 }
 
 bool CScrollingOverview::moveWindowBetweenVisibleIndices(size_t, size_t, const PHLWINDOW&) {
