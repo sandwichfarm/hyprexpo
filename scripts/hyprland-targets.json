@@ -4,7 +4,7 @@
     {"name": "v0.56.2", "rev": "efb50993780079460b0cbed1363e2166a2de1d9f"}
   ],
   "development": [
-    {"name": "hyprland-git", "rev": "34eb03bd8da01024596c367fba66485a8c9b8ca7"}
+    {"name": "hyprland-git", "rev": "f05d73f35795ded80d7e1264a37e41b461625f9f"}
   ],
   "tracker": {
     "repository": "sandwichfarm/hyprexpo",

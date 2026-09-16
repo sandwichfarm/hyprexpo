@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Overview.hpp"
+#include "WorkspaceCompat.hpp"
 
 #include <string>
 #include <utility>
