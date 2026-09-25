@@ -1,10 +1,19 @@
 {
   "release": [
-    {"name": "v0.56.1", "rev": "5c9377c15f85c50648f35ca5a213754f95b93ca0"},
-    {"name": "v0.56.2", "rev": "efb50993780079460b0cbed1363e2166a2de1d9f"}
+    {
+      "name": "v0.56.1",
+      "rev": "5c9377c15f85c50648f35ca5a213754f95b93ca0"
+    },
+    {
+      "name": "v0.56.2",
+      "rev": "efb50993780079460b0cbed1363e2166a2de1d9f"
+    }
   ],
   "development": [
-    {"name": "hyprland-git", "rev": "f05d73f35795ded80d7e1264a37e41b461625f9f"}
+    {
+      "name": "hyprland-git",
+      "rev": "e368c13c27a42a173b9e08fa0bf413f9f7073187"
+    }
   ],
   "tracker": {
     "repository": "sandwichfarm/hyprexpo",
