@@ -659,8 +659,8 @@ void CScrollingOverview::refreshCache() {
     }
 }
 
-void CScrollingOverview::render() {
-    g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewPassElement>(m_monitor.lock(), m_sessionGeneration));
+void CScrollingOverview::render(Render::CRenderContext& ctx) {
+    g_pHyprRenderer->addPassElement(ctx, makeUnique<COverviewPassElement>(m_monitor.lock(), m_sessionGeneration));
 }
 
 void CScrollingOverview::damage() {
@@ -698,7 +698,7 @@ void CScrollingOverview::onConfigReload() {
     damage();
 }
 
-void CScrollingOverview::fullRender() {
+void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
     const auto MON = m_monitor.lock();
     if (!MON || !m_scene.valid)
         return;
@@ -720,12 +720,12 @@ void CScrollingOverview::fullRender() {
         switch (workspace.kind) {
             case EWorkspaceKind::Mixed:
                 if (row && row->workspacePreview && row->workspacePreview->getTexture())
-                    Render::GL::g_pHyprOpenGL->renderTextureInternal(row->workspacePreview->getTexture(), box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity), .round = 12});
+                    Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, row->workspacePreview->getTexture(), box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity), .round = 12});
                 else
-                    Render::GL::g_pHyprOpenGL->renderRect(box, applyTransitionOpacity(CHyprColor{0.14, 0.14, 0.14, 1.0}, transition), {.round = 12});
+                    Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.14, 0.14, 0.14, 1.0}, transition), {.round = 12});
                 break;
-            case EWorkspaceKind::Empty: Render::GL::g_pHyprOpenGL->renderRect(box, applyTransitionOpacity(CHyprColor{0.10, 0.10, 0.10, 1.0}, transition), {.round = 12}); break;
-            case EWorkspaceKind::Terminal: Render::GL::g_pHyprOpenGL->renderRect(box, applyTransitionOpacity(CHyprColor{0.08, 0.12, 0.10, 1.0}, transition), {.round = 12}); break;
+            case EWorkspaceKind::Empty: Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.10, 0.10, 0.10, 1.0}, transition), {.round = 12}); break;
+            case EWorkspaceKind::Terminal: Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.08, 0.12, 0.10, 1.0}, transition), {.round = 12}); break;
             case EWorkspaceKind::Scrolling: break;
         }
     }
@@ -741,13 +741,13 @@ void CScrollingOverview::fullRender() {
             continue;
         const auto entry = cacheEntry(target.workspaceID, target.targetToken);
         if (entry && entry->texture)
-            Render::GL::g_pHyprOpenGL->renderTextureInternal(entry->texture, box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity), .round = target.fullscreen ? 0 : 8});
+            Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, entry->texture, box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity), .round = target.fullscreen ? 0 : 8});
         else
-            Render::GL::g_pHyprOpenGL->renderRect(box, applyTransitionOpacity(target.pinned ? CHyprColor{0.18, 0.12, 0.12, 1.0} : CHyprColor{0.12, 0.12, 0.12, 1.0}, transition), {.round = 8});
+            Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(target.pinned ? CHyprColor{0.18, 0.12, 0.12, 1.0} : CHyprColor{0.12, 0.12, 0.12, 1.0}, transition), {.round = 8});
         const bool hovered = m_inputState.hover.kind == EHitKind::Target && m_inputState.hover.workspaceID == target.workspaceID && m_inputState.hover.targetToken == target.targetToken;
         const bool dragging = m_inputState.mode == EInputMode::WindowDrag && m_inputState.pressed.workspaceID == target.workspaceID && m_inputState.pressed.targetToken == target.targetToken;
         if (hovered || dragging)
-            Render::GL::g_pHyprOpenGL->renderRect(box, applyTransitionOpacity(dragging ? CHyprColor{0.20, 0.48, 0.85, 0.20} : CHyprColor{0.85, 0.90, 1.0, 0.12}, transition), {.round = target.fullscreen ? 0 : 8});
+            Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(dragging ? CHyprColor{0.20, 0.48, 0.85, 0.20} : CHyprColor{0.85, 0.90, 1.0, 0.12}, transition), {.round = target.fullscreen ? 0 : 8});
     }
 }
 

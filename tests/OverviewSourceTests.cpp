@@ -83,6 +83,12 @@ void expectLastOrder(const std::string& source, const std::string& first, const 
 
 int main() {
     const auto lifecycleSource = readFile("src/main.cpp");
+    const auto workspaceHook = extractFunction(lifecycleSource, "static void hkRenderWorkspace(");
+    expectContains(workspaceHook, "Render::CRenderContext& ctx", "workspace hook accepts the caller's render context");
+    expectContains(workspaceHook, "(thisptr, ctx, pMonitor, pWorkspace, now, geometry)", "workspace hook forwards context on the native rendering path");
+    expectContains(workspaceHook, "OV->render(ctx)", "workspace hook queues the overview in the caller's context");
+    expectContains(lifecycleSource, "function.demangled.contains(\"CBox const&\")", "workspace hook selects the geometry overload explicitly");
+    expectContains(lifecycleSource, "function.demangled.contains(\"Render::CRenderContext&\")", "workspace hook requires the context-aware signature");
     expect(lifecycleSource.find("m_events.monitor.removed.listen") != std::string::npos &&
                lifecycleSource.find("destroyOverview(OV);") != std::string::npos,
            "disconnecting an output unregisters its overview without waiting for a frame on that output");
@@ -822,7 +828,7 @@ int main() {
 
     const auto windowCapture = extractFunction(captureSource, "SWindowCaptureResult captureWindowPreview(");
     expect(!windowCapture.empty(), "tight scrolling-target capture implementation exists");
-    for (const auto& token : {"createFB(", "beginFullFakeRender(", "m_bBlockSurfaceFeedback = true", "m_bRenderingSnapshot = true", "startRenderPass()", "renderWindow(",
+    for (const auto& token : {"createFB(", "beginFullFakeRender(", "m_blockSurfaceFeedback = true", "m_renderingSnapshot = true", "startRenderPass(g_pHyprRenderer->context())", "renderWindow(",
                               "Render::RENDER_PASS_ALL, true, true", "blockScreenShader = true", "rendererState.finish()", "getTexture()", "result.completed"})
         expectContains(windowCapture, token, "tight target capture uses approved GPU operation " + std::string{token});
     expectOrder(windowCapture, "beginFullFakeRender(", "renderWindow(", "target capture begins fake rendering before the window draw");
@@ -896,8 +902,8 @@ int main() {
     expect(!sessionHeader.empty() && !sessionSource.empty(), "common overview session interface and factory can be read from repo root");
     expect(!scrollingHeader.empty() && !scrollingSource.empty(), "read-only scrolling session source can be read from repo root");
 
-    for (const auto& token : {"class IOverviewSession", "virtual ~IOverviewSession", "virtual void render()", "virtual void damage()", "virtual void onDamageReported()",
-                              "virtual void onPreRender()", "virtual void fullRender()", "virtual void close(", "virtual bool closeCommitted()", "virtual void setClosing(",
+    for (const auto& token : {"class IOverviewSession", "virtual ~IOverviewSession", "virtual void render(Render::CRenderContext& ctx)", "virtual void damage()", "virtual void onDamageReported()",
+                              "virtual void onPreRender()", "virtual void fullRender(Render::CRenderContext& ctx)", "virtual void close(", "virtual bool closeCommitted()", "virtual void setClosing(",
                               "virtual void resetSwipe()", "virtual void onSwipeUpdate(", "virtual void onSwipeEnd(bool switchToSelection)", "virtual void onWindowMoveToWorkspace(",
                               "virtual bool selectHoveredWorkspace()", "virtual bool onKbMoveFocus(", "virtual bool onKbConfirm()", "virtual bool onKbSelectNumber(",
                               "virtual bool onKbSelectToken(", "virtual bool selectVisibleToken(", "virtual int64_t selectedWorkspaceID()", "virtual bool selectWorkspaceByID(",
@@ -931,7 +937,7 @@ int main() {
 
     expectContains(passSource, "overviewForSession(overviewMonitorKey(m_monitor.lock()), m_sessionGeneration)", "render pass validates monitor and generation identity");
     expectContains(passSource, "m_sessionGeneration", "render pass retains only an immutable generation identity");
-    expectOrder(passSource, "if (auto* const OV = overview())", "OV->fullRender()", "render pass null-checks before virtual rendering");
+    expectOrder(passSource, "if (auto* const OV = overview())", "OV->fullRender(ctx)", "render pass null-checks before virtual rendering");
     expectContains(scrollingHeader, "PHLANIMVAR<float> m_transitionProgress", "scrolling session owns one compositor-managed transition value");
     expectContains(scrollingSource, "Animation::mgr()->createAnimation", "scrolling overview entry and exit use the compositor animation manager");
     expectContains(scrollingSource, "transitionForSwipe(m_swipeClosing, m_swipeDelta", "scrolling swipe delta drives the visible transition progress");

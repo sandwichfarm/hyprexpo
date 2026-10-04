@@ -12,6 +12,7 @@
 #include "IOverviewSession.hpp"
 #include "OverviewCapture.hpp"
 #include "PluginConfig.hpp"
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -23,17 +24,17 @@
 inline CFunctionHook* g_pRenderWorkspaceHook = nullptr;
 inline CFunctionHook* g_pAddDamageHookA      = nullptr;
 inline CFunctionHook* g_pAddDamageHookB      = nullptr;
-typedef void (*origRenderWorkspace)(void*, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp&, const CBox&);
+typedef void (*origRenderWorkspace)(void*, Render::CRenderContext&, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp&, const CBox&);
 typedef void (*origAddDamageA)(void*, const CBox&);
 typedef void (*origAddDamageB)(void*, const pixman_region32_t*);
 
-static void hkRenderWorkspace(void* thisptr, PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& now, const CBox& geometry) {
+static void hkRenderWorkspace(void* thisptr, Render::CRenderContext& ctx, PHLMONITOR pMonitor, PHLWORKSPACE pWorkspace, const Time::steady_tp& now, const CBox& geometry) {
     auto* const OV = overviewForMonitor(pMonitor);
 
     if (!OV || isRenderingOverview() || OV->blocksOverviewRendering() || !OV->shouldRenderOverviewForMonitor(pMonitor))
-        ((origRenderWorkspace)(g_pRenderWorkspaceHook->m_original))(thisptr, pMonitor, pWorkspace, now, geometry);
+        ((origRenderWorkspace)(g_pRenderWorkspaceHook->m_original))(thisptr, ctx, pMonitor, pWorkspace, now, geometry);
     else
-        OV->render();
+        OV->render(ctx);
 }
 
 static void hkAddDamageA(void* thisptr, const CBox& box) {
@@ -83,12 +84,15 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     }
 
     auto FNS = HyprlandAPI::findFunctionsByName(PHANDLE, "renderWorkspace");
-    if (FNS.empty()) {
-        failNotif("no fns for hook renderWorkspace");
+    const auto renderWorkspace = std::ranges::find_if(FNS, [](const auto& function) {
+        return function.demangled.contains("Render::CRenderContext&") && function.demangled.contains("CBox const&");
+    });
+    if (renderWorkspace == FNS.end()) {
+        failNotif("no geometry renderWorkspace overload for hook");
         throw std::runtime_error("[he] No fns for hook renderWorkspace");
     }
 
-    g_pRenderWorkspaceHook = HyprlandAPI::createFunctionHook(PHANDLE, FNS[0].address, (void*)hkRenderWorkspace);
+    g_pRenderWorkspaceHook = HyprlandAPI::createFunctionHook(PHANDLE, renderWorkspace->address, (void*)hkRenderWorkspace);
 
     FNS = HyprlandAPI::findFunctionsByName(PHANDLE, "addDamageEPK15pixman_region32");
     if (FNS.empty()) {
@@ -157,7 +161,10 @@ APICALL EXPORT void PLUGIN_EXIT() {
     disableExpoGestureRegistration();
 
     destroyAllOverviews();
-    g_pHyprRenderer->m_renderPass.removeAllOfType("COverviewPassElement");
+    auto& ctx = g_pHyprRenderer->context();
+    ctx.m_pass.removeAllOfType("COverviewPassElement");
+    if (ctx.m_currentPass && ctx.m_currentPass != &ctx.m_pass)
+        ctx.m_currentPass->removeAllOfType("COverviewPassElement");
 
     Config::mgr()->reload();
     resetDispatcherRuntime();
