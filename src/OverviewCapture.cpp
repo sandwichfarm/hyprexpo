@@ -247,7 +247,8 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render:
             return false;
 
         if (const auto texture = framebuffer->getTexture(); texture)
-            texture->m_transform = isTransformRotated(monitorState.transform()) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;
+            texture->m_transform = isTransformRotated(monitorState.transform()) ? HYPRUTILS_TRANSFORM_180 : 
+		    isTransform180(monitorState.transform()) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;
         else
             return false;
 

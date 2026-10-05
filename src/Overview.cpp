@@ -248,6 +248,10 @@ uint32_t framebufferFormatWithAlpha(uint32_t drmFormat) {
     return alphaFormat == 0 ? DRM_FORMAT_ABGR8888 : alphaFormat;
 }
 
+bool isTransform180(wl_output_transform t) {
+    return t == WL_OUTPUT_TRANSFORM_180 || t == WL_OUTPUT_TRANSFORM_FLIPPED_180;
+}
+
 bool isTransformRotated(wl_output_transform t) {
     return t == WL_OUTPUT_TRANSFORM_90 || t == WL_OUTPUT_TRANSFORM_270 ||
            t == WL_OUTPUT_TRANSFORM_FLIPPED_90 || t == WL_OUTPUT_TRANSFORM_FLIPPED_270;
