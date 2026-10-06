@@ -794,6 +794,14 @@ int main() {
 
     const auto workspaceCapture = extractFunction(captureSource, "bool captureWorkspacePreview(");
     expect(!workspaceCapture.empty(), "shared workspace capture implementation exists");
+    expectContains(workspaceCapture,
+                   "texture->m_transform = workspacePreviewNeedsHalfTurn(static_cast<int>(monitorState.transform())) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;",
+                   "workspace texture correction uses the tested policy with the saved output transform");
+    expectOrder(workspaceCapture, "rendererState.finish()", "workspacePreviewNeedsHalfTurn(", "texture correction follows capture rendering");
+    expectOrder(workspaceCapture, "workspacePreviewNeedsHalfTurn(", "monitorState.restore()", "texture correction precedes monitor restoration");
+    const auto rotatedCapture = extractFunction(workspaceCapture, "if (isTransformRotated(monitorState.transform()))");
+    expectContains(rotatedCapture, "captureBox = {{0, 0}, {captureBox.h, captureBox.w}};", "only quarter-turn outputs swap capture geometry");
+    expectContains(rotatedCapture, "request.monitor->m_transform       = WL_OUTPUT_TRANSFORM_NORMAL;", "quarter-turn capture retains temporary transform normalization");
     const auto framebufferPreparation = extractFunction(captureSource, "bool preparePreviewFramebuffer(");
     expectContains(framebufferPreparation, "monitor->useFP16()", "preview allocation follows the monitor working-buffer precision");
     expectContains(framebufferPreparation, "DRM_FORMAT_ABGR16161616F", "FP16 previews retain HDR values beyond the integer range");

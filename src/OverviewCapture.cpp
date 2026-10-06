@@ -3,6 +3,7 @@
 #include "OverviewInternal.hpp"
 #include "HyprlandConfigCompat.hpp"
 #include "HyprexpoConfig.hpp"
+#include "HyprexpoLogic.hpp"
 #include "PreviewFramebuffer.hpp"
 
 #define private   public
@@ -25,6 +26,15 @@
 namespace Hyprexpo::Capture {
 
 namespace {
+
+static_assert(WL_OUTPUT_TRANSFORM_NORMAL == 0);
+static_assert(WL_OUTPUT_TRANSFORM_90 == 1);
+static_assert(WL_OUTPUT_TRANSFORM_180 == 2);
+static_assert(WL_OUTPUT_TRANSFORM_270 == 3);
+static_assert(WL_OUTPUT_TRANSFORM_FLIPPED == 4);
+static_assert(WL_OUTPUT_TRANSFORM_FLIPPED_90 == 5);
+static_assert(WL_OUTPUT_TRANSFORM_FLIPPED_180 == 6);
+static_assert(WL_OUTPUT_TRANSFORM_FLIPPED_270 == 7);
 
 std::atomic<uint64_t> g_budgetGeneration = 1;
 std::mutex            g_budgetLogMutex;
@@ -247,7 +257,7 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render:
             return false;
 
         if (const auto texture = framebuffer->getTexture(); texture)
-            texture->m_transform = isTransformRotated(monitorState.transform()) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;
+            texture->m_transform = workspacePreviewNeedsHalfTurn(static_cast<int>(monitorState.transform())) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;
         else
             return false;
 

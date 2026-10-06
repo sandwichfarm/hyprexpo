@@ -12,6 +12,19 @@
 
 namespace Hyprexpo {
 
+bool workspacePreviewNeedsHalfTurn(int outputTransform) {
+    switch (outputTransform) {
+        case 1:
+        case 2:
+        case 3:
+        case 5:
+        case 7:
+            return true;
+        default:
+            return false;
+    }
+}
+
 std::string trimString(std::string value) {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
         value.erase(value.begin());
