@@ -36,6 +36,7 @@
 #undef protected
 #include "OverviewPassElement.hpp"
 #include <hyprland/src/render/OpenGL.hpp>
+#include <hyprland/src/protocols/core/Compositor.hpp>
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <pango/pangocairo.h>
 #include <algorithm>
@@ -1060,6 +1061,7 @@ Vector2D COverview::zoomSizeForCurrentGrid(const Vector2D& monitorSize) const {
 }
 
 COverview::~COverview() {
+    previewSurfaceCommitHooks.clear();
     if (redrawSettleTimer) {
         redrawSettleTimer->cancel();
         redrawSettleTimer.reset();
@@ -1434,4 +1436,52 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
     workspaceMoveHook = Event::bus()->m_events.window.moveToWorkspace.listen([this](PHLWINDOW window, PHLWORKSPACE workspace) { onWindowMoveToWorkspace(window, workspace); });
 
     enterSubmapIfEnabled();
+
+    // Inactive workspace commits do not damage the monitor. Recapture resized
+    // client buffers after they arrive, without making content-only commits live.
+    std::vector<WP<CWLSurfaceResource>> pendingPreviewFrames;
+    for (const auto& window : Desktop::windowState()->windows()) {
+        if (!validMapped(window) || window->isHidden() || (window->m_pinned && !showPinnedWindowsInPreview()) ||
+            !window->m_workspace || window->m_workspace->m_monitor != PMONITOR || !window->wlSurface())
+            continue;
+        const int tile = tileForWorkspaceID(window->m_workspace->m_id);
+        const auto surface = window->wlSurface()->resource();
+        if (!isTileValid(tile) || !images[tile].fb || !surface)
+            continue;
+
+        previewSurfaceCommitHooks.emplace_back(surface->m_events.commit.listen(
+            [this, windowRef = PHLWINDOWREF{window}, surfaceRef = WP<CWLSurfaceResource>{surface},
+             surfaceSize = surface->m_current.size, bufferSize = surface->m_current.bufferSize]() mutable {
+                const auto SURFACE = surfaceRef.lock();
+                if (closing || !SURFACE)
+                    return;
+                if (surfaceSize == SURFACE->m_current.size && bufferSize == SURFACE->m_current.bufferSize)
+                    return;
+                surfaceSize = SURFACE->m_current.size;
+                bufferSize = SURFACE->m_current.bufferSize;
+
+                const auto WINDOW = windowRef.lock();
+                const auto MON = pMonitor.lock();
+                if (!MON || !validMapped(WINDOW) || WINDOW->isHidden() || (WINDOW->m_pinned && !showPinnedWindowsInPreview()) ||
+                    !WINDOW->m_workspace || WINDOW->m_workspace->m_monitor != MON ||
+                    WINDOW->m_workspace == MON->m_activeWorkspace || !WINDOW->wlSurface() || WINDOW->wlSurface()->resource() != SURFACE)
+                    return;
+                const int TILE = tileForWorkspaceID(WINDOW->m_workspace->m_id);
+                if (!isTileValid(TILE))
+                    return;
+
+                queueRedrawID(TILE);
+                damage();
+                MON->scheduleFrame();
+            }));
+        if (window->m_workspace != PMONITOR->m_activeWorkspace)
+            pendingPreviewFrames.emplace_back(surface);
+    }
+
+    // Initial fake captures suppress frame feedback; release pending callbacks
+    // once listeners are ready, including swipe entry without an end callback.
+    for (const auto& surfaceRef : pendingPreviewFrames) {
+        if (const auto surface = surfaceRef.lock())
+            surface->frame(Time::steadyNow());
+    }
 }

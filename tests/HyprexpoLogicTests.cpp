@@ -4,6 +4,7 @@
 #include "../src/ScrollingInputState.hpp"
 #include "../src/ScrollingMutationTransaction.hpp"
 #include "../src/ScrollingRequestId.hpp"
+#include "../src/PreviewMonitorGeometry.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -11,6 +12,7 @@
 #include <iostream>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -761,6 +763,69 @@ void checkScrollingMutationTransactions() {
 
 int main() {
     using namespace Hyprexpo;
+
+    struct MonitorGeometry {
+        int m_transform;
+        std::pair<int, int> m_pixelSize;
+        std::pair<int, int> m_transformedSize;
+        int cachedTransform = -1;
+        std::pair<int, int> cachedPixelSize;
+        std::pair<int, int> cachedTransformedSize;
+        int refreshes = 0;
+        void updateMatrix() {
+            cachedTransform = m_transform;
+            cachedPixelSize = m_pixelSize;
+            cachedTransformedSize = m_transformedSize;
+            ++refreshes;
+        }
+    };
+    for (int transform = 0; transform < 8; ++transform) {
+        const std::pair<int, int> pixels{960, 600};
+        const std::pair<int, int> transformed = transform % 2 ? std::pair{600, 960} : pixels;
+        MonitorGeometry monitor{transform, pixels, transformed, transform, pixels, transformed, 0};
+        if (transform % 2) {
+            Capture::setMonitorGeometry(monitor, 0, transformed, transformed);
+            expect(monitor.cachedTransform == 0 && monitor.cachedPixelSize == transformed && monitor.cachedTransformedSize == transformed,
+                   "portrait capture publishes all geometry fields before refreshing matrices");
+            expect(monitor.refreshes == 1, "portrait normalization refreshes derived geometry once");
+        }
+        Capture::setMonitorGeometry(monitor, transform, pixels, transformed);
+        expect(monitor.cachedTransform == transform && monitor.cachedPixelSize == pixels && monitor.cachedTransformedSize == transformed,
+               "restoration rebuilds the original monitor matrices");
+        const int expectedRefreshes = transform % 2 ? 2 : 0;
+        expect(monitor.refreshes == expectedRefreshes, "unchanged non-portrait geometry does not refresh matrices");
+        Capture::setMonitorGeometry(monitor, transform, pixels, transformed);
+        expect(monitor.refreshes == expectedRefreshes, "repeated geometry restoration does not refresh matrices again");
+    }
+    for (int changedField = 0; changedField < 3; ++changedField) {
+        MonitorGeometry monitor{0, {960, 600}, {960, 600}, 0, {960, 600}, {960, 600}, 0};
+        const int transform = changedField == 0 ? 2 : 0;
+        const std::pair<int, int> pixels = changedField == 1 ? std::pair{1200, 800} : std::pair{960, 600};
+        const std::pair<int, int> transformed = changedField == 2 ? std::pair{600, 960} : std::pair{960, 600};
+        Capture::setMonitorGeometry(monitor, transform, pixels, transformed);
+        expect(monitor.refreshes == 1 && monitor.cachedTransform == transform && monitor.cachedPixelSize == pixels && monitor.cachedTransformedSize == transformed,
+               "changing any one monitor geometry field refreshes the complete derived state");
+    }
+
+    const struct {
+        int         transform;
+        const char* name;
+        bool        needsHalfTurn;
+    } previewTransforms[] = {
+        {0, "Normal", false},
+        {1, "Rotate90", false},
+        {2, "Rotate180", true},
+        {3, "Rotate270", false},
+        {4, "Flipped", false},
+        {5, "Flipped90", false},
+        {6, "Flipped180", false},
+        {7, "Flipped270", false},
+    };
+    for (const auto& test : previewTransforms)
+        expect(workspacePreviewNeedsHalfTurn(test.transform) == test.needsHalfTurn,
+               std::string{"workspace preview half-turn correction for "} + test.name);
+    expect(!workspacePreviewNeedsHalfTurn(-1), "negative output transforms need no preview correction");
+    expect(!workspacePreviewNeedsHalfTurn(8), "out-of-range output transforms need no preview correction");
 
     expect(trimString("  DP-1 first 1 \t") == "DP-1 first 1", "trimString removes surrounding whitespace");
     expect(splitCommaList("a, b,,c").size() == 4, "splitCommaList preserves empty entries");

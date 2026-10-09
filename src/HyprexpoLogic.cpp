@@ -12,6 +12,17 @@
 
 namespace Hyprexpo {
 
+bool workspacePreviewNeedsHalfTurn(int outputTransform) {
+    // Quarter-turn captures use coherent, normalized monitor geometry. Their
+    // former half-turn compensation depended on stale projection matrices.
+    switch (outputTransform) {
+        case 2:
+            return true;
+        default:
+            return false;
+    }
+}
+
 std::string trimString(std::string value) {
     while (!value.empty() && std::isspace(static_cast<unsigned char>(value.front())))
         value.erase(value.begin());

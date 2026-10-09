@@ -206,6 +206,8 @@ void COverview::close(bool switchToSelection) {
 }
 
 void COverview::onPreRender() {
+    if (!closing)
+        flushQueuedRedraws();
     if (damageDirty) {
         damageDirty = false;
         redrawID(closing ? (closeOnID == -1 ? openedID : closeOnID) : openedID);

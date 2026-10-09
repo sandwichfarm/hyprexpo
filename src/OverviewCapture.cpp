@@ -3,7 +3,9 @@
 #include "OverviewInternal.hpp"
 #include "HyprlandConfigCompat.hpp"
 #include "HyprexpoConfig.hpp"
+#include "HyprexpoLogic.hpp"
 #include "PreviewFramebuffer.hpp"
+#include "PreviewMonitorGeometry.hpp"
 
 #define private   public
 #define protected public
@@ -25,6 +27,15 @@
 namespace Hyprexpo::Capture {
 
 namespace {
+
+static_assert(WL_OUTPUT_TRANSFORM_NORMAL == 0);
+static_assert(WL_OUTPUT_TRANSFORM_90 == 1);
+static_assert(WL_OUTPUT_TRANSFORM_180 == 2);
+static_assert(WL_OUTPUT_TRANSFORM_270 == 3);
+static_assert(WL_OUTPUT_TRANSFORM_FLIPPED == 4);
+static_assert(WL_OUTPUT_TRANSFORM_FLIPPED_90 == 5);
+static_assert(WL_OUTPUT_TRANSFORM_FLIPPED_180 == 6);
+static_assert(WL_OUTPUT_TRANSFORM_FLIPPED_270 == 7);
 
 std::atomic<uint64_t> g_budgetGeneration = 1;
 std::mutex            g_budgetLogMutex;
@@ -90,9 +101,7 @@ class CMonitorStateGuard {
     void restore() {
         if (m_restored || !m_monitor)
             return;
-        m_monitor->m_transform              = m_transform;
-        m_monitor->m_transformedSize        = m_transformedSize;
-        m_monitor->m_pixelSize              = m_pixelSize;
+        setMonitorGeometry(*m_monitor, m_transform, m_pixelSize, m_transformedSize);
         m_monitor->m_activeWorkspace        = m_activeWorkspace ? m_activeWorkspace : m_startedOn;
         m_monitor->m_activeSpecialWorkspace = m_activeSpecialWorkspace;
         if (m_startedOn)
@@ -169,9 +178,7 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render:
 
         if (isTransformRotated(monitorState.transform())) {
             captureBox = {{0, 0}, {captureBox.h, captureBox.w}};
-            request.monitor->m_transform       = WL_OUTPUT_TRANSFORM_NORMAL;
-            request.monitor->m_pixelSize       = captureBox.size();
-            request.monitor->m_transformedSize = captureBox.size();
+            setMonitorGeometry(*request.monitor, WL_OUTPUT_TRANSFORM_NORMAL, captureBox.size(), captureBox.size());
         }
 
         if (!framebuffer)
@@ -247,7 +254,7 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render:
             return false;
 
         if (const auto texture = framebuffer->getTexture(); texture)
-            texture->m_transform = isTransformRotated(monitorState.transform()) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;
+            texture->m_transform = workspacePreviewNeedsHalfTurn(static_cast<int>(monitorState.transform())) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;
         else
             return false;
 

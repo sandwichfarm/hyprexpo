@@ -794,6 +794,19 @@ int main() {
 
     const auto workspaceCapture = extractFunction(captureSource, "bool captureWorkspacePreview(");
     expect(!workspaceCapture.empty(), "shared workspace capture implementation exists");
+    expectContains(workspaceCapture,
+                   "texture->m_transform = workspacePreviewNeedsHalfTurn(static_cast<int>(monitorState.transform())) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;",
+                   "workspace texture correction uses the tested policy with the saved output transform");
+    expectOrder(workspaceCapture, "rendererState.finish()", "workspacePreviewNeedsHalfTurn(", "texture correction follows capture rendering");
+    expectOrder(workspaceCapture, "workspacePreviewNeedsHalfTurn(", "monitorState.restore()", "texture correction precedes monitor restoration");
+    const auto rotatedCapture = extractFunction(workspaceCapture, "if (isTransformRotated(monitorState.transform()))");
+    expectContains(rotatedCapture, "captureBox = {{0, 0}, {captureBox.h, captureBox.w}};", "only quarter-turn outputs swap capture geometry");
+    expectContains(rotatedCapture, "setMonitorGeometry(*request.monitor, WL_OUTPUT_TRANSFORM_NORMAL, captureBox.size(), captureBox.size())",
+                   "quarter-turn capture normalizes geometry and cached matrices together");
+    const auto monitorGuard = extractFunction(captureSource, "class CMonitorStateGuard");
+    expectContains(extractFunction(monitorGuard, "void restore()"), "setMonitorGeometry(*m_monitor, m_transform, m_pixelSize, m_transformedSize)",
+                   "the monitor guard restores geometry and cached matrices together");
+    expectContains(extractFunction(monitorGuard, "~CMonitorStateGuard()"), "restore()", "monitor geometry is restored on early returns and unwinding");
     const auto framebufferPreparation = extractFunction(captureSource, "bool preparePreviewFramebuffer(");
     expectContains(framebufferPreparation, "monitor->useFP16()", "preview allocation follows the monitor working-buffer precision");
     expectContains(framebufferPreparation, "DRM_FORMAT_ABGR16161616F", "FP16 previews retain HDR values beyond the integer range");
@@ -813,6 +826,22 @@ int main() {
     expectLastOrder(workspaceCapture, "renderWorkspace(", "restoreActiveWorkspaceAfterPreview(", "active workspace restores after rendering");
     expectLastOrder(workspaceCapture, "restoreActiveWorkspaceAfterPreview(", "rendererState.finish()", "workspace capture ends only after workspace restoration");
     expectContains(overviewConstructor, "captureWorkspacePreview(", "initial grid capture uses the shared workspace helper");
+    expectContains(overviewConstructor, "surface->m_events.commit.listen", "grid observes buffer geometry commits after the first capture");
+    const auto previewCommit = extractFunction(overviewConstructor, "]() mutable");
+    expectContains(previewCommit, "surfaceSize == SURFACE->m_current.size && bufferSize == SURFACE->m_current.bufferSize",
+                   "content-only commits do not refresh inactive previews");
+    expectContains(previewCommit, "WINDOW->m_workspace->m_monitor != MON", "preview commits remain scoped to the owning monitor");
+    expectContains(previewCommit, "WINDOW->m_workspace == MON->m_activeWorkspace", "active workspace commits retain the existing damage path");
+    expectContains(previewCommit, "WINDOW->isHidden()", "hidden clients do not invalidate preview tiles");
+    expectContains(previewCommit, "WINDOW->m_pinned && !showPinnedWindowsInPreview()", "suppressed pinned clients do not invalidate preview tiles");
+    expectContains(previewCommit, "queueRedrawID(TILE)", "changed buffer geometry queues the current workspace tile");
+    expectAbsent(previewCommit, "redrawID(", "surface commit callbacks never render synchronously");
+    expectContains(previewCommit, "if (closing || !SURFACE)", "closing overviews ignore surface commits");
+    expectOrder(overviewConstructor, "previewSurfaceCommitHooks.emplace_back", "surface->frame(Time::steadyNow())",
+                "initial inactive frame callbacks are released after listeners are registered");
+    expectContains(extractFunction(renderSource, "void COverview::onPreRender()"), "flushQueuedRedraws()", "buffer-driven redraws run during pre-render");
+    expectOrder(extractFunction(source, "COverview::~COverview()"), "previewSurfaceCommitHooks.clear()", "images.clear()",
+                "commit listeners disconnect before preview resources are destroyed");
     const auto redrawID = extractFunction(renderSource, "void COverview::redrawID(");
     expectContains(redrawID, "captureWorkspacePreview(", "grid redraw uses the shared workspace helper");
     expectAbsent(source, "g_pHyprRenderer->renderWorkspace(", "grid construction no longer duplicates workspace snapshot rendering");

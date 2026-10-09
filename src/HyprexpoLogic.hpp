@@ -192,6 +192,10 @@ std::string trimString(std::string value);
 std::string lowerString(std::string value);
 std::vector<std::string> splitCommaList(const std::string& value);
 
+// Wayland output transform encoding: Normal=0, Rotate90=1, Rotate180=2, Rotate270=3,
+// Flipped=4, Flipped90=5, Flipped180=6, Flipped270=7. Unknown values need no correction.
+bool workspacePreviewNeedsHalfTurn(int outputTransform);
+
 SGridShape               computeDynamicGridShape(int visibleCount);
 SGridShape               computeFixedGridShape(int64_t columns, int64_t rows);
 std::optional<std::vector<int64_t>> expandDynamicWorkspaceIDs(const std::vector<int64_t>& workspaceIDs, bool fillGaps, std::size_t maxExpandedWorkspaces);
