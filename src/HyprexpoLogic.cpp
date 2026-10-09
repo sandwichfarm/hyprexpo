@@ -13,12 +13,10 @@
 namespace Hyprexpo {
 
 bool workspacePreviewNeedsHalfTurn(int outputTransform) {
+    // Quarter-turn captures use coherent, normalized monitor geometry. Their
+    // former half-turn compensation depended on stale projection matrices.
     switch (outputTransform) {
-        case 1:
         case 2:
-        case 3:
-        case 5:
-        case 7:
             return true;
         default:
             return false;

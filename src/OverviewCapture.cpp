@@ -5,6 +5,7 @@
 #include "HyprexpoConfig.hpp"
 #include "HyprexpoLogic.hpp"
 #include "PreviewFramebuffer.hpp"
+#include "PreviewMonitorGeometry.hpp"
 
 #define private   public
 #define protected public
@@ -100,9 +101,7 @@ class CMonitorStateGuard {
     void restore() {
         if (m_restored || !m_monitor)
             return;
-        m_monitor->m_transform              = m_transform;
-        m_monitor->m_transformedSize        = m_transformedSize;
-        m_monitor->m_pixelSize              = m_pixelSize;
+        setMonitorGeometry(*m_monitor, m_transform, m_pixelSize, m_transformedSize);
         m_monitor->m_activeWorkspace        = m_activeWorkspace ? m_activeWorkspace : m_startedOn;
         m_monitor->m_activeSpecialWorkspace = m_activeSpecialWorkspace;
         if (m_startedOn)
@@ -179,9 +178,7 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render:
 
         if (isTransformRotated(monitorState.transform())) {
             captureBox = {{0, 0}, {captureBox.h, captureBox.w}};
-            request.monitor->m_transform       = WL_OUTPUT_TRANSFORM_NORMAL;
-            request.monitor->m_pixelSize       = captureBox.size();
-            request.monitor->m_transformedSize = captureBox.size();
+            setMonitorGeometry(*request.monitor, WL_OUTPUT_TRANSFORM_NORMAL, captureBox.size(), captureBox.size());
         }
 
         if (!framebuffer)

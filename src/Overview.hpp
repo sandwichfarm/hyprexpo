@@ -175,6 +175,7 @@ class COverview final : public IOverviewSession {
     CHyprSignalListener          touchMoveHook;
     CHyprSignalListener          touchDownHook;
     CHyprSignalListener          workspaceMoveHook;
+    std::vector<CHyprSignalListener> previewSurfaceCommitHooks;
 
     bool                         swipe             = false;
     bool                         swipeWasCommenced = false;
