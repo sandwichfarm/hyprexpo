@@ -5,6 +5,7 @@
 #include "HyprexpoLogic.hpp"
 #include "PreviewFramebuffer.hpp"
 #include "PreviewMonitorGeometry.hpp"
+#include "ScrollingOverviewLogic.hpp"
 
 #define private   public
 #define protected public
@@ -47,9 +48,14 @@ uint64_t              g_lastLoggedBudgetGeneration = 0;
 
 class CRendererStateGuard {
   public:
-    explicit CRendererStateGuard(Render::IHyprRenderer* renderer) : m_renderer(renderer), m_blockSurfaceFeedback(renderer->context().m_blockSurfaceFeedback),
-                                                                    m_renderingSnapshot(renderer->context().m_renderingSnapshot),
-                                                                    m_blockScreenShader(renderer->context().m_data.blockScreenShader) {}
+    explicit CRendererStateGuard(Render::IHyprRenderer* renderer, bool windowCapture = false) :
+        m_renderer(renderer), m_blockSurfaceFeedback(renderer->context().m_blockSurfaceFeedback), m_renderingSnapshot(renderer->context().m_renderingSnapshot),
+        m_blockScreenShader(renderer->context().m_data.blockScreenShader), m_renderModif(renderer->context().m_data.renderModif),
+        m_projectionType(renderer->context().m_data.projectionType), m_projection(renderer->context().m_data.targetProjection), m_fbSize(renderer->context().m_data.fbSize),
+        m_noSimplify(renderer->context().m_data.noSimplify), m_transformDamage(renderer->context().m_data.transformDamage), m_windowCapture(windowCapture) {
+        if (m_windowCapture)
+            glGetIntegerv(GL_VIEWPORT, m_viewport);
+    }
 
     ~CRendererStateGuard() {
         if (m_begun) {
@@ -75,11 +81,24 @@ class CRendererStateGuard {
         m_renderer->context().m_blockSurfaceFeedback   = m_blockSurfaceFeedback;
         m_renderer->context().m_renderingSnapshot      = m_renderingSnapshot;
         m_renderer->context().m_data.blockScreenShader = m_blockScreenShader;
+        if (!m_windowCapture)
+            return;
+        auto& data            = m_renderer->context().m_data;
+        data.renderModif      = m_renderModif;
+        data.projectionType   = m_projectionType;
+        data.targetProjection = m_projection;
+        data.fbSize           = m_fbSize;
+        data.noSimplify       = m_noSimplify;
+        data.transformDamage  = m_transformDamage;
+        m_renderer->setViewport(m_viewport[0], m_viewport[1], m_viewport[2], m_viewport[3]);
     }
 
     bool restored() const {
         return m_renderer->context().m_blockSurfaceFeedback == m_blockSurfaceFeedback && m_renderer->context().m_renderingSnapshot == m_renderingSnapshot &&
-            m_renderer->context().m_data.blockScreenShader == m_blockScreenShader;
+            m_renderer->context().m_data.blockScreenShader == m_blockScreenShader &&
+            (!m_windowCapture ||
+             (m_renderer->context().m_data.noSimplify == m_noSimplify && m_renderer->context().m_data.transformDamage == m_transformDamage &&
+              m_renderer->context().m_data.projectionType == m_projectionType && m_renderer->context().m_data.fbSize == m_fbSize));
     }
 
   private:
@@ -87,6 +106,14 @@ class CRendererStateGuard {
     bool                   m_blockSurfaceFeedback;
     bool                   m_renderingSnapshot;
     bool                   m_blockScreenShader;
+    Render::SRenderModifData      m_renderModif;
+    Render::eRenderProjectionType m_projectionType;
+    Mat3x3                 m_projection;
+    Vector2D               m_fbSize;
+    bool                   m_noSimplify;
+    bool                   m_transformDamage;
+    bool                   m_windowCapture;
+    GLint                  m_viewport[4] = {};
     bool                   m_begun = false;
 };
 
@@ -310,21 +337,45 @@ SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, 
         }
 
         Render::GL::g_pHyprOpenGL->makeEGLCurrent();
+        const auto windowSize = window->size(Desktop::View::IGeometric::GEOMETRIC_CURRENT);
+        const Vector2D sourcePixels{std::ceil(windowSize.x * monitor->m_scale), std::ceil(windowSize.y * monitor->m_scale)};
+        const auto fitted = Hyprexpo::Scrolling::fitWindowPreview({sourcePixels.x, sourcePixels.y}, {static_cast<double>(width), static_cast<double>(height)});
+        GLint maxTextureSize = 0;
+        glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTextureSize);
+        const double scratchBudget = monitor->m_pixelSize.x * monitor->m_pixelSize.y * scrollingThumbnailBudgetMultiplier();
+        if (!fitted || sourcePixels.x > maxTextureSize || sourcePixels.y > maxTextureSize || sourcePixels.x * sourcePixels.y > scratchBudget) {
+            result.error = "native window capture exceeds the bounded scratch framebuffer range";
+            return result;
+        }
+
+        const auto sourceFramebuffer = g_pHyprRenderer->createFB("hyprexpo scrolling source preview");
+        if (!preparePreviewFramebuffer(sourceFramebuffer, monitor, static_cast<int>(sourcePixels.x), static_cast<int>(sourcePixels.y))) {
+            result.error = "source framebuffer allocation failed";
+            return result;
+        }
         const auto framebuffer = g_pHyprRenderer->createFB("hyprexpo scrolling target preview");
         if (!preparePreviewFramebuffer(framebuffer, monitor, width, height)) {
             result.error = "target framebuffer allocation failed";
             return result;
         }
 
-        CRegion fakeDamage{0, 0, width, height};
-        CRendererStateGuard rendererState{g_pHyprRenderer.get()};
-        if (!g_pHyprRenderer->beginFullFakeRender(monitor, fakeDamage, framebuffer)) {
+        CRendererStateGuard rendererState{g_pHyprRenderer.get(), true};
+        CRegion sourceDamage{0, 0, static_cast<int>(sourcePixels.x), static_cast<int>(sourcePixels.y)};
+        if (!g_pHyprRenderer->beginFullFakeRender(monitor, sourceDamage, sourceFramebuffer)) {
             result.error = "beginFullFakeRender failed";
             return result;
         }
         rendererState.begun();
-        g_pHyprRenderer->context().m_blockSurfaceFeedback = true;
-        g_pHyprRenderer->context().m_renderingSnapshot = true;
+        auto& ctx = g_pHyprRenderer->context();
+        ctx.m_blockSurfaceFeedback = true;
+        ctx.m_renderingSnapshot = true;
+        ctx.m_data.fbSize = sourcePixels;
+        g_pHyprRenderer->setProjectionType(ctx, Render::RPT_EXPORT);
+        g_pHyprRenderer->setViewport(0, 0, sourcePixels.x, sourcePixels.y);
+        ctx.m_data.transformDamage = false;
+        ctx.m_data.noSimplify = true;
+        ctx.m_data.renderModif = {};
+        Render::GL::g_pHyprOpenGL->scissor(ctx, static_cast<const pixman_box32*>(nullptr));
         glClearColor(0.F, 0.F, 0.F, 0.F);
         glClear(GL_COLOR_BUFFER_BIT);
         g_pHyprRenderer->startRenderPass(g_pHyprRenderer->context());
@@ -336,8 +387,33 @@ SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, 
             return result;
         }
 
-        g_pHyprRenderer->renderWindow(g_pHyprRenderer->context(), window, monitor, window->presentation().renderPresentation(), Time::steadyNow(), false, Render::RENDER_PASS_ALL, true, true);
-        g_pHyprRenderer->context().m_data.blockScreenShader = true;
+        // Render at native size so every surface's geometry, damage and clip agree.
+        // Only the completed texture is scaled; render modifiers leave subsurface
+        // scissors in native coordinates and would silently crop embedded content.
+        auto presentation           = window->presentation().renderPresentation();
+        presentation.floatingOffset = {};
+        g_pHyprRenderer->renderWindow(ctx, window, monitor, presentation, Time::steadyNow(), false, Render::RENDER_PASS_ALL, true, true);
+        ctx.m_data.blockScreenShader = true;
+        rendererState.finish();
+
+        CRegion targetDamage{0, 0, width, height};
+        if (!sourceFramebuffer->getTexture() || !g_pHyprRenderer->beginFullFakeRender(monitor, targetDamage, framebuffer)) {
+            result.error = "target preview render failed";
+            return result;
+        }
+        rendererState.begun();
+        auto& targetCtx = g_pHyprRenderer->context();
+        targetCtx.m_data.fbSize = {static_cast<double>(width), static_cast<double>(height)};
+        g_pHyprRenderer->setProjectionType(targetCtx, Render::RPT_EXPORT);
+        g_pHyprRenderer->setViewport(0, 0, width, height);
+        targetCtx.m_data.transformDamage = false;
+        targetCtx.m_data.noSimplify = true;
+        targetCtx.m_data.renderModif = {};
+        Render::GL::g_pHyprOpenGL->scissor(targetCtx, static_cast<const pixman_box32*>(nullptr));
+        glClearColor(0.F, 0.F, 0.F, 0.F);
+        glClear(GL_COLOR_BUFFER_BIT);
+        Render::GL::g_pHyprOpenGL->renderTextureInternal(targetCtx, sourceFramebuffer->getTexture(), CBox{fitted->x, fitted->y, fitted->w, fitted->h}, {.damage = &targetDamage});
+        targetCtx.m_data.blockScreenShader = true;
         rendererState.finish();
         rendererState.restore();
         if (!rendererState.restored()) {

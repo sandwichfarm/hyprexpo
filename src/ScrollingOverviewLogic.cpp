@@ -232,6 +232,17 @@ double panBy(const SScene& scene, double currentPan, double delta, double viewpo
     return clampPan(scene, currentPan + delta, viewportHeight);
 }
 
+std::optional<SRect> fitWindowPreview(SSize windowPixels, SSize capturePixels) {
+    if (!finitePositive(windowPixels.w) || !finitePositive(windowPixels.h) || !finitePositive(capturePixels.w) || !finitePositive(capturePixels.h))
+        return std::nullopt;
+    const double scale = std::min(capturePixels.w / windowPixels.w, capturePixels.h / windowPixels.h);
+    if (!finitePositive(scale))
+        return std::nullopt;
+    const double width = std::min(capturePixels.w, windowPixels.w * scale);
+    const double height = std::min(capturePixels.h, windowPixels.h * scale);
+    return SRect{(capturePixels.w - width) / 2.0, (capturePixels.h - height) / 2.0, width, height};
+}
+
 SHitResult hitTest(const SScene& scene, SPoint viewportPoint, double pan) {
     if (!scene.valid || !std::isfinite(viewportPoint.x) || !std::isfinite(viewportPoint.y) || !std::isfinite(pan))
         return {};

@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -189,6 +190,7 @@ SFocusRef   moveFocus(const SScene& scene, const SFocusRef& current, EFocusDirec
 size_t      adjustDestinationColumnIndex(size_t sourceColumn, size_t destinationColumn, bool sourceColumnRemoved);
 SDropIntent resolveDrop(const SScene& scene, const SDropSource& source, SPoint viewportPoint, double pan, double edgeFraction = 0.2);
 SCapturePlan planCaptureBudget(uint32_t monitorWidth, uint32_t monitorHeight, int multiplier, const std::vector<SCaptureRequest>& requests);
+std::optional<SRect> fitWindowPreview(SSize windowPixels, SSize capturePixels);
 SOverviewTransition overviewTransition(double progress, SSize viewport);
 SRect                applyOverviewTransition(SRect box, SSize viewport, const SOverviewTransition& transition);
 double               transitionForSwipe(bool closing, double swipeDelta, double distance);
