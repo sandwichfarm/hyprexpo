@@ -106,6 +106,11 @@ int main() {
 
     const auto mainSource = readFile("src/main.cpp");
     expect(!mainSource.empty(), "src/main.cpp can be read from repo root");
+    const auto overviewPreChecks = extractFunction(mainSource, "m_events.render.preChecks.listen(");
+    expect(!overviewPreChecks.empty(), "overview rendering disables fullscreen fast paths before scanout checks");
+    expectContains(overviewPreChecks, "overviewForMonitor(pMonitor)", "fullscreen fast-path override requires an overview on the same monitor");
+    expectOrder(overviewPreChecks, "OV->shouldRenderOverviewForMonitor(pMonitor)", "pMonitor->m_solitaryClient.reset()",
+                "fullscreen fast-path override is scoped to a session rendering this monitor");
     expect(mainSource.find("const Time::steady_tp& now") != std::string::npos, "render hook uses the Hyprland 0.56 time-point ABI");
     expect(mainSource.find("_ZN7Monitor8CMonitor9addDamageERKN9Hyprutils4Math4CBoxE") != std::string::npos,
            "damage hook uses the Hyprland 0.56 namespaced monitor symbol");
@@ -827,6 +832,13 @@ int main() {
     expectOrder(windowCapture, "beginFullFakeRender(", "renderWindow(", "target capture begins fake rendering before the window draw");
     expectOrder(windowCapture, "renderWindow(", "rendererState.finish()", "target capture balances the renderer after drawing");
     expectOrder(windowCapture, "rendererState.finish()", "result.completed", "target capture publishes only after balanced completion");
+    expectContains(windowCapture, "fitWindowPreview(", "window capture fits the complete native window into its thumbnail");
+    expectContains(windowCapture, "sourceFramebuffer", "window capture first renders every surface at native size");
+    expectOrder(windowCapture, "rendererState.finish()", "renderTextureInternal(", "the completed native texture is fitted after surface damage and clipping");
+    expectContains(windowCapture, "scratchBudget", "temporary native capture has a bounded pixel allocation");
+    expectAbsent(windowCapture, "RMOD_TYPE_SCALE", "window capture does not scale geometry without scaling subsurface clips");
+    expectContains(windowCapture, "RPT_EXPORT", "window capture uses an unrotated framebuffer projection");
+    expectContains(windowCapture, "noSimplify = true", "capture does not cull subsurfaces using their unscaled bounds");
     for (const auto& token : {"glReadPixels(", "readPixels(", "std::ofstream", ".ppm", "sha256", "SHA256"})
         expectAbsent(captureSource, token, "production capture forbids plugin-side pixel evidence path " + std::string{token});
 

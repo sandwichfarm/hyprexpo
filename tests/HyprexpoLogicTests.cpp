@@ -538,6 +538,29 @@ void checkScrollingCaptureBudget() {
     expect(!planCaptureBudget(0, 100, 4, requests).valid, "capture budget rejects invalid monitor dimensions");
 }
 
+void checkScrollingWindowPreview() {
+    using namespace Hyprexpo::Scrolling;
+
+    for (const auto source : {Hyprexpo::SSize{933.0, 1038.0}, Hyprexpo::SSize{1920.0, 1080.0}, Hyprexpo::SSize{1400.0, 800.0}}) {
+        for (const auto capture : {Hyprexpo::SSize{933.0, 734.0}, Hyprexpo::SSize{480.0, 270.0}, Hyprexpo::SSize{400.0, 900.0}}) {
+            const auto fitted = fitWindowPreview(source, capture);
+            expect(fitted.has_value(), "ordinary, fullscreen, and wide window previews have valid geometry");
+            if (!fitted)
+                continue;
+            expect(near(fitted->w / fitted->h, source.w / source.h), "window previews preserve the source aspect ratio");
+            expect(fitted->x >= 0.0 && fitted->y >= 0.0 && fitted->x + fitted->w <= capture.w + 0.001 && fitted->y + fitted->h <= capture.h + 0.001,
+                   "all four window corners remain inside the capture framebuffer");
+            expect(near(fitted->x * 2.0 + fitted->w, capture.w) && near(fitted->y * 2.0 + fitted->h, capture.h), "window previews are centered in their capture");
+            expect(near(fitted->w, capture.w) || near(fitted->h, capture.h), "window previews fill one capture dimension");
+        }
+    }
+    const auto reported = fitWindowPreview({933.0, 1038.0}, {933.0, 734.0});
+    expect(reported && near(reported->h, 734.0) && reported->w < 933.0, "issue 158 tall windows shrink instead of losing bottom content");
+    expect(!fitWindowPreview({0.0, 100.0}, {50.0, 50.0}), "preview fitting rejects empty windows");
+    expect(!fitWindowPreview({100.0, 100.0}, {50.0, -1.0}), "preview fitting rejects invalid capture sizes");
+    expect(!fitWindowPreview({std::numeric_limits<double>::infinity(), 100.0}, {50.0, 50.0}), "preview fitting rejects non-finite source sizes");
+}
+
 Hyprexpo::Scrolling::SMutationState mutationFixture() {
     using namespace Hyprexpo::Scrolling;
     return {.workspaces = {
@@ -1046,6 +1069,7 @@ int main() {
     checkScrollingSceneAndInputMath();
     checkScrollingDropIntents();
     checkScrollingCaptureBudget();
+    checkScrollingWindowPreview();
     checkScrollingInputCoordinates();
     checkScrollingRequestIds();
     checkScrollingOverviewTransition();
