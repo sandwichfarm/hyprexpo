@@ -115,6 +115,12 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         throw std::runtime_error("[he] Failed initializing hooks");
     }
 
+    static auto PPRECHECKS = Event::bus()->m_events.render.preChecks.listen([](PHLMONITOR pMonitor) {
+        if (auto* const OV = overviewForMonitor(pMonitor); OV && OV->shouldRenderOverviewForMonitor(pMonitor))
+            // Fullscreen fast paths bypass renderWorkspace, where the overview is drawn.
+            pMonitor->m_solitaryClient.reset();
+    });
+
     static auto P = Event::bus()->m_events.render.pre.listen([](PHLMONITOR pMonitor) {
         if (auto* const OV = overviewForMonitor(pMonitor))
             OV->onPreRender();
