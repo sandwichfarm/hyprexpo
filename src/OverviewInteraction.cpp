@@ -9,7 +9,7 @@
 #include <hyprland/src/pointer/cursor/CursorShapeOverrideController.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
-#include <hyprland/src/managers/KeybindManager.hpp>
+#include <hyprland/src/keybinds/Manager.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <algorithm>
@@ -154,7 +154,7 @@ PHLWINDOW COverview::windowAtTilePoint(int id, const Vector2D& localPoint) const
     }
     else {
         for (const auto& w : State::workspaceState()->workspacesCopy()) {
-            if (w->m_id == images[id].workspaceID) {
+            if (workspaceHasID(w, images[id].workspaceID)) {
                 WORKSPACE = w;
                 break;
             }
@@ -280,14 +280,14 @@ PHLWORKSPACE COverview::ensureWorkspaceForTile(int id) {
 
     PHLWORKSPACE workspace;
     for (const auto& w : State::workspaceState()->workspacesCopy()) {
-        if (w->m_id == image.workspaceID) {
+        if (workspaceHasID(w, image.workspaceID)) {
             workspace = w;
             break;
         }
     }
 
     if (!workspace)
-        workspace = State::workspaceState()->create(image.workspaceID, MON->m_id, std::to_string(image.workspaceID), false);
+        workspace = createWorkspaceForMonitor(image.workspaceID, MON);
 
     image.pWorkspace = workspace;
     return workspace;
@@ -313,7 +313,7 @@ bool COverview::finishWindowDrag() {
             PHLWORKSPACE SOURCEWS = SOURCEOV->images[SOURCE].pWorkspace;
             if (!SOURCEWS) {
                 for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-                    if (workspace->m_id == SOURCEOV->images[SOURCE].workspaceID) {
+                    if (workspaceHasID(workspace, SOURCEOV->images[SOURCE].workspaceID)) {
                         SOURCEWS = workspace;
                         break;
                     }
@@ -322,7 +322,7 @@ bool COverview::finishWindowDrag() {
 
             const auto TARGETWS = TARGETOV->ensureWorkspaceForTile(TARGET);
             if (TARGETWS && TARGETWS->m_monitor.lock() != TARGETMON)
-                Log::logger->log(Log::ERR, "[hyprexpo] rejected drag target workspace on the wrong monitor");
+                Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] rejected drag target workspace on the wrong monitor");
             else if (windowVisibleOnWorkspace(g_overviewDrag.window, SOURCEWS) && TARGETWS && TARGETWS != SOURCEWS) {
                 const int64_t SOURCEWORKSPACEID = SOURCEOV->images[SOURCE].workspaceID;
                 const int64_t TARGETWORKSPACEID = TARGETOV->images[TARGET].workspaceID;
@@ -354,7 +354,7 @@ bool COverview::moveWindowBetweenVisibleIndices(size_t sourceIndex, size_t targe
     }
     else {
         for (const auto& w : State::workspaceState()->workspacesCopy()) {
-            if (w->m_id == images[SOURCE].workspaceID) {
+            if (workspaceHasID(w, images[SOURCE].workspaceID)) {
                 SOURCEWS = w;
                 break;
             }
@@ -473,8 +473,8 @@ bool COverview::selectVisibleToken(const std::string& token) {
     if (closing)
         return false;
 
-    static auto* const* PSELECTLABEL = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_enable")->getDataStaticPtr();
-    static auto const*  PSELECTMAP   = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_token_map")->getDataStaticPtr();
+    auto* const* PSELECTLABEL = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_enable")->getDataStaticPtr();
+    auto const*  PSELECTMAP   = (Hyprlang::STRING const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:selection_label_token_map")->getDataStaticPtr();
 
     const std::string normalized = lowerString(trimString(token));
     if (normalized.empty())
@@ -508,11 +508,11 @@ bool COverview::moveFocus(int dx, int dy) {
     int x = kbFocusID % shape.cols;
     int y = kbFocusID / shape.cols;
 
-    static auto* const* PWRAPH = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_wrap_h")->getDataStaticPtr();
-    static auto* const* PWRAPV = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_wrap_v")->getDataStaticPtr();
+    auto* const* PWRAPH = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_wrap_h")->getDataStaticPtr();
+    auto* const* PWRAPV = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_wrap_v")->getDataStaticPtr();
 
     if (dx != 0) {
-        static auto* const* PREADING = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_reading_order")->getDataStaticPtr();
+        auto* const* PREADING = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_reading_order")->getDataStaticPtr();
         int                 step     = dx > 0 ? 1 : -1;
         if (**PREADING) {
             // reading-order scan: proceed linearly across the grid (row-major)
@@ -657,7 +657,7 @@ void COverview::onWindowMoveToWorkspace(const PHLWINDOW& window, const PHLWORKSP
         return;
 
     const bool movedOnOverviewMonitor = window->m_monitor == monitor || (window->m_workspace && window->m_workspace->m_monitor == monitor) || (workspace && workspace->m_monitor == monitor);
-    if (!Hyprexpo::shouldAbortOverviewCloseForWorkspaceMove(window->m_pinned, movedOnOverviewMonitor))
+    if (!Hyprexpo::shouldAbortOverviewCloseForWorkspaceMove((window->m_state & Desktop::View::WINDOW_STATE_PINNED) != Desktop::View::WINDOW_STATE_NONE, movedOnOverviewMonitor))
         return;
 
     externalWorkspaceMoveDuringClose = true;
@@ -686,7 +686,7 @@ void COverview::onSwipeUpdate(double delta) {
     if (swipeWasCommenced)
         return;
 
-    static auto* const* PDISTANCE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gesture_distance")->getDataStaticPtr();
+    auto* const* PDISTANCE = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:gesture_distance")->getDataStaticPtr();
     const double        distance  = std::max<Hyprlang::INT>(1, **PDISTANCE);
 
     const float         PERC               = closing ? std::clamp(delta / distance, 0.0, 1.0) : 1.0 - std::clamp(delta / distance, 0.0, 1.0);
@@ -747,7 +747,7 @@ static int         g_submapRefs     = 0;
 static std::string g_previousSubmap = "";
 
 void enterOverviewSubmap(bool& submapActive) {
-    static auto* const* PKEYNAV = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_enable")->getDataStaticPtr();
+    auto* const* PKEYNAV = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:keynav_enable")->getDataStaticPtr();
     if (!**PKEYNAV || submapActive)
         return;
 
@@ -760,7 +760,7 @@ void enterOverviewSubmap(bool& submapActive) {
         //
         // The capture is global, not per-overview: only the first overview to open sees
         // the user's real submap. The others would capture "hyprexpo" and restore that.
-        g_previousSubmap = g_pKeybindManager->getCurrentSubmap().name;
+        g_previousSubmap = Keybinds::mgr()->currentSubmap();
         // switch to a dedicated submap for hyprexpo navigation
         (void)Config::Actions::setSubmap("hyprexpo");
     }
