@@ -187,6 +187,7 @@ double      clampPan(const SScene& scene, double pan, double viewportHeight);
 double      panBy(const SScene& scene, double currentPan, double delta, double viewportHeight);
 SHitResult  hitTest(const SScene& scene, SPoint viewportPoint, double pan);
 SFocusRef   moveFocus(const SScene& scene, const SFocusRef& current, EFocusDirection direction);
+SFocusRef   focusAfterRefresh(const SScene& scene, const SFocusRef& current, int64_t activeWorkspaceID);
 size_t      adjustDestinationColumnIndex(size_t sourceColumn, size_t destinationColumn, bool sourceColumnRemoved);
 SDropIntent resolveDrop(const SScene& scene, const SDropSource& source, SPoint viewportPoint, double pan, double edgeFraction = 0.2);
 SCapturePlan planCaptureBudget(uint32_t monitorWidth, uint32_t monitorHeight, int multiplier, const std::vector<SCaptureRequest>& requests);

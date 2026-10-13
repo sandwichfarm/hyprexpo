@@ -6,23 +6,25 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 declare -A cases expectations
 
 cases[hover-clear]='mouse_move:410:18|mouse_move:-1:0'
-cases[non-primary-passthrough]='mouse_button:410:18:272:1'
-cases[outside-primary-passthrough]='mouse_button:-1:18:273:1'
-cases[mouse-click]='mouse_button:410:18:273:1|mouse_move:421:18|mouse_button:421:18:273:0'
-cases[threshold-drag]='mouse_button:410:18:273:1|mouse_move:421:18|mouse_move:422:18'
-cases[same-column]='mouse_button:410:18:273:1|mouse_move:422:18|mouse_move:410:120|mouse_button:410:120:273:0'
-cases[new-column-before]='mouse_button:410:18:273:1|mouse_move:422:18|mouse_move:351:18|mouse_button:351:18:273:0'
-cases[new-column-after]='mouse_button:410:18:273:1|mouse_move:422:18|mouse_move:549:18|mouse_button:549:18:273:0'
-cases[cross-scrolling]='mouse_button:410:18:273:1|mouse_move:422:18|mouse_move:500:180|mouse_button:500:180:273:0'
-cases[mixed-workspace]='mouse_button:410:18:273:1|mouse_move:422:18|mouse_move:500:340|mouse_button:500:340:273:0'
-cases[terminal-workspace]='mouse_button:410:18:273:1|mouse_move:422:18|mouse_move:500:490|mouse_button:500:490:273:0'
-cases[outside-release]='mouse_button:410:18:273:1|mouse_move:422:18|mouse_move:-1:0|mouse_button:-1:0:273:0'
-cases[no-op-release]='mouse_button:410:18:273:1|mouse_move:422:18|mouse_button:422:18:273:0'
+# Linux input-event codes: BTN_LEFT=272, BTN_RIGHT=273.
+cases[non-primary-passthrough]='mouse_button:410:18:273:1|mouse_button:410:18:273:0'
+cases[outside-primary-passthrough]='mouse_button:-1:18:272:1'
+cases[mouse-click]='mouse_button:410:18:272:1|mouse_move:421:18|mouse_button:421:18:272:0'
+cases[right-release-during-left-press]='mouse_button:410:18:272:1|mouse_button:410:18:273:0|mouse_button:410:18:272:0'
+cases[threshold-drag]='mouse_button:410:18:272:1|mouse_move:421:18|mouse_move:422:18'
+cases[same-column]='mouse_button:410:18:272:1|mouse_move:422:18|mouse_move:410:120|mouse_button:410:120:272:0'
+cases[new-column-before]='mouse_button:410:18:272:1|mouse_move:422:18|mouse_move:351:18|mouse_button:351:18:272:0'
+cases[new-column-after]='mouse_button:410:18:272:1|mouse_move:422:18|mouse_move:549:18|mouse_button:549:18:272:0'
+cases[cross-scrolling]='mouse_button:410:18:272:1|mouse_move:422:18|mouse_move:500:180|mouse_button:500:180:272:0'
+cases[mixed-workspace]='mouse_button:410:18:272:1|mouse_move:422:18|mouse_move:500:340|mouse_button:500:340:272:0'
+cases[terminal-workspace]='mouse_button:410:18:272:1|mouse_move:422:18|mouse_move:500:490|mouse_button:500:490:272:0'
+cases[outside-release]='mouse_button:410:18:272:1|mouse_move:422:18|mouse_move:-1:0|mouse_button:-1:0:272:0'
+cases[no-op-release]='mouse_button:410:18:272:1|mouse_move:422:18|mouse_button:422:18:272:0'
 cases[axis-inside]='mouse_axis:410:18:60'
 cases[axis-outside]='mouse_axis:-1:18:60'
 cases[axis-clamped]='mouse_axis:410:18:999'
-cases[axis-owned]='mouse_button:410:18:273:1|mouse_axis:410:18:60|reset:cancel'
-cases[mouse-canvas-pan]='mouse_button:900:155:273:1|mouse_move:900:105|mouse_button:900:105:273:0'
+cases[axis-owned]='mouse_button:410:18:272:1|mouse_axis:410:18:60|reset:cancel'
+cases[mouse-canvas-pan]='mouse_button:900:155:272:1|mouse_move:900:105|mouse_button:900:105:272:0'
 cases[touch-pan]='touch_down:1:900:155|touch_motion:1:900:105|touch_up:1'
 cases[touch-tap]='touch_down:1:410:18|touch_motion:1:421:18|touch_up:1'
 cases[touch-same-column]='touch_down:1:410:18|touch_motion:1:422:18|touch_motion:1:410:120|touch_up:1'
@@ -38,11 +40,11 @@ cases[touch-cancel-pan]='touch_down:1:900:155|touch_motion:1:900:105|touch_cance
 cases[touch-cancel-drag]='touch_down:1:410:18|touch_motion:1:422:18|touch_cancel:1'
 cases[mismatched-cancel]='touch_down:1:410:18|touch_cancel:2|touch_cancel:1'
 cases[touch-reacquire]='touch_down:1:410:18|touch_cancel:1|touch_down:2:410:18'
-cases[mouse-reacquire]='touch_down:1:410:18|touch_cancel:1|mouse_button:410:18:273:1'
+cases[mouse-reacquire]='touch_down:1:410:18|touch_cancel:1|mouse_button:410:18:272:1'
 cases[touch-axis-owned]='touch_down:1:410:18|mouse_axis:410:18:60|touch_cancel:1'
 cases[touch-pan-axis-owned]='touch_down:1:900:155|touch_motion:1:900:105|mouse_axis:900:105:60|touch_up:1'
 cases[stale-id]='touch_down:1:410:18|reset:refresh|touch_motion:1:422:18'
-cases[refresh-reset]='mouse_button:410:18:273:1|reset:refresh'
+cases[refresh-reset]='mouse_button:410:18:272:1|reset:refresh'
 cases[teardown-reset]='touch_down:1:900:155|reset:teardown|reset:teardown'
 
 idle='Idle,false,false,false,0,0,false,0,0,false,false,false,false,false,None'
@@ -60,9 +62,10 @@ drag_case() {
 }
 
 expectations[hover-clear]="Idle,-1,false|Idle,false,true,false,0,0,false,0,0,false,false,false,false,false,None;Idle,false,true,true,0,0,false,0,0,false,false,false,false,false,None"
-expectations[non-primary-passthrough]="Idle,-1,false|$idle"
+expectations[non-primary-passthrough]="Idle,-1,false|$idle;$idle"
 expectations[outside-primary-passthrough]="Idle,-1,false|$idle"
 expectations[mouse-click]="Idle,-1,false|$mouse_press;$mouse_under;Idle,true,false,false,0,0,true,1,201,false,false,false,false,true,None"
+expectations[right-release-during-left-press]="Idle,-1,false|$mouse_press;MousePressPending,false,false,false,0,0,false,0,0,false,false,false,false,false,None;Idle,true,false,false,0,0,true,1,201,false,false,false,false,true,None"
 expectations[threshold-drag]="WindowDrag,-1,true|$mouse_press;$mouse_under;$mouse_begin"
 drag_case same-column mouse ExistingColumn
 drag_case new-column-before mouse NewColumnBefore

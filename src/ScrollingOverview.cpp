@@ -461,6 +461,7 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
     const auto MON = m_monitor.lock();
     if (!MON || !m_startedOn)
         return false;
+    const bool hadScene = m_scene.valid;
 
     resetInputState(EResetReason::Refresh);
     releaseAllCaptureState();
@@ -468,13 +469,19 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
     m_renderTargets.clear();
 
     std::vector<PHLWORKSPACE> workspaces;
+    std::vector<int64_t> workspaceIDs;
     for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-        if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL || workspace->m_monitor != MON)
+        if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL)
+            continue;
+        workspaceIDs.push_back(workspaceID(workspace));
+        if (workspace->m_monitor != MON)
             continue;
         workspaces.push_back(workspace);
     }
-    if (std::ranges::find(workspaces, m_startedOn) == workspaces.end())
+    if (std::ranges::find(workspaces, m_startedOn) == workspaces.end()) {
         workspaces.push_back(m_startedOn);
+        workspaceIDs.push_back(workspaceID(m_startedOn));
+    }
     std::ranges::sort(workspaces, {}, [](const auto& workspace) { return workspaceID(workspace); });
 
     std::vector<SWorkspaceSpec> specs;
@@ -508,7 +515,9 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
 
     if (specs.empty())
         return false;
-    const int64_t terminalWorkspaceID = std::max<int64_t>(1, workspaceID(workspaces.back()) + 1);
+    const int64_t terminalWorkspaceID = nextUnusedOrdinaryWorkspaceID(workspaceIDs);
+    if (terminalWorkspaceID <= 0)
+        return false;
     const SSceneConfig sceneConfig{
         .viewportWidth = MON->m_size.x,
         .viewportHeight = MON->m_size.y,
@@ -520,7 +529,8 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
     m_scene = buildScene(specs, workspaceID(m_startedOn), sceneConfig);
     if (!m_scene.valid)
         return false;
-    m_pan = initialPan(m_scene, workspaceID(m_startedOn), MON->m_size.y);
+    // Client damage refreshes captures without reopening the overview's viewport.
+    m_pan = hadScene ? clampPan(m_scene, m_pan, MON->m_size.y) : initialPan(m_scene, workspaceID(m_startedOn), MON->m_size.y);
 
     std::unordered_set<uint64_t> seenTargets;
     for (const auto& row : m_rows) {
@@ -592,13 +602,7 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
     }
 
     refreshCache();
-    m_focus = {.kind = EHitKind::EmptyWorkspace, .workspaceID = workspaceID(m_startedOn)};
-    for (const auto& target : m_scene.targets) {
-        if (target.workspaceID == workspaceID(m_startedOn)) {
-            m_focus = {.kind = EHitKind::Target, .workspaceID = target.workspaceID, .targetToken = target.token};
-            break;
-        }
-    }
+    m_focus = focusAfterRefresh(m_scene, m_focus, workspaceID(m_startedOn));
     updateSelectionFromFocus();
     return true;
 }

@@ -325,6 +325,25 @@ SFocusRef moveFocus(const SScene& scene, const SFocusRef& current, EFocusDirecti
     return best->candidate->ref;
 }
 
+SFocusRef focusAfterRefresh(const SScene& scene, const SFocusRef& current, int64_t activeWorkspaceID) {
+    if (!scene.valid)
+        return {};
+    const auto candidates = focusCandidates(scene);
+    const auto retained = std::find_if(candidates.begin(), candidates.end(), [&current](const auto& candidate) {
+        return candidate.ref.kind == current.kind && candidate.ref.workspaceID == current.workspaceID && candidate.ref.targetToken == current.targetToken;
+    });
+    if (retained != candidates.end())
+        return retained->ref;
+
+    // A removed target should not pull navigation out of its surviving workspace.
+    for (const auto workspaceID : {current.workspaceID, activeWorkspaceID}) {
+        const auto fallback = std::find_if(candidates.begin(), candidates.end(), [workspaceID](const auto& candidate) { return candidate.ref.workspaceID == workspaceID; });
+        if (fallback != candidates.end())
+            return fallback->ref;
+    }
+    return candidates.empty() ? SFocusRef{} : candidates.front().ref;
+}
+
 size_t adjustDestinationColumnIndex(size_t sourceColumn, size_t destinationColumn, bool sourceColumnRemoved) {
     if (sourceColumnRemoved && sourceColumn < destinationColumn)
         return destinationColumn - 1;
