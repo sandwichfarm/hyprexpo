@@ -1,0 +1,22 @@
+{
+  "source_base": "69cf7e5f8400d302ac6597f2f14c820c41231528",
+  "source_patch_sha256": "1c87afb2473afec8b5e9cd6e961adf75fe65d50c4f877ba7a1a8ff75b157fa59",
+  "release_artifacts": {
+    "hyprland_0_56_1": "2603b0d655755e95ce78bf3d53533023af6718317b7799b453a4b4d46e867d3e",
+    "hyprland_0_56_2": "4e75fb66cdeec7d0d647dc77bbf39fa4009c8fe1d3b5ff6c1b9afea9f904ecb1"
+  },
+  "assets": {
+    "scrolling-0562.mp4": "af5c35d55a640c5b3a3bf03541e1873967460792c21df7be77712423f110530b",
+    "scrolling-0561.mp4": "a021a8d99f1d73196bd3fdcd7a538898daa8813f0cabb3a8f71387631d60ceed",
+    "scrolling-0561-input.mp4": "510b241f46dbaea02148e13b0f7661d1d80186ff1b54c840afc1f0dcc8f15d76",
+    "scrolling-0562-before.mp4": "481b4a9ac329d1289c77f15996e69c8938f239ee56d3804c146b4b111e5eaab8",
+    "scrolling-0562-panned.png": "efa109030538bd79b9a67feedff28372719999679fd030f61520a42de23f37ed",
+    "scrolling-0562-keyboard.png": "cd04426bc7e11f627e8044b7018a551e153eb7aeef6ce02d54b48892a4e1111a",
+    "scrolling-0562-grid.png": "82950f59cd99d65de6a042c7cead74261cfb6458becae26dd5e77448c7d79ca7",
+    "scrolling-0562-fullscreen.png": "23d6e644856f301af0df668e5475e0c41e5da644222a91113e65c1096d7546e7",
+    "scrolling-0562-before-keyboard.png": "33dcaed272a31f67df91978e188ab6299dc205db1dadd937ca962b288fac1c00",
+    "scrolling-0561-multirow.png": "b2bf43e3a0e4d9ffe4caca8210fd4c51da224c3a6cd2e023050485ffd8b79fef",
+    "scrolling-0561-empty-drop.png": "6df8c5b9176833eeaf7dc8f3d76ec4b02d83b648d7b64fc7a10c2729b937e501",
+    "scrolling-0561-terminal-dwindle.png": "437dece1eba9510c8893bfb70f8c93ef44f529b27a9051b83cc858f4580ed8d4"
+  }
+}
