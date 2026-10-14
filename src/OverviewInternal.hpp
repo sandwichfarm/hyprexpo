@@ -51,6 +51,7 @@ class CPinnedWindowPreviewGuard {
 void clearWithColor(const CHyprColor& color);
 uint32_t framebufferFormatWithAlpha(uint32_t drmFormat);
 bool isTransformRotated(wl_output_transform t);
+bool isTransform180(wl_output_transform t);
 
 std::string trimString(std::string value);
 WORKSPACEID workspaceIDForMonitor(const PHLMONITOR& monitor, const std::string& selector);
