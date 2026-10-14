@@ -106,6 +106,11 @@ int main() {
 
     const auto mainSource = readFile("src/main.cpp");
     expect(!mainSource.empty(), "src/main.cpp can be read from repo root");
+    const auto overviewPreChecks = extractFunction(mainSource, "m_events.render.preChecks.listen(");
+    expect(!overviewPreChecks.empty(), "overview rendering disables fullscreen fast paths before scanout checks");
+    expectContains(overviewPreChecks, "overviewForMonitor(pMonitor)", "fullscreen fast-path override requires an overview on the same monitor");
+    expectOrder(overviewPreChecks, "OV->shouldRenderOverviewForMonitor(pMonitor)", "pMonitor->m_solitaryClient.reset()",
+                "fullscreen fast-path override is scoped to a session rendering this monitor");
     expect(mainSource.find("const Time::steady_tp& now") != std::string::npos, "render hook uses the Hyprland 0.56 time-point ABI");
     expect(mainSource.find("_ZN7Monitor8CMonitor9addDamageERKN9Hyprutils4Math4CBoxE") != std::string::npos,
            "damage hook uses the Hyprland 0.56 namespaced monitor symbol");
@@ -747,12 +752,32 @@ int main() {
                      "native transaction forbids cursor/drag/camera operation " + std::string{token});
     expectContains(adapterSource, "controller->setDirection", "native transaction restores the exact pre-state direction after host structure changes");
     expectContains(adapterSource, "controller->setOffset(workspaceState.offset)", "native transaction restores the exact pre-state offset after host structure changes");
+    for (const auto& signature : {"SMutationWorkspace mutationWorkspace(", "void snapshotMixedAndRetain(", "SMutationWorkspace emptyNativeState("}) {
+        const auto snapshot = extractFunction(adapterSource, signature);
+        expectContains(snapshot, "canonicalizeMutationMembers(", "native membership snapshot has stable ordering: " + std::string{signature});
+    }
+    for (const auto& signature : {"void snapshotMixedAndRetain(", "SMutationWorkspace emptyNativeState("}) {
+        const auto snapshot = extractFunction(adapterSource, signature);
+        expectContains(snapshot, "Desktop::focusState()->window()", "empty and mixed snapshots observe real compositor focus: " + std::string{signature});
+        expectAbsent(snapshot, "expected->focused", "rollback never substitutes expected focus for observed focus");
+    }
+    const auto emptySnapshot = extractFunction(adapterSource, "void snapshotScrollingOrEmptyAndRetain(");
+    expectContains(emptySnapshot, "resolveNativeWorkspace(workspace)", "empty destination retains the actual native controller before mutation");
+    expectContains(emptySnapshot, "emptyNativeState(native)", "empty pre-state and readback share the actual controller snapshot");
+    const auto emptyReadback = extractFunction(adapterSource, "SMutationWorkspace emptyNativeState(");
+    for (const auto& token : {"fingerprint(native.data)", "controller->getDirection()", "controller->getOffset()", "controller->stripCount() != 0"})
+        expectContains(emptyReadback, token, "empty native readback verifies real controller state: " + std::string{token});
+    expectAbsent(emptyReadback, "expected", "empty rollback cannot synthesize expected controller state");
 
     for (const auto& token : {"Desktop::globalWindowController()->moveWindowToWorkspace", "controllerMove", "reverse", "reResolve", "nextUnusedOrdinaryWorkspaceID",
                               "State::workspaceState()->create", "m_monitor", "MixedFallback", "TerminalWorkspace"})
         expectContains(adapterSource + mutationSource, token, "cross/terminal transaction exposes " + std::string{token});
     expectOrder(adapterSource, "moveWindowToWorkspace", "reResolve", "cross move discards stale ownership before destination positioning");
     expectContains(adapterSource, "if (reverse)", "rollback controller path explicitly reverses ownership");
+    expectContains(adapterSource, "workspaceUsesScrollingLayout(m_destinationWorkspace)", "created terminal workspace follows its resolved native layout rules");
+    const auto nativeReResolve = extractFunction(adapterSource, "void reResolve(SMutationPlan& plan, bool rollback)");
+    expectContains(nativeReResolve, "!rollback && plan.createDestination && plan.request.kind == EDropKind::TerminalWorkspace && current.workspace == m_createdDestination",
+                   "only a newly created terminal destination may refine its layout kind");
     expectContains(adapterSource, "m_createdDestination", "terminal rollback tracks the workspace created by this transaction");
     for (const auto& token : {"proveCreatedDestinationRollback", "stripCount()", "workspacesCopy()", "m_native.erase", "m_createdDestination.reset()"})
         expectContains(adapterSource, token, "terminal rollback proves empty controller/workspace release via " + std::string{token});
@@ -838,6 +863,13 @@ int main() {
     expectOrder(windowCapture, "beginFullFakeRender(", "renderWindow(", "target capture begins fake rendering before the window draw");
     expectOrder(windowCapture, "renderWindow(", "rendererState.finish()", "target capture balances the renderer after drawing");
     expectOrder(windowCapture, "rendererState.finish()", "result.completed", "target capture publishes only after balanced completion");
+    expectContains(windowCapture, "fitWindowPreview(", "window capture fits the complete native window into its thumbnail");
+    expectContains(windowCapture, "sourceFramebuffer", "window capture first renders every surface at native size");
+    expectOrder(windowCapture, "rendererState.finish()", "renderTextureInternal(", "the completed native texture is fitted after surface damage and clipping");
+    expectContains(windowCapture, "scratchBudget", "temporary native capture has a bounded pixel allocation");
+    expectAbsent(windowCapture, "RMOD_TYPE_SCALE", "window capture does not scale geometry without scaling subsurface clips");
+    expectContains(windowCapture, "RPT_EXPORT", "window capture uses an unrotated framebuffer projection");
+    expectContains(windowCapture, "noSimplify = true", "capture does not cull subsurfaces using their unscaled bounds");
     for (const auto& token : {"glReadPixels(", "readPixels(", "std::ofstream", ".ppm", "sha256", "SHA256"})
         expectAbsent(captureSource, token, "production capture forbids plugin-side pixel evidence path " + std::string{token});
 
@@ -1043,7 +1075,13 @@ int main() {
     expectContains(scrollingInstallInput, "event.device->m_boundOutput.empty()", "touch ownership requires an explicitly bound output");
     expectAbsent(scrollingInstallInput, ": m_monitor.lock()", "unbound touch devices are not guessed onto the overview monitor");
     const auto scrollingRefresh = extractFunction(scrollingSource, "bool CScrollingOverview::refreshScene(");
+    expectContains(scrollingRefresh, "nextUnusedOrdinaryWorkspaceID(workspaceIDs)", "terminal scene shares the transaction's first-unused allocation policy");
+    expectOrder(scrollingRefresh, "workspaceIDs.push_back(workspace->m_id)", "if (workspace->m_monitor != MON)", "terminal allocation includes ordinary IDs on every monitor");
     const auto scrollingPreRender = extractFunction(scrollingSource, "void CScrollingOverview::onPreRender(");
+    expectOrder(scrollingRefresh, "const bool hadScene = m_scene.valid", "m_scene = buildScene(", "scene refresh distinguishes an existing viewport from first open");
+    expectContains(scrollingRefresh, "hadScene ? clampPan(m_scene, m_pan, MON->m_size.y) : initialPan(", "content refresh retains pan while first open centers the active row");
+    expectContains(scrollingRefresh, "focusAfterRefresh(m_scene, m_focus, m_startedOn->m_id)", "runtime refresh uses the tested surviving-focus policy");
+    expectAbsent(scrollingRefresh, "m_focus = {.kind", "content refresh does not overwrite keyboard selection with the opening workspace");
     expectOrder(scrollingPreRender, "m_inputState.owner != EInputOwner::None", "m_damageDirty = false;",
                 "ordinary damage stays pending while a mouse or touch interaction owns the scene");
     const auto scrollingEffects = extractFunction(scrollingSource, "void CScrollingOverview::applyInputEffects(");

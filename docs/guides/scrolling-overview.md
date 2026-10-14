@@ -2,9 +2,11 @@
 
 HyprExpo detects Hyprland's native `scrolling` layout on the workspace where
 the overview opens. A valid native snapshot selects the window-level scrolling
-session; non-scrolling, empty, expired, or incompatible state falls back to the
-existing workspace grid. The grid implementation itself has no scrolling mode
-branches.
+session. An empty native scrolling workspace can also open this session without
+a window snapshot. Non-scrolling workspaces use the existing workspace grid.
+If a non-empty scrolling workspace cannot provide a valid snapshot, opening
+fails with a notification; it does not silently switch to the grid. The grid
+implementation itself has no scrolling mode branches.
 
 Set `plugin:hyprexpo:overview_mode = grid` to opt out of this detection
 entirely and always open the classic workspace grid, even on workspaces whose
@@ -20,16 +22,34 @@ layer-shell or wallpaper composition, or arbitrary insertion of workspaces.
 
 ## Scene and captures
 
-Every ordinary workspace on the monitor becomes a vertical row. Native
+Every existing ordinary workspace on the monitor becomes a vertical row, sorted
+by workspace ID. An uncreated workspace ID does not reserve a row. Native
 scrolling rows preserve direction (`right`, `left`, `down`, or `up`), column
-order, per-column width, target order and proportions, current native offset,
-and targets beyond the visible viewport. Non-scrolling workspaces are mixed
-rows rendered through the same workspace-capture boundary as the default grid.
+order, relative column widths, target order and proportions, and targets beyond
+the native viewport, without changing the native scrolling offset. Non-scrolling
+workspaces are mixed rows rendered through the same workspace-capture boundary
+as the default grid.
 Floating, grouped, fullscreen, and optionally pinned targets remain classified
 in diagnostic state.
 
-One terminal row represents only the next empty ordinary workspace. Dropping
-there creates that workspace transactionally. There is no arbitrary workspace
+The opening viewport centers the active workspace row. Neighboring rows may be
+partially or entirely offscreen: use the mouse wheel, drag the canvas, or move
+keyboard focus up/down to reach them. Each scrolling row fits its complete tape
+inside its bounds, so adding wide columns makes that row's previews smaller.
+For example, two wide windows on the next workspace can initially sit below the
+viewport even when a single window on that workspace would partly show. Panning
+reveals the full row; it does not scroll or change the native window layout.
+Content updates preserve the current overview pan and surviving keyboard focus.
+
+Scrolling rows show individual windows; a mixed non-scrolling row shows its
+whole workspace. `workspace_method` controls the classic grid only and does not
+change these rows. Use `overview_mode = grid` when you want workspace thumbnails
+in a grid on a scrolling workspace.
+
+One terminal row represents only the next empty ordinary workspace: the first
+unused positive ID across all monitors. Dropping there creates that workspace
+transactionally and follows its configured layout rules. A new non-scrolling
+workspace uses the mixed-workspace move path. There is no arbitrary workspace
 insertion before, after, or between existing workspace IDs.
 
 `plugin:hyprexpo:scrolling_thumbnail_budget` is the integer multiplier `m`
@@ -47,18 +67,18 @@ The runtime listens to the exact Hyprland signals `input.mouse.move`,
 
 - Mouse move updates exact-window hover enter/change/clear and damage without
   consuming ordinary hover motion or hiding the cursor.
-- A primary press on a window is owned. Release below the 12-logical-pixel
+- A left-button press on a window is owned. Release below the 12-logical-pixel
   threshold is an exact click; crossing the threshold starts one drag proxy and
   release produces at most one drop.
-- Primary press on the canvas owns a pan. Mouse axis inside the overview pans
-  and is consumed; outside axis passes through. Axis during an owned drag is
+- A left-button press on the canvas owns a pan. Mouse axis inside the overview
+  pans and is consumed; outside axis passes through. Axis during an owned drag is
   consumed without moving the native tape or applying an extra pan.
 - Touch follows the same tap/threshold-drag model. A matching
   `input.touch.cancel` clears pending, pan, or drag ownership, selection, drop
   intent, hover, and proxy state. A mismatched ID passes through. Mouse or touch
   can reacquire immediately after cancel.
-- Unowned buttons, unrelated touch IDs, and events outside the overview pass
-  through. The effect returned by the pure input transition is the sole source
+- Right and middle buttons, unrelated touch IDs, and events outside the overview
+  pass through. The effect returned by the pure input transition is the sole source
   of Hyprland event consumption.
 
 Keyboard focus is spatial across windows and workspace rows. Confirm selects
@@ -110,8 +130,10 @@ The validator also uses the debug-gated `hyprexpo:scrolling_mutation_test`
 dispatcher to execute every destination against the loaded Hyprland model. Its
 records retain exact before/after workspace, column, target, membership, width,
 row-size, direction, offset, focus, and identity state. A single request-scoped
-`apply:add-target:after` fault proves native rollback; it cannot remain armed
-for a later interaction.
+`apply:add-target:after` fault proves native rollback. The separately allowlisted
+`apply:re-resolve:after` fault also covers a terminal workspace whose configured
+layout uses the mixed-workspace path. Neither fault can remain armed for a later
+interaction.
 
 Opening, closing, and gesture swipes animate the complete scrolling scene.
 Pointer and touch ownership begins only after the opening transform settles;

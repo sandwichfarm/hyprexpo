@@ -156,7 +156,8 @@ class IMutationOperations {
     virtual SMutationState snapshotPreState(const SMutationRequest& request) = 0;
     virtual void removeTarget(const SMutationPlan& plan) = 0;
     virtual void controllerMove(const SMutationPlan& plan, bool reverse) = 0;
-    virtual void reResolve(const SMutationPlan& plan, bool rollback) = 0;
+    // May refine mixedFallback only for a newly created terminal destination.
+    virtual void reResolve(SMutationPlan& plan, bool rollback) = 0;
     virtual void addTarget(const SMutationPlan& plan) = 0;
     virtual void restorePreState(const SMutationState& before, const SMutationPlan& plan) = 0;
     virtual void restoreWidths(const SMutationState& before, const SMutationPlan& plan, bool rollback) = 0;
@@ -166,6 +167,7 @@ class IMutationOperations {
 };
 
 SMutationPlan              buildMutationPlan(const SMutationState& before, const SMutationRequest& request);
+void                       canonicalizeMutationMembers(SMutationWorkspace& workspace);
 std::vector<std::string>   verifyPostconditions(const SMutationState& before, const SMutationState& after, const SMutationPlan& plan, bool rollback);
 SMutationResult            executeMutation(const SMutationRequest& request, IMutationOperations& operations);
 
@@ -177,7 +179,8 @@ struct SMutationSimulation {
     size_t                     reverseMoveCount = 0;
 };
 
-SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequest& request, std::optional<SFaultInjection> fault = std::nullopt);
+SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequest& request, std::optional<SFaultInjection> fault = std::nullopt,
+                                      EMutationWorkspaceKind createdWorkspaceKind = EMutationWorkspaceKind::Scrolling);
 SMutationDebugRequest parseMutationDebugRequest(const std::string& argument);
 std::string_view       mutationKindName(EDropKind kind);
 std::string_view       columnPlacementName(EColumnPlacement placement);
