@@ -123,6 +123,33 @@ void COverview::onDamageReported() {
     MON->scheduleFrame();
 }
 
+void COverview::onSourceMonitorDamage(const PHLMONITOR& source) {
+    const auto MON = pMonitor.lock();
+    if (!MON || !source || source == MON || closing || blockOverviewRendering)
+        return;
+
+    const bool hadQueuedRedraws = !queuedRedrawIDs.empty();
+    for (size_t i = 0; i < images.size(); ++i) {
+        auto& image = images[i];
+        if (!image.pWorkspace) {
+            for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
+                if (workspace->m_id == image.workspaceID) {
+                    image.pWorkspace = workspace;
+                    break;
+                }
+            }
+        }
+        if (image.pWorkspace && image.pWorkspace->m_monitor == source)
+            queueRedrawID(i);
+    }
+    if (hadQueuedRedraws || queuedRedrawIDs.empty())
+        return;
+
+    // Capture only at this overview's next pre-render, outside the source damage stack.
+    damage();
+    MON->scheduleFrame();
+}
+
 void COverview::close(bool switchToSelection) {
     if (closing)
         return;
@@ -243,6 +270,7 @@ void COverview::onPreRender() {
         damageDirty = false;
         redrawID(closing ? (closeOnID == -1 ? openedID : closeOnID) : openedID);
     }
+    flushQueuedRedraws(false);
 }
 
 void COverview::onWorkspaceChange() {

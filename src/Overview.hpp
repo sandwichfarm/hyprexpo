@@ -31,6 +31,7 @@ class COverview final : public IOverviewSession {
     void render() override;
     void damage() override;
     void onDamageReported() override;
+    void onSourceMonitorDamage(const PHLMONITOR& source) override;
     void onPreRender() override;
     void onConfigReload() override {
         onDamageReported();
@@ -130,7 +131,7 @@ class COverview final : public IOverviewSession {
     void       updateWindowDrag();
     void       redrawDraggedWorkspace(int64_t workspaceID);
     void       queueRedrawID(int id);
-    void       flushQueuedRedraws();
+    void       flushQueuedRedraws(bool scheduleFrame = true);
     PHLWINDOW  windowAtTilePoint(int id, const Vector2D& localPoint) const;
     Vector2D   tilePointToWorkspacePoint(int id, const Vector2D& localPoint) const;
     PHLWORKSPACE ensureWorkspaceForTile(int id);

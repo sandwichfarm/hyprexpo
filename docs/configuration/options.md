@@ -121,7 +121,11 @@ It defaults to `0`, which keeps the existing monitor-local ordering. Use
 other workspace methods keep their existing behavior. `max_workspace` still
 caps the emitted IDs. For scrolling layouts, set `overview_mode = grid`.
 
-Foreign tiles are captured on their owning monitor. Selecting one closes all
+Foreign tiles are captured on their owning monitor and refresh when that monitor
+reports damage. Updates are coalesced until the overview monitor renders; idle
+foreign monitors do not start a polling loop. Hidden applications may pause or
+be throttled; previews use available content without forcing frame callbacks
+for hidden clients. Selecting one closes all
 overviews immediately, without zooming that tile across the overview monitor,
 then focuses its workspace and moves the cursor to that monitor. Workspace
 ownership stays unchanged. Window dragging and index-based window moves are

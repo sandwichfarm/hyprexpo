@@ -20,6 +20,7 @@ class IOverviewSession {
     virtual void render() = 0;
     virtual void damage() = 0;
     virtual void onDamageReported() = 0;
+    virtual void onSourceMonitorDamage(const PHLMONITOR&) {}
     virtual void onPreRender() = 0;
     virtual void onConfigReload() = 0;
     virtual void prepareForTeardown() = 0;

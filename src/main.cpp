@@ -36,9 +36,20 @@ static void hkRenderWorkspace(void* thisptr, PHLMONITOR pMonitor, PHLWORKSPACE p
         OV->render();
 }
 
+static void notifyForeignWorkspaceDamage(const PHLMONITOR& monitor) {
+    if (!monitor || isRenderingOverview() || Hyprexpo::Capture::isCapturingWorkspacePreview())
+        return;
+    const auto source = overviewForMonitor(monitor);
+    if (source && (source->blocksDamageReporting() || source->blocksOverviewRendering()))
+        return;
+    forEachOverview([&](IOverviewSession& session) { session.onSourceMonitorDamage(monitor); });
+}
+
 static void hkAddDamageA(void* thisptr, const CBox& box) {
     const auto PMONITOR   = (Monitor::CMonitor*)thisptr;
     const auto PMONITORSP = PMONITOR ? PMONITOR->m_self.lock() : PHLMONITOR{};
+
+    notifyForeignWorkspaceDamage(PMONITORSP);
 
     auto* const OV = overviewForMonitor(PMONITORSP);
 
@@ -53,6 +64,8 @@ static void hkAddDamageA(void* thisptr, const CBox& box) {
 static void hkAddDamageB(void* thisptr, const pixman_region32_t* rg) {
     const auto PMONITOR   = (Monitor::CMonitor*)thisptr;
     const auto PMONITORSP = PMONITOR ? PMONITOR->m_self.lock() : PHLMONITOR{};
+
+    notifyForeignWorkspaceDamage(PMONITORSP);
 
     auto* const OV = overviewForMonitor(PMONITORSP);
 

@@ -458,7 +458,7 @@ void COverview::queueRedrawID(int id) {
         queuedRedrawIDs.push_back(id);
 }
 
-void COverview::flushQueuedRedraws() {
+void COverview::flushQueuedRedraws(bool scheduleFrame) {
     if (queuedRedrawIDs.empty())
         return;
 
@@ -468,9 +468,11 @@ void COverview::flushQueuedRedraws() {
     for (const auto id : ids)
         redrawID(id);
 
-    damage();
-    if (const auto MON = pMonitor.lock())
-        MON->scheduleFrame();
+    if (scheduleFrame) {
+        damage();
+        if (const auto MON = pMonitor.lock())
+            MON->scheduleFrame();
+    }
 }
 
 bool COverview::selectVisibleToken(const std::string& token) {
