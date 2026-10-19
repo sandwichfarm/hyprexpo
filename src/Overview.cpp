@@ -1319,20 +1319,36 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
     }
     PMONITOR->m_activeWorkspace        = startedOn;
     startedOn->m_visible               = true;
-    Animation::Workspace::startAnimation(startedOn, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
 
-    const auto initSize = zoomSizeForCurrentGrid(pMonitor->m_size);
-    Animation::mgr()->createAnimation(initSize, size, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
-    Animation::mgr()->createAnimation(-(tilePosForID(currentid, initSize, 0.0) * pMonitor->m_scale), pos, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
+    const auto animConfig = Config::animationTree()->getAnimationPropertyConfig("windowsMove");
+    const bool animEnabled = animConfig && animConfig->pValues && animConfig->pValues->internalEnabled;
+
+    if (animEnabled)
+        Animation::Workspace::startAnimation(startedOn, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
+
+    const auto initSize = (!swipe && !animEnabled) ? pMonitor->m_size : zoomSizeForCurrentGrid(pMonitor->m_size);
+    const auto initPos  = (!swipe && !animEnabled) ? Vector2D{0, 0} : (-(tilePosForID(currentid, initSize, 0.0) * pMonitor->m_scale));
+
+    Animation::mgr()->createAnimation(initSize, size, animConfig, AVARDAMAGE_NONE);
+    Animation::mgr()->createAnimation(initPos, pos, animConfig, AVARDAMAGE_NONE);
 
     size->setUpdateCallback(damageMonitor);
     pos->setUpdateCallback(damageMonitor);
 
     if (!swipe) {
-        *size = pMonitor->m_size;
-        *pos  = {0, 0};
-
-        size->setCallbackOnEnd([this](auto) { redrawAll(true); });
+        if (!animEnabled) {
+            size->setValueAndWarp(pMonitor->m_size);
+            pos->setValueAndWarp(Vector2D{0, 0});
+            redrawAll(true);
+            g_pHyprRenderer->damageMonitor(PMONITOR);
+            pMonitor->scheduleFrame();
+        } else {
+            size->setCallbackOnEnd([this](auto) { redrawAll(true); });
+            *size = pMonitor->m_size;
+            *pos  = {0, 0};
+            g_pHyprRenderer->damageMonitor(PMONITOR);
+            pMonitor->scheduleFrame();
+        }
     }
 
     openedID = currentid;
@@ -1386,7 +1402,9 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
         // If expo hasn't animated in enough to be visible, close silently without
         // consuming the event. This prevents phantom triggers (e.g. a bouncing
         // mouse side-button firing the expo keybind) from swallowing real clicks.
-        if (TARGET && TARGET->size->getPercent() < 0.05f) {
+        const auto animConfig = Config::animationTree()->getAnimationPropertyConfig("windowsMove");
+        const bool animEnabled = animConfig && animConfig->pValues && animConfig->pValues->internalEnabled;
+        if (TARGET && animEnabled && TARGET->size->getPercent() < 0.05f) {
             TARGET->close(false);
             return;
         }

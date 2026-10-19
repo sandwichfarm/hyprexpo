@@ -9,6 +9,7 @@
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/ConfigValue.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
+#include <hyprland/src/config/shared/animation/AnimationTree.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/animation/WorkspaceAnimationController.hpp>
@@ -181,7 +182,49 @@ void COverview::close(bool switchToSelection) {
         return;
     }
 
+    const auto animConfig = Config::animationTree()->getAnimationPropertyConfig("windowsMove");
+    const bool animEnabled = animConfig && animConfig->pValues && animConfig->pValues->internalEnabled;
+
+    if (!animEnabled) {
+        closing = true;
+
+        if (switchToSelection && (TILE.workspaceID != WORKSPACE_INVALID || emptyTilesSelectable) &&
+            (TILE.workspaceID != MON->activeWorkspaceID() || Desktop::focusState()->monitor() != MON)) {
+            MON->setSpecialWorkspace(0);
+
+            const WORKSPACEID NEWID = TILE.workspaceID == WORKSPACE_INVALID ? nextEmptyWorkspaceIDForMonitor(MON) : TILE.workspaceID;
+
+            PHLWORKSPACE NEWIDWS;
+            if (TILE.workspaceID != WORKSPACE_INVALID)
+                NEWIDWS = ensureWorkspaceForTile(SAFEID);
+
+            if (!NEWIDWS) {
+                for (const auto& w : State::workspaceState()->workspacesCopy()) {
+                    if (w->m_id == NEWID) {
+                        NEWIDWS = w;
+                        break;
+                    }
+                }
+            }
+
+            if (!NEWIDWS && NEWID != WORKSPACE_INVALID)
+                NEWIDWS = State::workspaceState()->create(NEWID, MON->m_id, std::to_string(NEWID), false);
+
+            const auto CHANGE = Config::Actions::changeWorkspace(NEWIDWS);
+            if (!CHANGE)
+                Log::logger->log(Log::ERR, "[hyprexpo] failed to change workspace: {}", CHANGE.error().message);
+
+            startedOn = MON->m_activeWorkspace;
+        }
+
+        destroyOverview(this);
+        g_pHyprRenderer->damageMonitor(MON);
+        MON->scheduleFrame();
+        return;
+    }
+
     const auto targetSize = zoomSizeForCurrentGrid(MON->m_size);
+    size->setCallbackOnEnd(removeOverview);
     *size = targetSize;
     *pos  = -(tilePosForID(SAFEID, targetSize, 0.0) * MON->m_scale);
 
@@ -234,8 +277,6 @@ void COverview::close(bool switchToSelection) {
 
         startedOn = MON->m_activeWorkspace;
     }
-
-    size->setCallbackOnEnd(removeOverview);
 }
 
 void COverview::onPreRender() {
