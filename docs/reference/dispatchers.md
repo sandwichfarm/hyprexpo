@@ -83,5 +83,7 @@ validator. `KIND` is one of `same-column`, `existing-column`,
 `new-column-before`, `new-column-after`, `cross-scrolling`, `mixed-workspace`,
 `terminal-workspace`, or `no-op-release`. Terminal requests use destination
 workspace `0`, which is resolved to the next empty workspace at release time.
-The sole accepted fault is `apply:add-target:after`; it is scoped to that one
-request and proves rollback after a real native mutation.
+Accepted faults are `apply:add-target:after` and `apply:re-resolve:after`.
+Each is scoped to one request. The latter also exercises rollback for a newly
+created workspace whose configured layout is not scrolling, where native
+column insertion is skipped.

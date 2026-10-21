@@ -44,6 +44,16 @@ std::map<uint64_t, size_t> membershipCounts(const SMutationState& state) {
     return counts;
 }
 
+uint64_t focusedTargetFor(const SMutationWorkspace& workspace, uint64_t windowIdentity) {
+    if (windowIdentity == 0)
+        return 0;
+    for (const auto& column : workspace.columns)
+        for (const auto& target : column.targets)
+            if (target.windowIdentity == windowIdentity)
+                return target.identity;
+    return 0;
+}
+
 std::vector<uint64_t> columnOrderWithout(const SMutationWorkspace& workspace, uint64_t movedTarget) {
     std::vector<uint64_t> result;
     for (const auto& column : workspace.columns) {
@@ -76,7 +86,8 @@ void operation(IMutationOperations& operations, EMutationPhase phase, EMutationS
 
 class CInMemoryOperations final : public IMutationOperations {
   public:
-    CInMemoryOperations(SMutationState state, std::optional<SFaultInjection> fault) : m_state(std::move(state)), m_fault(fault) {
+    CInMemoryOperations(SMutationState state, std::optional<SFaultInjection> fault, EMutationWorkspaceKind createdWorkspaceKind) :
+        m_state(std::move(state)), m_fault(fault), m_createdWorkspaceKind(createdWorkspaceKind) {
         for (const auto& workspace : m_state.workspaces)
             for (const auto& column : workspace.columns)
                 m_nextColumnIdentity = std::max(m_nextColumnIdentity, column.identity + 1);
@@ -91,7 +102,10 @@ class CInMemoryOperations final : public IMutationOperations {
     }
 
     SMutationState snapshotPreState(const SMutationRequest&) override {
-        return m_state;
+        auto snapshot = m_state;
+        for (auto& workspace : snapshot.workspaces)
+            canonicalizeMutationMembers(workspace);
+        return snapshot;
     }
 
     void removeTarget(const SMutationPlan& plan) override {
@@ -108,8 +122,9 @@ class CInMemoryOperations final : public IMutationOperations {
         if (!to) {
             if (!plan.createDestination || reverse)
                 throw std::runtime_error("controller destination workspace vanished");
-            m_state.workspaces.push_back({.workspaceID = toID, .modelIdentity = static_cast<uint64_t>(1000 + toID), .kind = EMutationWorkspaceKind::Scrolling,
-                                          .direction = from->direction, .offset = 0.0, .focusedTargetIdentity = 0, .focusedWindowIdentity = 0,
+            m_state.workspaces.push_back({.workspaceID = toID, .modelIdentity = m_createdWorkspaceKind == EMutationWorkspaceKind::Scrolling ? static_cast<uint64_t>(1000 + toID) : 0,
+                                          .kind = m_createdWorkspaceKind, .direction = m_createdWorkspaceKind == EMutationWorkspaceKind::Scrolling ? from->direction : std::string{},
+                                          .offset = 0.0, .focusedTargetIdentity = 0, .focusedWindowIdentity = from->focusedWindowIdentity,
                                           .columns = {}, .members = {}});
             to = &m_state.workspaces.back();
             from = workspaceFor(m_state, fromID);
@@ -126,8 +141,9 @@ class CInMemoryOperations final : public IMutationOperations {
             ++m_controllerMoveCount;
     }
 
-    void reResolve(const SMutationPlan&, bool) override {
-        // The in-memory model has no borrowed references; this boundary remains fault injectable.
+    void reResolve(SMutationPlan& plan, bool rollback) override {
+        if (!rollback && plan.createDestination && plan.request.kind == EDropKind::TerminalWorkspace)
+            plan.mixedFallback = workspaceFor(m_state, plan.request.destinationWorkspaceID)->kind == EMutationWorkspaceKind::Mixed;
     }
 
     void addTarget(const SMutationPlan& plan) override {
@@ -199,10 +215,16 @@ class CInMemoryOperations final : public IMutationOperations {
         }
     }
 
-    void recalculate(const SMutationPlan&, bool) override {}
+    void recalculate(const SMutationPlan&, bool) override {
+        for (auto& workspace : m_state.workspaces)
+            workspace.focusedTargetIdentity = focusedTargetFor(workspace, workspace.focusedWindowIdentity);
+    }
 
     SMutationState snapshotPostState(const SMutationPlan&, bool) override {
-        return m_state;
+        auto snapshot = m_state;
+        for (auto& workspace : snapshot.workspaces)
+            canonicalizeMutationMembers(workspace);
+        return snapshot;
     }
 
     void setBeforeSnapshot(SMutationState state) {
@@ -222,8 +244,15 @@ class CInMemoryOperations final : public IMutationOperations {
     uint64_t                   m_nextColumnIdentity = 10000;
     size_t                     m_controllerMoveCount = 0;
     size_t                     m_reverseMoveCount = 0;
+    EMutationWorkspaceKind     m_createdWorkspaceKind;
 };
 
+}
+
+void canonicalizeMutationMembers(SMutationWorkspace& workspace) {
+    // CSpace enumerates registration order; native visual order lives in columns.
+    // Keep duplicates so exact-once validation still detects them.
+    std::ranges::sort(workspace.members);
 }
 
 SMutationPlan buildMutationPlan(const SMutationState& before, const SMutationRequest& request) {
@@ -282,6 +311,9 @@ SMutationPlan buildMutationPlan(const SMutationState& before, const SMutationReq
         plan.error = "native scrolling destination is unavailable";
         return plan;
     }
+    if (plan.crossWorkspace && destination != before.workspaces.end() && destination->columns.empty() && request.placement == EColumnPlacement::Existing &&
+        request.destinationColumnIndex == 0 && request.destinationRowIndex == 0)
+        plan.request.placement = EColumnPlacement::Before;
     if (!plan.noOp && !plan.crossWorkspace && request.kind != EDropKind::ExistingColumn && request.kind != EDropKind::NewColumnBefore && request.kind != EDropKind::NewColumnAfter) {
         plan.error = "same-workspace mutation kind is unsupported";
         return plan;
@@ -319,8 +351,12 @@ std::vector<std::string> verifyPostconditions(const SMutationState& before, cons
                 beforeTopology[target.identity].push_back(workspace.workspaceID);
     for (const auto& workspace : after.workspaces)
         for (const auto& column : workspace.columns)
-            for (const auto& target : column.targets)
+            for (const auto& target : column.targets) {
                 afterTopology[target.identity].push_back(workspace.workspaceID);
+                const auto original = targetFor(before, target.identity);
+                if (original && original->windowIdentity != target.windowIdentity)
+                    appendUnique(violations, "target.window-identity");
+            }
     for (const auto& [identity, owners] : beforeTopology) {
         const size_t expectedCount = identity == plan.request.targetIdentity && plan.mixedFallback ? 0 : 1;
         const auto found = afterTopology.find(identity);
@@ -346,9 +382,12 @@ std::vector<std::string> verifyPostconditions(const SMutationState& before, cons
                 appendUnique(violations, "controller.direction-offset");
             if (oldWorkspace.modelIdentity != current->modelIdentity)
                 appendUnique(violations, "model.identity");
-            if (oldWorkspace.focusedTargetIdentity != current->focusedTargetIdentity || oldWorkspace.focusedWindowIdentity != current->focusedWindowIdentity)
-                appendUnique(violations, "focus.identity");
         }
+        // The global focused window stays fixed, but its local target follows a
+        // cross-workspace move. An empty source consequently has no focused target.
+        if (oldWorkspace.focusedWindowIdentity != current->focusedWindowIdentity ||
+            focusedTargetFor(*current, oldWorkspace.focusedWindowIdentity) != current->focusedTargetIdentity)
+            appendUnique(violations, "focus.identity");
         if (columnOrderWithout(oldWorkspace, plan.request.targetIdentity) != columnOrderWithout(*current, plan.request.targetIdentity))
             appendUnique(violations, "unaffected.order");
         for (const auto& oldColumn : oldWorkspace.columns) {
@@ -502,8 +541,8 @@ SMutationResult executeMutation(const SMutationRequest& request, IMutationOperat
     return result;
 }
 
-SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequest& request, std::optional<SFaultInjection> fault) {
-    CInMemoryOperations operations{std::move(initial), fault};
+SMutationSimulation simulateMutation(SMutationState initial, const SMutationRequest& request, std::optional<SFaultInjection> fault, EMutationWorkspaceKind createdWorkspaceKind) {
+    CInMemoryOperations operations{std::move(initial), fault, createdWorkspaceKind};
     operations.setBeforeSnapshot(operations.m_state);
     auto result = executeMutation(request, operations);
     return {.result = std::move(result), .state = std::move(operations.m_state), .boundaries = std::move(operations.m_boundaries),
@@ -599,11 +638,17 @@ SMutationDebugRequest parseMutationDebugRequest(const std::string& argument) {
     }
 
     if (!fault.empty()) {
-        if (fault != "apply:add-target:after") {
-            parsed.error = "fault must be apply:add-target:after";
+        if (fault != "apply:add-target:after" && fault != "apply:re-resolve:after") {
+            parsed.error = "fault must be apply:add-target:after or apply:re-resolve:after";
             return parsed;
         }
-        parsed.fault = SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::AddTarget, .when = EFaultWhen::After};
+        if (fault == "apply:re-resolve:after" && parsed.sourceWorkspaceID == parsed.destinationWorkspaceID) {
+            parsed.error = "post-resolution fault requires a cross-workspace move";
+            return parsed;
+        }
+        parsed.fault = SFaultInjection{.phase = EMutationPhase::Apply,
+                                      .step = fault == "apply:add-target:after" ? EMutationStep::AddTarget : EMutationStep::ReResolve,
+                                      .when = EFaultWhen::After};
     }
     parsed.valid = true;
     return parsed;

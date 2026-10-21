@@ -6,13 +6,14 @@
 #include <charconv>
 #include <cmath>
 #include <format>
+#include <linux/input-event-codes.h>
 #include <string_view>
 
 namespace Hyprexpo::Scrolling {
 
 namespace {
 
-constexpr uint32_t PRIMARY_BUTTON = 0x111;
+constexpr uint32_t PRIMARY_BUTTON = BTN_LEFT;
 
 bool finitePoint(SPoint point) {
     return std::isfinite(point.x) && std::isfinite(point.y);

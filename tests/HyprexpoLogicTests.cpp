@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <linux/input-event-codes.h>
 #include <string>
 #include <vector>
 
@@ -296,6 +297,83 @@ void checkScrollingSceneAndInputMath() {
     expect(moveFocus(scene, first, EFocusDirection::Left).targetToken == 101, "spatial focus stays put when no candidate exists");
 }
 
+void checkScrollingRefreshFocus() {
+    using namespace Hyprexpo::Scrolling;
+
+    const auto scene = scrollingScene();
+    const SFocusRef selected{.kind = EHitKind::Target, .workspaceID = 1, .targetToken = 202};
+    const auto retained = focusAfterRefresh(scene, selected, 2);
+    expect(retained.kind == selected.kind && retained.workspaceID == 1 && retained.targetToken == 202,
+           "content refresh preserves the exact selected window instead of returning to the opener");
+    for (const auto row : {SFocusRef{EHitKind::EmptyWorkspace, 2, 0}, SFocusRef{EHitKind::MixedWorkspace, 3, 0}, SFocusRef{EHitKind::TerminalWorkspace, 4, 0}}) {
+        const auto focus = focusAfterRefresh(scene, row, 1);
+        expect(focus.kind == row.kind && focus.workspaceID == row.workspaceID && focus.targetToken == 0,
+               "content refresh preserves an existing non-window row focus");
+    }
+
+    auto removed = scene;
+    std::erase_if(removed.targets, [](const auto& target) { return target.token == 202; });
+    const auto sibling = focusAfterRefresh(removed, selected, 2);
+    expect(sibling.kind == EHitKind::Target && sibling.workspaceID == 1 && sibling.targetToken == 101,
+           "removed target falls back to a surviving target on the same workspace");
+    std::erase_if(removed.targets, [](const auto& target) { return target.workspaceID == 1; });
+    removed.workspaces.front().kind = EWorkspaceKind::Empty;
+    const auto empty = focusAfterRefresh(removed, selected, 2);
+    expect(empty.kind == EHitKind::EmptyWorkspace && empty.workspaceID == 1,
+           "removing the last target retains its now-empty workspace");
+    removed.workspaces.erase(removed.workspaces.begin());
+    const auto fallback = focusAfterRefresh(removed, selected, 2);
+    expect(fallback.kind == EHitKind::EmptyWorkspace && fallback.workspaceID == 2,
+           "removed workspace falls back to the opening workspace");
+
+    const auto first = focusAfterRefresh(scene, {}, 1);
+    expect(first.kind == EHitKind::Target && first.workspaceID == 1 && first.targetToken == 101,
+           "first open initializes focus on the opening workspace");
+    expect(focusAfterRefresh({}, selected, 2).kind == EHitKind::Outside, "invalid scene has no restorable focus");
+}
+
+void checkScrollingMixedRowViewport() {
+    using namespace Hyprexpo::Scrolling;
+
+    const SSceneConfig config{.viewportWidth = 1920.0, .viewportHeight = 1080.0, .rowHeight = 734.4, .rowGap = 27.0, .columnGap = 15.36, .terminalWorkspaceID = 6};
+    const auto tape = [](size_t count, uint64_t tokenBase) {
+        STapeSpec result{.direction = EDirection::Right, .columns = {}};
+        for (size_t i = 0; i < count; ++i)
+            result.columns.push_back({.token = tokenBase + i, .extent = 1920.0, .targets = {{.token = tokenBase + i, .proportion = 1.0}}});
+        return result;
+    };
+    for (size_t lowerCount : {1U, 2U, 3U}) {
+        const auto scene = buildScene({{.workspaceID = 2, .kind = EWorkspaceKind::Mixed, .tape = {}},
+                                      {.workspaceID = 4, .kind = EWorkspaceKind::Scrolling, .tape = tape(2, 400)},
+                                      {.workspaceID = 5, .kind = EWorkspaceKind::Scrolling, .tape = tape(lowerCount, 500)}}, 4, config);
+        expect(scene.valid && scene.workspaces.size() == 4 && scene.targets.size() == 2 + lowerCount,
+               "mixed scene retains the full tape and does not invent absent workspace 3");
+        const auto openingPan = initialPan(scene, 4, config.viewportHeight);
+        const auto& lower = scene.workspaces[2];
+        expect(near(lower.box.y - openingPan, 934.2), "lower row position stays fixed when its window count changes");
+        const auto& firstLower = scene.targets[2];
+        expect((firstLower.box.y - openingPan < config.viewportHeight) == (lowerCount == 1),
+               "a wider centered tape may begin below the opening viewport without losing targets");
+        const auto lowerPan = panBy(scene, openingPan, config.rowHeight + config.rowGap, config.viewportHeight);
+        for (const auto& target : scene.targets) {
+            if (target.workspaceID != 5)
+                continue;
+            const auto& box = target.box;
+            expect(box.x >= 0.0 && box.x + box.w <= config.viewportWidth + 0.001 && box.y >= lower.box.y && box.y + box.h <= lower.box.y + lower.box.h + 0.001,
+                   "every native target fits inside its workspace row");
+            expect(box.y - lowerPan >= 0.0 && box.y + box.h - lowerPan <= config.viewportHeight,
+                   "panning brings each lower preview completely into view");
+            const auto hit = hitTest(scene, {box.x + box.w / 2.0, box.y + box.h / 2.0 - lowerPan}, lowerPan);
+            expect(hit.kind == EHitKind::Target && hit.workspaceID == 5 && hit.targetToken == target.token,
+                   "each lower preview remains individually selectable after panning");
+        }
+        expect(near(clampPan(scene, lowerPan, config.viewportHeight), lowerPan), "unchanged geometry preserves a panned viewport");
+        auto shortened = scene;
+        shortened.contentHeight = config.rowHeight;
+        expect(near(clampPan(shortened, lowerPan, config.viewportHeight), 0.0), "removing lower rows clamps pan to remaining content");
+    }
+}
+
 void checkScrollingDropIntents() {
     using namespace Hyprexpo::Scrolling;
 
@@ -408,25 +486,32 @@ void checkScrollingMouseInputState() {
     expect(!result.effects.consume && result.effects.clearHover && result.state.hover.kind == EHitKind::Outside, "outside hover clears and passes through");
     state = result.state;
 
-    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context);
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = BTN_LEFT, .pressed = true}, context);
     expect(result.effects.consume && result.state.mode == EInputMode::MousePressPending && result.state.pressed.targetToken == target.token,
-           "primary mouse down owns one exact target");
+           "left mouse down owns one exact target");
     state = result.state;
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = BTN_RIGHT, .pressed = false}, context);
+    expect(!result.effects.consume && !result.effects.selection && result.state.mode == EInputMode::MousePressPending,
+           "right release cannot confirm or release an owned left press");
     result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 6.0, targetGlobal.y + 6.0}}, context);
     expect(result.effects.consume && result.state.mode == EInputMode::MousePressPending && !result.effects.beginDrag, "under-threshold mouse motion stays click-pending");
     state = result.state;
-    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {targetGlobal.x + 6.0, targetGlobal.y + 6.0}, .button = 0x111, .pressed = false}, context);
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {targetGlobal.x + 6.0, targetGlobal.y + 6.0}, .button = BTN_LEFT, .pressed = false}, context);
     expect(result.effects.consume && result.effects.selection && result.effects.selection->targetToken == target.token && result.effects.resetOwnership,
-           "under-threshold primary release selects exactly the pressed target once");
+           "under-threshold left release selects exactly the pressed target once");
     state = result.state;
     expect(state.mode == EInputMode::Idle, "click release returns input ownership to idle");
 
-    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x110, .pressed = true}, context);
-    expect(!result.effects.consume && result.state.mode == EInputMode::Idle, "non-primary mouse button passes through");
-    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {monitor.position.x - 2.0, monitor.position.y}, .button = 0x111, .pressed = true}, context);
-    expect(!result.effects.consume && result.state.mode == EInputMode::Idle, "outside primary mouse button passes through");
+    for (const auto button : {BTN_RIGHT, BTN_MIDDLE}) {
+        for (const auto pressed : {true, false}) {
+            result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = static_cast<uint32_t>(button), .pressed = pressed}, context);
+            expect(!result.effects.consume && !result.effects.selection && result.state.mode == EInputMode::Idle, "right and middle mouse buttons pass through without selecting");
+        }
+    }
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {monitor.position.x - 2.0, monitor.position.y}, .button = BTN_LEFT, .pressed = true}, context);
+    expect(!result.effects.consume && result.state.mode == EInputMode::Idle, "outside left mouse button passes through");
 
-    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context);
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = BTN_LEFT, .pressed = true}, context);
     state = result.state;
     result = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 13.0, targetGlobal.y}}, context);
     expect(result.effects.consume && result.effects.beginDrag && result.state.mode == EInputMode::WindowDrag && result.effects.dropIntent.has_value(),
@@ -439,21 +524,21 @@ void checkScrollingMouseInputState() {
     expect(result.effects.consume && result.effects.updateDrag && !result.effects.beginDrag && result.effects.dropIntent && result.effects.dropIntent->kind == EDropKind::MixedFallback,
            "owned drag motion updates one mixed-workspace pure intent");
     state = result.state;
-    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = mixedGlobal, .button = 0x111, .pressed = false}, context);
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = mixedGlobal, .button = BTN_LEFT, .pressed = false}, context);
     expect(result.effects.consume && result.effects.finishDrag && result.effects.dropIntent && result.effects.dropIntent->kind == EDropKind::MixedFallback,
            "drag release emits one finish effect and does not mutate topology");
 
     context.pan = 0.0;
-    state = transitionInput({}, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context).state;
+    state = transitionInput({}, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = BTN_LEFT, .pressed = true}, context).state;
     state = transitionInput(state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 20.0, targetGlobal.y}}, context).state;
-    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {monitor.position.x - 10.0, monitor.position.y}, .button = 0x111, .pressed = false}, context);
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = {monitor.position.x - 10.0, monitor.position.y}, .button = BTN_LEFT, .pressed = false}, context);
     expect(result.effects.consume && result.effects.cancelDrag && !result.effects.finishDrag, "outside drag release cancels without a drop");
 
     result = transitionInput({}, {.kind = EInputKind::MouseAxis, .globalLogicalPoint = targetGlobal, .axisDelta = 300.0}, context);
     expect(result.effects.consume && near(result.effects.panDelta, 300.0), "idle mouse axis over the scene emits clamped pan and consumes");
     result = transitionInput({}, {.kind = EInputKind::MouseAxis, .globalLogicalPoint = {monitor.position.x - 1.0, monitor.position.y}, .axisDelta = 10.0}, context);
     expect(!result.effects.consume && near(result.effects.panDelta, 0.0), "outside mouse axis passes through");
-    state = transitionInput({}, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = 0x111, .pressed = true}, context).state;
+    state = transitionInput({}, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = BTN_LEFT, .pressed = true}, context).state;
     result = transitionInput(state, {.kind = EInputKind::MouseAxis, .globalLogicalPoint = targetGlobal, .axisDelta = 50.0}, context);
     expect(result.effects.consume && near(result.effects.panDelta, 0.0), "axis during owned press is consumed without simultaneous pan");
 }
@@ -492,7 +577,7 @@ void checkScrollingTouchAndResetState() {
     expect(result.effects.consume && result.effects.cancelDrag && result.effects.resetOwnership && result.state.mode == EInputMode::Idle,
            "matching touch cancel clears pending ownership deterministically");
     state = result.state;
-    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetPoint, .button = 0x111, .pressed = true}, context);
+    result = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetPoint, .button = BTN_LEFT, .pressed = true}, context);
     expect(result.effects.consume && result.state.mode == EInputMode::MousePressPending, "mouse immediately reacquires after touch cancellation");
 
     state = transitionInput({}, {.kind = EInputKind::TouchDown, .globalLogicalPoint = targetPoint, .touchId = 13}, context).state;
@@ -538,6 +623,29 @@ void checkScrollingCaptureBudget() {
     expect(!planCaptureBudget(0, 100, 4, requests).valid, "capture budget rejects invalid monitor dimensions");
 }
 
+void checkScrollingWindowPreview() {
+    using namespace Hyprexpo::Scrolling;
+
+    for (const auto source : {Hyprexpo::SSize{933.0, 1038.0}, Hyprexpo::SSize{1920.0, 1080.0}, Hyprexpo::SSize{1400.0, 800.0}}) {
+        for (const auto capture : {Hyprexpo::SSize{933.0, 734.0}, Hyprexpo::SSize{480.0, 270.0}, Hyprexpo::SSize{400.0, 900.0}}) {
+            const auto fitted = fitWindowPreview(source, capture);
+            expect(fitted.has_value(), "ordinary, fullscreen, and wide window previews have valid geometry");
+            if (!fitted)
+                continue;
+            expect(near(fitted->w / fitted->h, source.w / source.h), "window previews preserve the source aspect ratio");
+            expect(fitted->x >= 0.0 && fitted->y >= 0.0 && fitted->x + fitted->w <= capture.w + 0.001 && fitted->y + fitted->h <= capture.h + 0.001,
+                   "all four window corners remain inside the capture framebuffer");
+            expect(near(fitted->x * 2.0 + fitted->w, capture.w) && near(fitted->y * 2.0 + fitted->h, capture.h), "window previews are centered in their capture");
+            expect(near(fitted->w, capture.w) || near(fitted->h, capture.h), "window previews fill one capture dimension");
+        }
+    }
+    const auto reported = fitWindowPreview({933.0, 1038.0}, {933.0, 734.0});
+    expect(reported && near(reported->h, 734.0) && reported->w < 933.0, "issue 158 tall windows shrink instead of losing bottom content");
+    expect(!fitWindowPreview({0.0, 100.0}, {50.0, 50.0}), "preview fitting rejects empty windows");
+    expect(!fitWindowPreview({100.0, 100.0}, {50.0, -1.0}), "preview fitting rejects invalid capture sizes");
+    expect(!fitWindowPreview({std::numeric_limits<double>::infinity(), 100.0}, {50.0, 50.0}), "preview fitting rejects non-finite source sizes");
+}
+
 Hyprexpo::Scrolling::SMutationState mutationFixture() {
     using namespace Hyprexpo::Scrolling;
     return {.workspaces = {
@@ -581,12 +689,120 @@ void expectMutationCommit(const Hyprexpo::Scrolling::SMutationRequest& request, 
            label + " preserves controller direction and offset");
 }
 
+void checkScrollingMutationFocusAndMembership() {
+    using namespace Hyprexpo::Scrolling;
+
+    auto before = mutationFixture();
+    for (auto& workspace : before.workspaces) {
+        workspace.focusedWindowIdentity = 111;
+        workspace.focusedTargetIdentity = workspace.workspaceID == 1 ? 11 : 0;
+    }
+    const SMutationRequest request{.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 2, .kind = EDropKind::CrossWorkspace,
+                                    .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1};
+    const auto plan = buildMutationPlan(before, request);
+    const auto simulation = simulateMutation(before, request);
+    expect(simulation.result.outcome == EMutationOutcome::Committed && simulation.state.workspaces[0].focusedTargetIdentity == 0 &&
+               simulation.state.workspaces[1].focusedTargetIdentity == 11,
+           "focused cross-workspace simulation matches native local focus ownership");
+    auto after = simulation.state;
+    after.workspaces[0].focusedTargetIdentity = 0;
+    after.workspaces[1].focusedTargetIdentity = 11;
+    expect(verifyPostconditions(before, after, plan, false).empty(),
+           "moving the focused window preserves global focus while its local target follows workspace membership");
+    auto changedWindow = after;
+    changedWindow.workspaces[0].focusedWindowIdentity = 112;
+    const auto changedFocus = verifyPostconditions(before, changedWindow, plan, false);
+    expect(std::ranges::find(changedFocus, "focus.identity") != changedFocus.end(), "cross-workspace move still rejects changed compositor focus");
+    auto staleFocus = after;
+    staleFocus.workspaces[0].focusedTargetIdentity = 11;
+    const auto stale = verifyPostconditions(before, staleFocus, plan, false);
+    expect(std::ranges::find(stale, "focus.identity") != stale.end(), "source cannot retain the local focus identity of a moved target");
+    auto missingFocus = after;
+    missingFocus.workspaces[1].focusedTargetIdentity = 0;
+    const auto missing = verifyPostconditions(before, missingFocus, plan, false);
+    expect(std::ranges::find(missing, "focus.identity") != missing.end(), "destination must report the moved focused target");
+    auto changedTargetWindow = after;
+    changedTargetWindow.workspaces[1].columns[0].targets[1].windowIdentity = 999;
+    changedTargetWindow.workspaces[1].focusedTargetIdentity = 0;
+    const auto rebound = verifyPostconditions(before, changedTargetWindow, plan, false);
+    expect(std::ranges::find(rebound, "target.window-identity") != rebound.end(),
+           "a moved target cannot hide changed window identity by clearing local focus");
+
+    auto singleton = before;
+    singleton.workspaces[0].columns = {{.identity = 201, .width = 0.45, .targets = {{.identity = 11, .windowIdentity = 111, .size = 1.0}}}};
+    singleton.workspaces[0].members = {11};
+    for (const auto destination : {2, 3, 4}) {
+        auto move = request;
+        move.destinationWorkspaceID = destination;
+        if (destination == 3) { move.kind = EDropKind::MixedFallback; move.placement = EColumnPlacement::None; }
+        if (destination == 4) { move.kind = EDropKind::TerminalWorkspace; move.placement = EColumnPlacement::None; move.createDestination = true; }
+        const auto moved = simulateMutation(singleton, move);
+        expect(moved.result.outcome == EMutationOutcome::Committed && moved.state.workspaces[0].columns.empty() && moved.state.workspaces[0].focusedTargetIdentity == 0,
+               "moving the last focused window leaves an empty source with no local focused target");
+        expect(std::ranges::all_of(moved.state.workspaces, [](const auto& workspace) { return workspace.focusedWindowIdentity == 111; }),
+               "scrolling, mixed and terminal moves preserve observed global focus even for empty rows");
+    }
+    const auto injected = simulateMutation(before, request, SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::AddTarget, .when = EFaultWhen::After});
+    expect(injected.result.outcome == EMutationOutcome::RolledBack && injected.result.before == injected.result.after,
+           "focused cross-workspace fault restores exactly equal canonical snapshots");
+
+    auto rollback = before;
+    std::reverse(rollback.workspaces[0].members.begin(), rollback.workspaces[0].members.end());
+    for (auto& workspace : rollback.workspaces)
+        canonicalizeMutationMembers(workspace);
+    expect(verifyPostconditions(before, rollback, plan, true).empty(),
+           "rollback accepts canonical membership after a controller round-trip changes insertion order");
+    for (const auto defect : {"duplicate", "lost", "foreign", "owner", "column-order", "target-order", "width", "size", "focus", "offset"}) {
+        auto broken = before;
+        auto& source = broken.workspaces[0];
+        const std::string kind = defect;
+        if (kind == "duplicate") source.members.push_back(11);
+        else if (kind == "lost") source.members.erase(source.members.begin());
+        else if (kind == "foreign") source.members.push_back(999);
+        else if (kind == "owner") { source.members.erase(source.members.begin()); broken.workspaces[1].members.push_back(11); }
+        else if (kind == "column-order") std::swap(source.columns[0], source.columns[1]);
+        else if (kind == "target-order") std::swap(source.columns[0].targets[0], source.columns[0].targets[1]);
+        else if (kind == "width") source.columns[0].width += 0.1;
+        else if (kind == "size") source.columns[0].targets[0].size += 0.1;
+        else if (kind == "focus") source.focusedWindowIdentity = 112;
+        else if (kind == "offset") source.offset += 1.0;
+        for (auto& workspace : broken.workspaces)
+            canonicalizeMutationMembers(workspace);
+        expect(!verifyPostconditions(before, broken, plan, true).empty(), "canonical rollback still rejects " + kind);
+    }
+}
+
 void checkScrollingMutationTransactions() {
     using namespace Hyprexpo::Scrolling;
 
     const auto emptyPreState = simulateMutation({}, {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
                                                      .placement = EColumnPlacement::Existing});
     expect(emptyPreState.result.outcome == EMutationOutcome::Rejected, "missing pre-state rejects without indexing an absent source workspace");
+
+    auto emptyDestination = mutationFixture();
+    auto& emptyWorkspace = emptyDestination.workspaces[1];
+    emptyWorkspace.columns.clear();
+    emptyWorkspace.members.clear();
+    emptyWorkspace.focusedTargetIdentity = 0;
+    emptyWorkspace.direction = "left";
+    emptyWorkspace.offset = 19.0;
+    const SMutationRequest firstColumn{.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 2, .kind = EDropKind::CrossWorkspace,
+                                        .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 0};
+    const auto emptyPlan = buildMutationPlan(emptyDestination, firstColumn);
+    expect(emptyPlan.valid && emptyPlan.request.placement == EColumnPlacement::Before,
+           "existing insertion into an empty scrolling destination plans its first column");
+    const auto intoEmpty = simulateMutation(emptyDestination, firstColumn);
+    expect(intoEmpty.result.outcome == EMutationOutcome::Committed && intoEmpty.state.workspaces[1].columns.size() == 1 &&
+               intoEmpty.state.workspaces[1].columns[0].targets[0].identity == 11,
+           "drop into an existing empty scrolling workspace creates one destination column");
+    expect(intoEmpty.state.workspaces[1].modelIdentity == emptyWorkspace.modelIdentity && intoEmpty.state.workspaces[1].direction == "left" &&
+               near(intoEmpty.state.workspaces[1].offset, 19.0), "empty destination retains its real controller identity, direction and offset");
+    const auto emptyRollback = simulateMutation(emptyDestination, firstColumn,
+                                                SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::AddTarget, .when = EFaultWhen::After});
+    expect(emptyRollback.result.outcome == EMutationOutcome::RolledBack && emptyRollback.result.before == emptyRollback.result.after &&
+               std::ranges::any_of(emptyRollback.boundaries, [](const auto& boundary) {
+                   return boundary.phase == EMutationPhase::Apply && boundary.step == EMutationStep::AddTarget && boundary.when == EFaultWhen::After;
+               }), "post-add fault restores the actual empty-controller pre-state exactly");
 
     const auto debugRequest = parseMutationDebugRequest("native.case-1 1 402653184 existing-column 1 2 1");
     expect(debugRequest.valid && debugRequest.requestID == "native.case-1" && debugRequest.targetStableID == 402653184 && debugRequest.kind == EDropKind::ExistingColumn,
@@ -598,6 +814,13 @@ void checkScrollingMutationTransactions() {
     expect(!parseMutationDebugRequest("bad/id 1 1 same-column 1 0 0").valid, "native mutation debug request shares the safe request ID grammar");
     expect(!parseMutationDebugRequest("case 1 1 unknown 1 0 0").valid, "native mutation debug request rejects unknown destination kinds");
     expect(!parseMutationDebugRequest("case 1 1 same-column 1 0 0 apply:remove-target:before").valid, "native mutation debug request rejects unapproved fault surfaces");
+    const auto terminalFault = parseMutationDebugRequest("terminal-rollback 1 1 terminal-workspace 0 0 0 apply:re-resolve:after");
+    expect(terminalFault.valid && terminalFault.fault && terminalFault.fault->step == EMutationStep::ReResolve && terminalFault.fault->when == EFaultWhen::After,
+           "terminal rollback admits the single post-resolution fault before mixed destinations skip native add");
+    expect(!parseMutationDebugRequest("case 1 1 terminal-workspace 0 0 0 apply:re-resolve:before").valid,
+           "terminal rollback fault remains restricted to the approved post-resolution boundary");
+    expect(!parseMutationDebugRequest("case 1 1 same-column 1 0 0 apply:re-resolve:after").valid,
+           "post-resolution fault rejects same-workspace requests where that boundary cannot run");
 
     expectMutationCommit({.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 1, .kind = EDropKind::ExistingColumn,
                           .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1},
@@ -627,6 +850,26 @@ void checkScrollingMutationTransactions() {
            "terminal transaction creates the release-time next-empty workspace");
     expect(terminal.state.workspaces.back().columns.size() == 1 && terminal.state.workspaces.back().columns.front().targets.front().identity == 11,
            "terminal transaction moves exactly once into one native column");
+
+    const SMutationRequest terminalRequest{.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 4,
+                                            .kind = EDropKind::TerminalWorkspace, .createDestination = true};
+    const auto mixedTerminal = simulateMutation(mutationFixture(), terminalRequest, std::nullopt, EMutationWorkspaceKind::Mixed);
+    expect(mixedTerminal.result.outcome == EMutationOutcome::Committed && mixedTerminal.result.plan.mixedFallback &&
+               mixedTerminal.result.plan.request.kind == EDropKind::TerminalWorkspace,
+           "terminal creation follows an observed mixed layout while retaining terminal provenance");
+    expect(mixedTerminal.state.workspaces.back().workspaceID == 4 && mixedTerminal.state.workspaces.back().kind == EMutationWorkspaceKind::Mixed &&
+               mixedTerminal.state.workspaces.back().columns.empty() && mixedTerminal.state.workspaces.back().members == std::vector<uint64_t>{11},
+           "mixed terminal creates only membership and does not invent native scrolling columns");
+    const auto mixedTerminalRollback = simulateMutation(mutationFixture(), terminalRequest,
+                                                         SFaultInjection{.phase = EMutationPhase::Apply, .step = EMutationStep::ReResolve, .when = EFaultWhen::After},
+                                                         EMutationWorkspaceKind::Mixed);
+    expect(mixedTerminalRollback.result.outcome == EMutationOutcome::RolledBack && mixedTerminalRollback.result.before == mixedTerminalRollback.result.after &&
+               mixedTerminalRollback.state == mutationFixture(), "mixed terminal resolution fault removes the created destination and restores exact pre-state");
+    const auto fixedNative = simulateMutation(mutationFixture(), {.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 2,
+                                                                 .kind = EDropKind::CrossWorkspace, .placement = EColumnPlacement::Existing,
+                                                                 .destinationColumnIndex = 0, .destinationRowIndex = 1}, std::nullopt, EMutationWorkspaceKind::Mixed);
+    expect(fixedNative.result.outcome == EMutationOutcome::Committed && !fixedNative.result.plan.mixedFallback && fixedNative.state.workspaces[1].kind == EMutationWorkspaceKind::Scrolling,
+           "terminal creation rules never downgrade a preexisting planned scrolling destination");
 
     const SMutationRequest faultRequest{.targetIdentity = 11, .sourceWorkspaceID = 1, .destinationWorkspaceID = 2, .kind = EDropKind::CrossWorkspace,
                                          .placement = EColumnPlacement::Existing, .destinationColumnIndex = 0, .destinationRowIndex = 1};
@@ -1091,14 +1334,18 @@ int main() {
     checkFixedGridGeometryForMonitor(makeSize(1280, 720.5));
     checkScrollingTapeDirections();
     checkScrollingSceneAndInputMath();
+    checkScrollingRefreshFocus();
+    checkScrollingMixedRowViewport();
     checkScrollingDropIntents();
     checkScrollingCaptureBudget();
+    checkScrollingWindowPreview();
     checkScrollingInputCoordinates();
     checkScrollingRequestIds();
     checkScrollingOverviewTransition();
     checkScrollingMouseInputState();
     checkScrollingTouchAndResetState();
     checkScrollingMutationTransactions();
+    checkScrollingMutationFocusAndMembership();
 
     // --- global multi-monitor geometry ---
     {
