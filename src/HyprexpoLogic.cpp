@@ -12,6 +12,17 @@
 
 namespace Hyprexpo {
 
+bool workspacePreviewNeedsHalfTurn(int outputTransform) {
+    // Quarter-turn captures use coherent, normalized monitor geometry. Their
+    // former half-turn compensation depended on stale projection matrices.
+    switch (outputTransform) {
+        case 2:
+            return true;
+        default:
+            return false;
+    }
+}
+  
 std::vector<int64_t> absoluteWorkspaceIDs(int64_t first, size_t count, int64_t cap) {
     std::vector<int64_t> ids(count, -1);
     if (first <= 0)
