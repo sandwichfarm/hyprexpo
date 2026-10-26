@@ -1,6 +1,5 @@
 #include "OverviewCapture.hpp"
 
-#include "OverviewInternal.hpp"
 #include "HyprlandConfigCompat.hpp"
 #include "HyprexpoConfig.hpp"
 #include "HyprexpoLogic.hpp"
@@ -9,7 +8,11 @@
 
 #define private   public
 #define protected public
+// WorkspaceCompat includes Monitor.hpp; expose updateMatrix before its first inclusion.
+#include "OverviewInternal.hpp"
 #include <hyprland/src/animation/WorkspaceAnimationController.hpp>
+#include <hyprland/src/desktop/view/window/Window.hpp>
+#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>
 #include <hyprland/src/helpers/time/Time.hpp>
 #include <hyprutils/utils/ScopeGuard.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
@@ -44,9 +47,9 @@ uint64_t              g_lastLoggedBudgetGeneration = 0;
 
 class CRendererStateGuard {
   public:
-    explicit CRendererStateGuard(Render::IHyprRenderer* renderer) : m_renderer(renderer), m_blockSurfaceFeedback(renderer->m_bBlockSurfaceFeedback),
-                                                                    m_renderingSnapshot(renderer->m_bRenderingSnapshot),
-                                                                    m_blockScreenShader(renderer->m_renderData.blockScreenShader) {}
+    explicit CRendererStateGuard(Render::IHyprRenderer* renderer) : m_renderer(renderer), m_blockSurfaceFeedback(renderer->context().m_blockSurfaceFeedback),
+                                                                    m_renderingSnapshot(renderer->context().m_renderingSnapshot),
+                                                                    m_blockScreenShader(renderer->context().m_data.blockScreenShader) {}
 
     ~CRendererStateGuard() {
         if (m_begun) {
@@ -69,14 +72,14 @@ class CRendererStateGuard {
     }
 
     void restore() {
-        m_renderer->m_bBlockSurfaceFeedback        = m_blockSurfaceFeedback;
-        m_renderer->m_bRenderingSnapshot           = m_renderingSnapshot;
-        m_renderer->m_renderData.blockScreenShader = m_blockScreenShader;
+        m_renderer->context().m_blockSurfaceFeedback   = m_blockSurfaceFeedback;
+        m_renderer->context().m_renderingSnapshot      = m_renderingSnapshot;
+        m_renderer->context().m_data.blockScreenShader = m_blockScreenShader;
     }
 
     bool restored() const {
-        return m_renderer->m_bBlockSurfaceFeedback == m_blockSurfaceFeedback && m_renderer->m_bRenderingSnapshot == m_renderingSnapshot &&
-            m_renderer->m_renderData.blockScreenShader == m_blockScreenShader;
+        return m_renderer->context().m_blockSurfaceFeedback == m_blockSurfaceFeedback && m_renderer->context().m_renderingSnapshot == m_renderingSnapshot &&
+            m_renderer->context().m_data.blockScreenShader == m_blockScreenShader;
     }
 
   private:
@@ -93,7 +96,7 @@ class CMonitorStateGuard {
                                                                                   m_transformedSize(monitor->m_transformedSize), m_pixelSize(monitor->m_pixelSize),
                                                                                   m_activeWorkspace(monitor->m_activeWorkspace),
                                                                                   m_activeSpecialWorkspace(monitor->m_activeSpecialWorkspace),
-                                                                                  m_startedOnVisible(startedOn ? startedOn->m_visible : false) {}
+                                                                                  m_startedOnVisible(startedOn ? startedOn->visible() : false) {}
 
     ~CMonitorStateGuard() {
         restore();
@@ -106,7 +109,7 @@ class CMonitorStateGuard {
         m_monitor->m_activeWorkspace        = m_activeWorkspace ? m_activeWorkspace : m_startedOn;
         m_monitor->m_activeSpecialWorkspace = m_activeSpecialWorkspace;
         if (m_startedOn)
-            m_startedOn->m_visible = m_startedOnVisible;
+            m_startedOn->setVisible(m_startedOnVisible);
         m_restored = true;
     }
 
@@ -151,7 +154,7 @@ int scrollingThumbnailBudgetMultiplier() {
         std::scoped_lock lock{g_budgetLogMutex};
         const auto generation = g_budgetGeneration.load(std::memory_order_relaxed);
         if (g_lastLoggedBudgetGeneration != generation) {
-            Log::logger->log(Log::ERR, "[hyprexpo] scrolling_thumbnail_budget {} is outside {}..{}; clamping to {}", raw, HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN,
+            Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] scrolling_thumbnail_budget {} is outside {}..{}; clamping to {}", raw, HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MIN,
                              HyprexpoConfig::SCROLLING_THUMBNAIL_BUDGET_MAX, clamped);
             g_lastLoggedBudgetGeneration = generation;
         }
@@ -203,13 +206,13 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& original, SP<Render
 
         if (monitorState.activeSpecialWorkspace())
             request.monitor->m_activeSpecialWorkspace.reset();
-        request.startedOn->m_visible = false;
+        request.startedOn->setVisible(false);
 
         CRegion fakeDamage{0, 0, INT16_MAX, INT16_MAX};
         if (!g_pHyprRenderer->beginRender(request.monitor, fakeDamage, Render::RENDER_MODE_FULL_FAKE, nullptr, framebuffer))
             return false;
         rendererState.begun();
-        g_pHyprRenderer->m_bBlockSurfaceFeedback = g_pHyprRenderer->m_bBlockSurfaceFeedback || request.blockSurfaceFeedback;
+        g_pHyprRenderer->context().m_blockSurfaceFeedback = g_pHyprRenderer->context().m_blockSurfaceFeedback || request.blockSurfaceFeedback;
         clearWithColor(CHyprColor{0, 0, 0, 1.0});
 
         if (request.workspace) {
@@ -247,7 +250,7 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& original, SP<Render
 
             {
                 CPinnedWindowPreviewGuard pinnedWindowPreviewGuard{request.showPinnedWindows};
-                g_pHyprRenderer->renderWorkspace(request.monitor, request.workspace, Time::steadyNow(), captureBox);
+                g_pHyprRenderer->renderWorkspace(g_pHyprRenderer->context(), request.monitor, request.workspace, Time::steadyNow(), captureBox);
             }
 
             restoreWorkspaceWindowGoalState(windowState);
@@ -259,25 +262,26 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& original, SP<Render
                 request.monitor->m_activeSpecialWorkspace.reset();
         } else {
             CPinnedWindowPreviewGuard pinnedWindowPreviewGuard{request.showPinnedWindows};
-            g_pHyprRenderer->renderWorkspace(request.monitor, request.workspace, Time::steadyNow(), captureBox);
+            g_pHyprRenderer->renderWorkspace(g_pHyprRenderer->context(), request.monitor, request.workspace, Time::steadyNow(), captureBox);
         }
 
-        g_pHyprRenderer->m_renderData.blockScreenShader = true;
+        g_pHyprRenderer->context().m_data.blockScreenShader = true;
         rendererState.finish();
         rendererState.restore();
         if (!rendererState.restored())
             return false;
 
-        if (const auto texture = framebuffer->getTexture(); texture)
-            texture->m_transform = workspacePreviewNeedsHalfTurn(static_cast<int>(monitorState.transform())) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;
-        else
+        if (const auto texture = framebuffer->getTexture(); texture) {
+            // RPT_MONITOR captures are already in monitor space, including 180-degree outputs.
+            texture->m_transform = HYPRUTILS_TRANSFORM_NORMAL;
+        } else
             return false;
 
         monitorState.restore();
         if (request.animateStartedOnRestore) {
-            request.startedOn->m_visible = false;
+            request.startedOn->setVisible(false);
             const auto activeWorkspace = monitorState.activeWorkspace() ? monitorState.activeWorkspace() : request.startedOn;
-            activeWorkspace->m_visible = true;
+            activeWorkspace->setVisible(true);
             if (activeWorkspace == request.startedOn)
                 Animation::Workspace::startAnimation(activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
         }
@@ -319,11 +323,11 @@ SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, 
             return result;
         }
         rendererState.begun();
-        g_pHyprRenderer->m_bBlockSurfaceFeedback = true;
-        g_pHyprRenderer->m_bRenderingSnapshot = true;
+        g_pHyprRenderer->context().m_blockSurfaceFeedback = true;
+        g_pHyprRenderer->context().m_renderingSnapshot = true;
         glClearColor(0.F, 0.F, 0.F, 0.F);
         glClear(GL_COLOR_BUFFER_BIT);
-        g_pHyprRenderer->startRenderPass();
+        g_pHyprRenderer->startRenderPass(g_pHyprRenderer->context());
 
         target = targetRef.lock();
         window = windowRef.lock();
@@ -332,8 +336,8 @@ SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, 
             return result;
         }
 
-        g_pHyprRenderer->renderWindow(window, monitor, Time::steadyNow(), false, Render::RENDER_PASS_ALL, true, true);
-        g_pHyprRenderer->m_renderData.blockScreenShader = true;
+        g_pHyprRenderer->renderWindow(g_pHyprRenderer->context(), window, monitor, window->presentation().renderPresentation(), Time::steadyNow(), false, Render::RENDER_PASS_ALL, true, true);
+        g_pHyprRenderer->context().m_data.blockScreenShader = true;
         rendererState.finish();
         rendererState.restore();
         if (!rendererState.restored()) {

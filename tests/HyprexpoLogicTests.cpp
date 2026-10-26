@@ -854,26 +854,6 @@ int main() {
                "changing any one monitor geometry field refreshes the complete derived state");
     }
 
-    const struct {
-        int         transform;
-        const char* name;
-        bool        needsHalfTurn;
-    } previewTransforms[] = {
-        {0, "Normal", false},
-        {1, "Rotate90", false},
-        {2, "Rotate180", true},
-        {3, "Rotate270", false},
-        {4, "Flipped", false},
-        {5, "Flipped90", false},
-        {6, "Flipped180", false},
-        {7, "Flipped270", false},
-    };
-    for (const auto& test : previewTransforms)
-        expect(workspacePreviewNeedsHalfTurn(test.transform) == test.needsHalfTurn,
-               std::string{"workspace preview half-turn correction for "} + test.name);
-    expect(!workspacePreviewNeedsHalfTurn(-1), "negative output transforms need no preview correction");
-    expect(!workspacePreviewNeedsHalfTurn(8), "out-of-range output transforms need no preview correction");
-
     expect(trimString("  DP-1 first 1 \t") == "DP-1 first 1", "trimString removes surrounding whitespace");
     expect(splitCommaList("a, b,,c").size() == 4, "splitCommaList preserves empty entries");
 

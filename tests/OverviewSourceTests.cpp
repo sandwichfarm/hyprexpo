@@ -2,6 +2,8 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <tuple>
+#include <vector>
 
 namespace {
 
@@ -93,6 +95,12 @@ bool cachesPluginConfigPointer(const std::string& source) {
 
 int main() {
     const auto lifecycleSource = readFile("src/main.cpp");
+    const auto workspaceHook = extractFunction(lifecycleSource, "static void hkRenderWorkspace(");
+    expectContains(workspaceHook, "Render::CRenderContext& ctx", "workspace hook accepts the caller's render context");
+    expectContains(workspaceHook, "(thisptr, ctx, pMonitor, pWorkspace, now, geometry)", "workspace hook forwards context on the native rendering path");
+    expectContains(workspaceHook, "OV->render(ctx)", "workspace hook queues the overview in the caller's context");
+    expectContains(lifecycleSource, "function.demangled.contains(\"CBox const&\")", "workspace hook selects the geometry overload explicitly");
+    expectContains(lifecycleSource, "function.demangled.contains(\"Render::CRenderContext&\")", "workspace hook requires the context-aware signature");
     expect(lifecycleSource.find("m_events.monitor.removed.listen") != std::string::npos &&
                lifecycleSource.find("destroyOverview(OV);") != std::string::npos,
            "disconnecting an output unregisters its overview without waiting for a frame on that output");
@@ -190,7 +198,7 @@ int main() {
 
     const auto enterSubmap = extractFunction(interactionSource, "void enterOverviewSubmap(bool& submapActive) {");
     expect(!enterSubmap.empty(), "keyboard navigation submap entry function exists");
-    const auto captureSubmapPos = enterSubmap.find("g_previousSubmap = g_pKeybindManager->getCurrentSubmap().name;");
+    const auto captureSubmapPos = enterSubmap.find("g_previousSubmap = Keybinds::mgr()->currentSubmap();");
     const auto firstSubmapRef   = enterSubmap.find("if (g_submapRefs++ == 0)");
     const auto shareSubmapPos   = captureSubmapPos;
     const auto enterSubmapPos   = enterSubmap.find("Config::Actions::setSubmap(\"hyprexpo\");");
@@ -232,7 +240,7 @@ int main() {
     expectOrder(workspaceMoveHandler, "if (!closing && window && !blockOverviewRendering)", "queueRedrawID(i)", "explicit moves also invalidate inactive workspace tiles");
     expectAbsent(workspaceMoveHandler, "redrawID(", "workspace move notifications defer captures until pre-render");
     const auto monitorRelevancePos = workspaceMoveHandler.find("const bool movedOnOverviewMonitor");
-    const auto classifierPos       = workspaceMoveHandler.find("Hyprexpo::shouldAbortOverviewCloseForWorkspaceMove(window->m_pinned, movedOnOverviewMonitor)");
+    const auto classifierPos       = workspaceMoveHandler.find("Hyprexpo::shouldAbortOverviewCloseForWorkspaceMove((window->m_state & Desktop::View::WINDOW_STATE_PINNED) != Desktop::View::WINDOW_STATE_NONE, movedOnOverviewMonitor)");
     const auto abortFlagPos        = workspaceMoveHandler.find("externalWorkspaceMoveDuringClose = true;");
     const auto workspaceDamagePos  = workspaceMoveHandler.find("damage();", abortFlagPos);
     const auto scheduleFramePos    = workspaceMoveHandler.find("monitor->scheduleFrame();", workspaceDamagePos);
@@ -415,7 +423,7 @@ int main() {
            "regular workspace bounds are collected only for consecutive traversal");
     expect(boundsScanPos != std::string::npos && overviewConstructor.find("!workspace", boundsScanPos) != std::string::npos,
            "center-current bounds ignore null workspace entries");
-    expect(boundsScanPos != std::string::npos && overviewConstructor.find("workspace->m_isSpecialWorkspace", boundsScanPos) != std::string::npos,
+    expect(boundsScanPos != std::string::npos && overviewConstructor.find("workspace->type() == Workspace::eWorkspaceType::SPECIAL", boundsScanPos) != std::string::npos,
            "center-current bounds exclude special workspaces");
     expect(boundsScanPos != std::string::npos && overviewConstructor.find("workspace->m_monitor != PMONITOR", boundsScanPos) != std::string::npos,
            "center-current bounds exclude workspaces owned by other monitors");
@@ -438,7 +446,7 @@ int main() {
     const auto restoreAnchorPos = overviewConstructor.find("pMonitor->m_activeWorkspace = startedOn;", centerBranchEnd);
     expect(anchorPos != std::string::npos && anchorPos < centerBranchStart && restoreAnchorPos < cappedBranchStart,
            "explicit first and capped center selectors share a temporary anchor restored before capture");
-    expect(overviewConstructor.find("!methodCenter || (!skipEmpty && maxWorkspace > 0 && methodStartID != startedOn->m_id)") != std::string::npos,
+    expect(overviewConstructor.find("!methodCenter || (!skipEmpty && maxWorkspace > 0 && methodStartID != workspaceID(startedOn))") != std::string::npos,
            "capped explicit centers anchor relative traversal without changing legacy skip-empty centering");
 
     const auto helperPos = centerBranch.find("Hyprexpo::centeredWorkspaceBacktrack(");
@@ -474,7 +482,7 @@ int main() {
     expectContains(mainSource, "Hyprexpo::Capture::isCapturingWorkspacePreview()", "owner captures bypass every overview session");
     const auto foreignDamage = extractFunction(renderSource, "void COverview::onSourceMonitorDamage(");
     expectOrder(foreignDamage, "Hyprexpo::shouldRefreshSourceWorkspace(workspace->m_monitor == source", "queueRedrawID(i)", "foreign damage uses the tested source workspace policy");
-    expectContains(foreignDamage, "workspace->m_visible || workspace->m_forceRendering", "outgoing and forced-visible workspaces remain live");
+    expectContains(foreignDamage, "workspace->visible() || workspace->m_forceRendering", "outgoing and forced-visible workspaces remain live");
     expectContains(foreignDamage, "workspace->m_alpha->isBeingAnimated() || workspace->m_renderOffset->isBeingAnimated()", "workspace transitions remain live");
     expectContains(foreignDamage, "monitorHasPinnedPreviewWindows(source)", "pinned sharing is scoped to the source monitor");
     const auto foreignWorkspaceCapture = extractFunction(readFile("src/OverviewCapture.cpp"), "bool captureWorkspacePreview(");
@@ -502,7 +510,7 @@ int main() {
            "selecting an already-active grid workspace also focuses its monitor");
     expect(closeOverview.find("if (CHANGE && OLDWS != MON->m_activeWorkspace)") != std::string::npos,
            "focus-only selection cannot apply an OUT animation to its unchanged workspace");
-    expect(closeOverview.find("State::workspaceState()->create(NEWID, MON->m_id") != std::string::npos,
+    expect(closeOverview.find("createWorkspaceForMonitor(NEWID, MON)") != std::string::npos,
            "skip-empty creation is bound to the selected overview monitor");
     expect(closeOverview.find("nextEmptyWorkspaceIDForMonitor(MON)") != std::string::npos,
            "empty-workspace selection resolves against the selected monitor");
@@ -511,8 +519,8 @@ int main() {
     expectContains(emptySelector, "(*workspace)->m_monitor == monitor", "existing empty candidates must belong to the selected monitor");
     expectContains(emptySelector, "workspaces.size() + 1", "empty selection has a finite materialized-workspace search bound");
     const auto selectorHelper = extractFunction(source, "WORKSPACEID workspaceIDForMonitor(");
-    expect(selectorHelper.find("CScopeGuard") != std::string::npos && selectorHelper.find("FOCUS->m_focusMonitor = previousMonitor;") != std::string::npos,
-           "monitor-relative enumeration restores the focus context on every return");
+    expect(selectorHelper.find("workspaceIDForSelector(monitor, selector)") != std::string::npos,
+           "monitor-relative enumeration uses the upstream resolver with an explicit monitor");
     expect(overviewConstructor.find("getWorkspaceIDNameFromString(") == std::string::npos && overviewConstructor.find("workspaceIDForMonitor(PMONITOR,") != std::string::npos,
            "simultaneous grids do not enumerate through another monitor's focus context");
 
@@ -672,39 +680,47 @@ int main() {
                incompleteBlock.find("close(") == std::string::npos,
            "incomplete swipe still resets animation state and leaves the overview open");
 
-    expect(source.find("#include <hyprland/src/desktop/view/Window.hpp>") != std::string::npos &&
-               source.find("#include <hyprland/src/desktop/view/window/Window.hpp>") == std::string::npos &&
-               source.find("#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>") == std::string::npos,
-           "overview capture uses the tagged Hyprland release window header");
-    expect(source.find("window->m_isMapped") != std::string::npos &&
-               source.find("window->m_pinned") != std::string::npos &&
-               source.find("window->alpha(") != std::string::npos &&
-               source.find("window->m_monitorMovedFrom != -1") != std::string::npos &&
-               source.find("window->m_monitorMovedFrom                                      = -1;") != std::string::npos,
-           "overview capture uses release mapped, pinned, alpha, and moved-monitor APIs");
-    expect(source.find("window->mapped()") == std::string::npos && source.find("WINDOW_STATE_PINNED") == std::string::npos &&
-               source.find("->presentation()") == std::string::npos,
-           "overview capture does not reintroduce git-only Hyprland window APIs");
+    expect(source.find("#include <hyprland/src/desktop/view/window/Window.hpp>") != std::string::npos &&
+               source.find("#include <hyprland/src/desktop/view/window/WindowPresentation.hpp>") != std::string::npos,
+           "overview capture uses the pinned development window and presentation headers");
+    expect(source.find("window->mapped()") != std::string::npos &&
+               source.find("WINDOW_STATE_PINNED") != std::string::npos &&
+               source.find("window->presentation().alpha(") != std::string::npos &&
+               source.find("window->presentation().movingFromMonitor()") != std::string::npos &&
+               source.find("window->presentation().resetMonitorMovedFrom()") != std::string::npos,
+           "overview capture retains mapped, pinned, alpha, and moved-monitor behavior on development APIs");
 
     const auto applyPinnedState = extractFunction(source, "std::vector<SPinnedWindowPreviewState> applyPinnedWindowPreviewState(");
     const auto restorePinnedState = extractFunction(source, "void restorePinnedWindowPreviewState(");
-    expect(applyPinnedState.find(".pinned = window->m_pinned") != std::string::npos &&
-               applyPinnedState.find("window->m_pinned = false") != std::string::npos &&
+    expect(applyPinnedState.find("!(window->m_state & Desktop::View::WINDOW_STATE_PINNED)") != std::string::npos &&
+               applyPinnedState.find(".pinned    = true") != std::string::npos &&
+               applyPinnedState.find("window->m_state &= ~Desktop::View::WINDOW_STATE_PINNED") != std::string::npos &&
                applyPinnedState.find("window->m_workspace.reset()") != std::string::npos,
-           "pinned preview suppression saves and clears pinned state and temporarily detaches the workspace");
+           "pinned preview suppression saves only pinned windows, clears their pinned bit and detaches their workspace");
     expect(restorePinnedState.find("state.window->m_workspace = state.workspace") != std::string::npos &&
-               restorePinnedState.find("state.window->m_pinned    = state.pinned") != std::string::npos,
-           "pinned preview suppression restores workspace ownership and the saved pinned state");
+               restorePinnedState.find("if (state.pinned)") != std::string::npos &&
+               restorePinnedState.find("state.window->m_state |= Desktop::View::WINDOW_STATE_PINNED") != std::string::npos,
+           "pinned preview suppression restores workspace and pinned bit without overwriting other state flags");
 
-    expect(dispatchersSource.find("uint32_t modMask = 0") != std::string::npos &&
-               dispatchersSource.find("g_pKeybindManager->stringToModMask(mods)") != std::string::npos &&
-               dispatchersSource.find("Keybinds::modMaskFromString") == std::string::npos,
-           "gesture registration uses the tagged Hyprland release modifier parser and mask type");
-    expect(interactionSource.find("#include <hyprland/src/managers/KeybindManager.hpp>") != std::string::npos &&
-               interactionSource.find("g_pKeybindManager->getCurrentSubmap().name") != std::string::npos &&
-               interactionSource.find("#include <hyprland/src/keybinds/Manager.hpp>") == std::string::npos &&
-               interactionSource.find("Keybinds::mgr()") == std::string::npos,
-           "submap ownership uses the tagged Hyprland release keybind manager API");
+    expect(dispatchersSource.find("Input::ModifierMask modMask = Input::HL_MODIFIER_NONE") != std::string::npos &&
+               dispatchersSource.find("Keybinds::modMaskFromString(mods)") != std::string::npos,
+           "gesture registration uses the pinned development modifier parser and mask type");
+    expect(interactionSource.find("#include <hyprland/src/keybinds/Manager.hpp>") != std::string::npos &&
+               interactionSource.find("Keybinds::mgr()->currentSubmap()") != std::string::npos,
+           "submap ownership captures the exact active submap through the development keybind manager API");
+
+    for (const auto& [luaName, wrapper, handler] : std::vector<std::tuple<std::string, std::string, std::string>>{
+             {"move_window", "luaMoveWindow", "onMovePreviewWindowDispatcher"},
+             {"scrolling_debug", "luaScrollingDebug", "onScrollingDebugDispatcher"},
+             {"scrolling_input_test", "luaScrollingInputTest", "onScrollingInputTestDispatcher"},
+             {"scrolling_mutation_test", "luaScrollingMutationTest", "onScrollingMutationTestDispatcher"},
+         }) {
+        const auto body = extractFunction(dispatchersSource, "static int " + wrapper + "(");
+        expectContains(body, "luaDispatchResult(L, \"hyprexpo." + luaName + "\", " + handler + "(luaStringArg(L, 1, \"hyprexpo." + luaName + "\")))",
+                       luaName + " Lua path shares string validation, native handler and error propagation");
+        expectContains(dispatchersSource, "HyprlandAPI::addLuaFunction(PHANDLE, \"hyprexpo\", \"" + luaName + "\", " + wrapper + ")",
+                       luaName + " remains callable when upstream disables legacy dispatcher registration");
+    }
 
     const auto exitFunction = extractFunction(mainSource, "APICALL EXPORT void PLUGIN_EXIT(");
     expect(!exitFunction.empty(), "PLUGIN_EXIT exists");
@@ -747,10 +763,10 @@ int main() {
     expectContains(requestIdHeader, "c == '.'", "shared request ID grammar accepts dots");
     expectContains(diagnosticSource, "validRequestID(request.requestID)", "topology diagnostics use the shared request ID validator");
 
-    for (const auto& token : {"NullWorkspace", "InertWorkspace", "MissingSpace", "MissingAlgorithm", "MissingTiledAlgorithm", "WrongAlgorithmName", "CastFailure", "ExpiredTarget",
+    for (const auto& token : {"NullWorkspace", "MissingSpace", "MissingAlgorithm", "MissingTiledAlgorithm", "WrongAlgorithmName", "CastFailure", "ExpiredTarget",
                               "ExpiredColumn", "ExpiredData", "MissingScrollingData", "ColumnCardinalityMismatch", "TargetCardinalityMismatch", "InvalidGeometry"})
         expectContains(adapterHeader, token, "adapter exposes typed fail-closed result " + std::string{token});
-    for (const auto& token : {"workspace->inert()", "workspace->m_space", "algorithm()", "tiledAlgo()", "algoMatcher()->getNameForTiledAlgo", "dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>",
+    for (const auto& token : {"workspace->space()", "algorithm()", "tiledAlgo()", "algoMatcher()->getNameForTiledAlgo", "dynamic_cast<Layout::Tiled::CScrollingAlgorithm*>",
                               "dataFor(target)", ".lock()", "stripCount()", "getDirection()", "getOffset()", "getStrip(", "targetSizes.size()", "targetDatas.size()", "calculateStripStart(",
                               "calculateStripSize(", "layoutBox", "windowStableID", "algorithmFingerprint", "dataFingerprint"})
         expectContains(adapterSource, token, "adapter implements guarded snapshot token " + std::string{token});
@@ -785,7 +801,7 @@ int main() {
     expectContains(adapterSource, "controller->setOffset(workspaceState.offset)", "native transaction restores the exact pre-state offset after host structure changes");
 
     for (const auto& token : {"Desktop::globalWindowController()->moveWindowToWorkspace", "controllerMove", "reverse", "reResolve", "nextUnusedOrdinaryWorkspaceID",
-                              "State::workspaceState()->create", "m_monitor", "MixedFallback", "TerminalWorkspace"})
+                              "createWorkspaceForMonitor", "m_monitor", "MixedFallback", "TerminalWorkspace"})
         expectContains(adapterSource + mutationSource, token, "cross/terminal transaction exposes " + std::string{token});
     expectOrder(adapterSource, "moveWindowToWorkspace", "reResolve", "cross move discards stale ownership before destination positioning");
     expectContains(adapterSource, "if (reverse)", "rollback controller path explicitly reverses ownership");
@@ -842,10 +858,10 @@ int main() {
     const auto workspaceCapture = extractFunction(captureSource, "bool captureWorkspacePreview(");
     expect(!workspaceCapture.empty(), "shared workspace capture implementation exists");
     expectContains(workspaceCapture,
-                   "texture->m_transform = workspacePreviewNeedsHalfTurn(static_cast<int>(monitorState.transform())) ? HYPRUTILS_TRANSFORM_180 : HYPRUTILS_TRANSFORM_NORMAL;",
-                   "workspace texture correction uses the tested policy with the saved output transform");
-    expectOrder(workspaceCapture, "rendererState.finish()", "workspacePreviewNeedsHalfTurn(", "texture correction follows capture rendering");
-    expectOrder(workspaceCapture, "workspacePreviewNeedsHalfTurn(", "monitorState.restore()", "texture correction precedes monitor restoration");
+                   "texture->m_transform = HYPRUTILS_TRANSFORM_NORMAL;",
+                   "monitor-space workspace captures must not receive a second output rotation");
+    expectOrder(workspaceCapture, "rendererState.finish()", "texture->m_transform = HYPRUTILS_TRANSFORM_NORMAL;", "texture orientation metadata follows capture rendering");
+    expectOrder(workspaceCapture, "texture->m_transform = HYPRUTILS_TRANSFORM_NORMAL;", "monitorState.restore()", "texture orientation metadata precedes monitor restoration");
     const auto rotatedCapture = extractFunction(workspaceCapture, "if (isTransformRotated(monitorState.transform()))");
     expectContains(rotatedCapture, "captureBox = {{0, 0}, {captureBox.h, captureBox.w}};", "only quarter-turn outputs swap capture geometry");
     expectContains(rotatedCapture, "setMonitorGeometry(*request.monitor, WL_OUTPUT_TRANSFORM_NORMAL, captureBox.size(), captureBox.size())",
@@ -880,7 +896,7 @@ int main() {
     expectContains(previewCommit, "WINDOW->m_workspace->m_monitor != MON", "preview commits remain scoped to the owning monitor");
     expectContains(previewCommit, "WINDOW->m_workspace == MON->m_activeWorkspace", "active workspace commits retain the existing damage path");
     expectContains(previewCommit, "WINDOW->isHidden()", "hidden clients do not invalidate preview tiles");
-    expectContains(previewCommit, "WINDOW->m_pinned && !showPinnedWindowsInPreview()", "suppressed pinned clients do not invalidate preview tiles");
+    expectContains(previewCommit, "(WINDOW->m_state & Desktop::View::WINDOW_STATE_PINNED) && !showPinnedWindowsInPreview()", "suppressed pinned clients do not invalidate preview tiles");
     expectContains(previewCommit, "queueRedrawID(TILE)", "changed buffer geometry queues the current workspace tile");
     expectAbsent(previewCommit, "redrawID(", "surface commit callbacks never render synchronously");
     expectContains(previewCommit, "if (closing || !SURFACE)", "closing overviews ignore surface commits");
@@ -897,7 +913,7 @@ int main() {
     const auto windowCapture = extractFunction(captureSource, "SWindowCaptureResult captureWindowPreview(");
     expect(!windowCapture.empty(), "tight scrolling-target capture implementation exists");
     expectOrder(windowCapture, "preparePreviewFramebuffer(", "beginFullFakeRender(", "window captures use the same HDR-safe framebuffer policy before rendering");
-    for (const auto& token : {"createFB(", "beginFullFakeRender(", "m_bBlockSurfaceFeedback = true", "m_bRenderingSnapshot = true", "startRenderPass()", "renderWindow(",
+    for (const auto& token : {"createFB(", "beginFullFakeRender(", "m_blockSurfaceFeedback = true", "m_renderingSnapshot = true", "startRenderPass(g_pHyprRenderer->context())", "renderWindow(",
                               "Render::RENDER_PASS_ALL, true, true", "blockScreenShader = true", "rendererState.finish()", "getTexture()", "result.completed"})
         expectContains(windowCapture, token, "tight target capture uses approved GPU operation " + std::string{token});
     expectOrder(windowCapture, "beginFullFakeRender(", "renderWindow(", "target capture begins fake rendering before the window draw");
@@ -971,8 +987,8 @@ int main() {
     expect(!sessionHeader.empty() && !sessionSource.empty(), "common overview session interface and factory can be read from repo root");
     expect(!scrollingHeader.empty() && !scrollingSource.empty(), "read-only scrolling session source can be read from repo root");
 
-    for (const auto& token : {"class IOverviewSession", "virtual ~IOverviewSession", "virtual void render()", "virtual void damage()", "virtual void onDamageReported()",
-                              "virtual void onPreRender()", "virtual void fullRender()", "virtual void close(", "virtual bool closeCommitted()", "virtual void setClosing(",
+    for (const auto& token : {"class IOverviewSession", "virtual ~IOverviewSession", "virtual void render(Render::CRenderContext& ctx)", "virtual void damage()", "virtual void onDamageReported()",
+                              "virtual void onPreRender()", "virtual void fullRender(Render::CRenderContext& ctx)", "virtual void close(", "virtual bool closeCommitted()", "virtual void setClosing(",
                               "virtual void resetSwipe()", "virtual void onSwipeUpdate(", "virtual void onSwipeEnd(bool switchToSelection)", "virtual void onWindowMoveToWorkspace(",
                               "virtual bool selectHoveredWorkspace()", "virtual bool onKbMoveFocus(", "virtual bool onKbConfirm()", "virtual bool onKbSelectNumber(",
                               "virtual bool onKbSelectToken(", "virtual bool selectVisibleToken(", "virtual int64_t selectedWorkspaceID()", "virtual bool selectWorkspaceByID(",
@@ -1031,7 +1047,7 @@ int main() {
 
     expectContains(passSource, "overviewForSession(overviewMonitorKey(m_monitor.lock()), m_sessionGeneration)", "render pass validates monitor and generation identity");
     expectContains(passSource, "m_sessionGeneration", "render pass retains only an immutable generation identity");
-    expectOrder(passSource, "if (auto* const OV = overview())", "OV->fullRender()", "render pass null-checks before virtual rendering");
+    expectOrder(passSource, "if (auto* const OV = overview())", "OV->fullRender(ctx)", "render pass null-checks before virtual rendering");
     expectContains(scrollingHeader, "PHLANIMVAR<float> m_transitionProgress", "scrolling session owns one compositor-managed transition value");
     expectContains(scrollingSource, "Animation::mgr()->createAnimation", "scrolling overview entry and exit use the compositor animation manager");
     expectContains(scrollingSource, "transitionForSwipe(m_swipeClosing, m_swipeDelta", "scrolling swipe delta drives the visible transition progress");

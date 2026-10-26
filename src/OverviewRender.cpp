@@ -63,7 +63,7 @@ void COverview::redrawID(int id, bool forcelowres) {
     }
     else {
         for (const auto& w : State::workspaceState()->workspacesCopy()) {
-            if (w->m_id == image.workspaceID) {
+            if (workspaceHasID(w, image.workspaceID)) {
                 PWORKSPACE = w;
                 break;
             }
@@ -138,7 +138,7 @@ void COverview::onSourceMonitorDamage(const PHLMONITOR& source) {
         auto& image = images[i];
         if (!image.pWorkspace) {
             for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-                if (workspace->m_id == image.workspaceID) {
+                if (workspaceHasID(workspace, image.workspaceID)) {
                     image.pWorkspace = workspace;
                     break;
                 }
@@ -147,7 +147,7 @@ void COverview::onSourceMonitorDamage(const PHLMONITOR& source) {
         const auto& workspace = image.pWorkspace;
         if (!workspace)
             continue;
-        const bool visible = workspace == source->m_activeWorkspace || workspace->m_visible || workspace->m_forceRendering ||
+        const bool visible = workspace == source->m_activeWorkspace || workspace->visible() || workspace->m_forceRendering ||
             workspace->m_alpha->isBeingAnimated() || workspace->m_renderOffset->isBeingAnimated();
         // Refresh the old active tile once to remove its special overlay after a switch.
         // shortcut: pinned damage has no window identity; refine this when scoped damage is available.
@@ -206,12 +206,12 @@ void COverview::close(bool switchToSelection) {
             TARGET->setSpecialWorkspace(0);
             const auto CHANGE = Config::Actions::changeWorkspace(SELECTED);
             if (!CHANGE) {
-                Log::logger->log(Log::ERR, "[hyprexpo] failed to select foreign workspace: {}", CHANGE.error().message);
+                Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] failed to select foreign workspace: {}", CHANGE.error().message);
                 return;
             }
             const auto MOVE = Config::Actions::moveCursor(TARGET->m_position + TARGET->m_size / 2.0);
             if (!MOVE)
-                Log::logger->log(Log::ERR, "[hyprexpo] failed to move cursor: {}", MOVE.error().message);
+                Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] failed to move cursor: {}", MOVE.error().message);
             for (const auto& monitor : State::monitorState()->monitors()) {
                 g_pHyprRenderer->damageMonitor(monitor);
                 monitor->scheduleFrame();
@@ -229,7 +229,7 @@ void COverview::close(bool switchToSelection) {
     redrawAll();
 
     if (switchToSelection && (TILE.workspaceID != WORKSPACE_INVALID || emptyTilesSelectable) &&
-        (TILE.workspaceID != MON->activeWorkspaceID() || Desktop::focusState()->monitor() != MON)) {
+        (TILE.workspaceID != activeWorkspaceID(MON) || Desktop::focusState()->monitor() != MON)) {
         MON->setSpecialWorkspace(0);
 
         // If this tile's workspace was WORKSPACE_INVALID, move to the next
@@ -250,7 +250,7 @@ void COverview::close(bool switchToSelection) {
 
         if (!NEWIDWS) {
             for (const auto& w : State::workspaceState()->workspacesCopy()) {
-                if (w->m_id == NEWID) {
+                if (workspaceHasID(w, NEWID)) {
                     NEWIDWS = w;
                     break;
                 }
@@ -260,11 +260,11 @@ void COverview::close(bool switchToSelection) {
         const auto OLDWS = MON->m_activeWorkspace;
 
         if (!NEWIDWS && NEWID != WORKSPACE_INVALID)
-            NEWIDWS = State::workspaceState()->create(NEWID, MON->m_id, std::to_string(NEWID), false);
+            NEWIDWS = createWorkspaceForMonitor(NEWID, MON);
 
         const auto CHANGE = Config::Actions::changeWorkspace(NEWIDWS);
         if (!CHANGE)
-            Log::logger->log(Log::ERR, "[hyprexpo] failed to change workspace: {}", CHANGE.error().message);
+            Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] failed to change workspace: {}", CHANGE.error().message);
 
         if (CHANGE && OLDWS != MON->m_activeWorkspace) {
             Animation::Workspace::startAnimation(MON->m_activeWorkspace, Animation::Workspace::ANIMATION_TYPE_IN, true, true);
@@ -298,7 +298,7 @@ void COverview::onWorkspaceChange() {
         startedOn = MON->m_activeWorkspace;
 
     for (size_t i = 0; i < images.size(); ++i) {
-        if (images[i].workspaceID != MON->activeWorkspaceID())
+        if (images[i].workspaceID != activeWorkspaceID(MON))
             continue;
 
         openedID = i;
@@ -309,8 +309,8 @@ void COverview::onWorkspaceChange() {
     close();
 }
 
-void COverview::render() {
-    g_pHyprRenderer->m_renderPass.add(makeUnique<COverviewPassElement>(pMonitor.lock(), m_sessionGeneration));
+void COverview::render(Render::CRenderContext& ctx) {
+    g_pHyprRenderer->addPassElement(ctx, makeUnique<COverviewPassElement>(pMonitor.lock(), m_sessionGeneration));
 }
 
 bool COverview::shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const {
@@ -328,7 +328,7 @@ bool COverview::shouldRenderOverviewForMonitor(const PHLMONITOR& monitor) const 
 }
 
 
-void COverview::fullRender() {
+void COverview::fullRender(Render::CRenderContext& ctx) {
     const auto MON = pMonitor.lock();
     if (!MON)
         return;
@@ -348,8 +348,8 @@ void COverview::fullRender() {
     if (wallpaperBg && MON->m_background) {
         CRegion backgroundDamage{0, 0, INT16_MAX, INT16_MAX};
         CBox    backgroundBox{{0, 0}, MON->m_transformedSize};
-        Render::GL::g_pHyprOpenGL->renderTextureInternal(MON->m_background, backgroundBox, {.damage = &backgroundDamage, .a = 1.0f});
-        Render::GL::g_pHyprOpenGL->renderRect(backgroundBox, CHyprColor{0x00000066}, {});
+        Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, MON->m_background, backgroundBox, {.damage = &backgroundDamage, .a = 1.0f});
+        Render::GL::g_pHyprOpenGL->renderRect(ctx, backgroundBox, CHyprColor{0x00000066}, {});
     }
 
     auto* const* PTILEROUND  = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding")->getDataStaticPtr();
@@ -401,7 +401,7 @@ void COverview::fullRender() {
 
             CRegion damage{0, 0, INT16_MAX, INT16_MAX};
             if (const auto texture = images[id].fb ? images[id].fb->getTexture() : nullptr; texture)
-                Render::GL::g_pHyprOpenGL->renderTextureInternal(texture, texbox, {.damage = &damage, .a = alpha, .round = tileRound, .roundingPower = ROUND_PWR});
+                Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, texture, texbox, {.damage = &damage, .a = alpha, .round = tileRound, .roundingPower = ROUND_PWR});
         }
     }
 
@@ -464,15 +464,15 @@ void COverview::fullRender() {
             return {};
 
         const auto& image = images[id];
-        if (image.pWorkspace && !image.pWorkspace->m_name.empty())
-            return image.pWorkspace->m_name;
+        if (image.pWorkspace && !image.pWorkspace->displayName().empty())
+            return image.pWorkspace->displayName();
 
         for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-            if (!workspace || workspace->m_id != image.workspaceID)
+            if (!workspace || !workspaceHasID(workspace, image.workspaceID))
                 continue;
 
-            if (!workspace->m_name.empty())
-                return workspace->m_name;
+            if (!workspace->displayName().empty())
+                return workspace->displayName();
             break;
         }
 
@@ -534,15 +534,15 @@ void COverview::fullRender() {
                 bg.round();
                 lb.round();
             }
-            Render::GL::g_pHyprOpenGL->renderRect(bg, CHyprColor{(uint64_t)**PLBGCOL}, {.round = roundPx});
-            Render::GL::g_pHyprOpenGL->renderTexture(tex, lb, {.a = 1.0});
+            Render::GL::g_pHyprOpenGL->renderRect(ctx, bg, CHyprColor{(uint64_t)**PLBGCOL}, {.round = roundPx});
+            Render::GL::g_pHyprOpenGL->renderTexture(ctx, tex, lb, {.a = 1.0});
         };
 
         auto drawNoBG = [&]() {
             CBox lb = placeBox(tile, sz, anchor, offsetX, offsetY);
             if (**PLPIXELSNAP)
                 lb.round();
-            Render::GL::g_pHyprOpenGL->renderTexture(tex, lb, {.a = 1.0});
+            Render::GL::g_pHyprOpenGL->renderTexture(ctx, tex, lb, {.a = 1.0});
         };
 
         if (**PLBGEN)
@@ -576,15 +576,15 @@ void COverview::fullRender() {
                 grad.m_colors.push_back(spec.c2);
                 grad.m_angle = spec.angleDeg * (float)M_PI / 180.f;
                 grad.updateColorsOk();
-                Render::GL::g_pHyprOpenGL->renderBorder(box, grad, {.round = roundScaled, .roundingPower = ROUND_PWR, .borderSize = BWIDTH});
+                Render::GL::g_pHyprOpenGL->renderBorder(ctx, box, grad, {.round = roundScaled, .roundingPower = ROUND_PWR, .borderSize = BWIDTH});
             }
         } else if (!effectiveSpec.empty()) {
             Hyprexpo::SColorRGBA parsedColor;
             if (Hyprexpo::parseSolidColorSpec(effectiveSpec, parsedColor)) {
                 CHyprColor color{parsedColor.r, parsedColor.g, parsedColor.b, parsedColor.a};
-                Render::GL::g_pHyprOpenGL->renderBorder(box, color, {.round = roundScaled, .roundingPower = ROUND_PWR, .borderSize = BWIDTH});
+                Render::GL::g_pHyprOpenGL->renderBorder(ctx, box, color, {.round = roundScaled, .roundingPower = ROUND_PWR, .borderSize = BWIDTH});
             } else {
-                Log::logger->log(Log::ERR, "[hyprexpo] invalid border color config: {}", effectiveSpec);
+                Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] invalid border color config: {}", effectiveSpec);
             }
         }
     };
@@ -606,19 +606,19 @@ void COverview::fullRender() {
             grad.m_colors = {spec.c1, spec.c2};
             grad.m_angle  = spec.angleDeg * (float)M_PI / 180.f;
             grad.updateColorsOk();
-            Render::GL::g_pHyprOpenGL->renderBorder(proxy, grad, {.round = round, .roundingPower = ROUND_PWR, .borderSize = borderWidth});
+            Render::GL::g_pHyprOpenGL->renderBorder(ctx, proxy, grad, {.round = round, .roundingPower = ROUND_PWR, .borderSize = borderWidth});
             return;
         }
 
         Hyprexpo::SColorRGBA parsedColor;
         if (!Hyprexpo::parseSolidColorSpec(effectiveSpec, parsedColor)) {
-            Log::logger->log(Log::ERR, "[hyprexpo] invalid drag_drop_proxy_border_color config: {}", effectiveSpec);
+            Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] invalid drag_drop_proxy_border_color config: {}", effectiveSpec);
             return;
         }
 
         Config::CGradientValueData grad{CHyprColor{parsedColor.r, parsedColor.g, parsedColor.b, parsedColor.a}};
         grad.updateColorsOk();
-        Render::GL::g_pHyprOpenGL->renderBorder(proxy, grad, {.round = round, .roundingPower = ROUND_PWR, .borderSize = borderWidth});
+        Render::GL::g_pHyprOpenGL->renderBorder(ctx, proxy, grad, {.round = round, .roundingPower = ROUND_PWR, .borderSize = borderWidth});
     };
 
     std::vector<std::string> selectionTokens;
@@ -761,7 +761,7 @@ void COverview::fullRender() {
                 const int autoRound     = std::min(RND_FOC, maxProxyRound);
                 const int round        = **PDRAGPROXYROUND >= 0 ? std::min(std::max(0, (int)std::lround((double)**PDRAGPROXYROUND * MON->m_scale)), maxProxyRound) : autoRound;
 
-                Render::GL::g_pHyprOpenGL->renderRect(proxy, CHyprColor{(uint64_t)(g_overviewDrag.state.moved ? **PDRAGPROXYACTCOL : **PDRAGPROXYCOL)}, {.round = round, .roundingPower = ROUND_PWR});
+                Render::GL::g_pHyprOpenGL->renderRect(ctx, proxy, CHyprColor{(uint64_t)(g_overviewDrag.state.moved ? **PDRAGPROXYACTCOL : **PDRAGPROXYCOL)}, {.round = round, .roundingPower = ROUND_PWR});
 
                 const int borderWidth = **PDRAGPROXYBWIDTH >= 0 ? **PDRAGPROXYBWIDTH : std::max(2, (int)**PBWIDTH + 1);
                 std::string effectiveSpec = std::string{*PDRAGPROXYBORDER}.empty() ? std::string{*PBCOLFOC} : std::string{*PDRAGPROXYBORDER};

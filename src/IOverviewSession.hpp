@@ -13,11 +13,15 @@
 #include <string>
 #include <vector>
 
+namespace Render {
+class CRenderContext;
+}
+
 class IOverviewSession {
   public:
     virtual ~IOverviewSession() = default;
 
-    virtual void render() = 0;
+    virtual void render(Render::CRenderContext& ctx) = 0;
     virtual void damage() = 0;
     virtual void onDamageReported() = 0;
     virtual void onSourceMonitorDamage(const PHLMONITOR&) {}
@@ -25,7 +29,7 @@ class IOverviewSession {
     virtual void onConfigReload() = 0;
     virtual void prepareForTeardown() = 0;
     virtual std::expected<std::string, std::string> injectScrollingInput(const std::string& sequence) = 0;
-    virtual void fullRender() = 0;
+    virtual void fullRender(Render::CRenderContext& ctx) = 0;
 
     virtual void setClosing(bool closing) = 0;
     virtual void beginCancelSwipe() = 0;
