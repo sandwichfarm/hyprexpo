@@ -1066,7 +1066,7 @@ int main() {
     expectOrder(sessionSource, "plugin:hyprexpo:overview_mode", "detectedScrolling", "overview mode is read before scrolling layout detection runs");
     expectOrder(sessionSource, "forcedGrid", "workspaceUsesScrollingLayout(startedOn)", "a forced-grid preference can short-circuit scrolling layout detection");
     expectContains(dispatchersSource, "createOverview(monitor)", "dispatcher creates sessions through the monitor registry");
-    expectContains(source, "createOverviewSession(monitor->m_activeWorkspace, monitor, swipe)", "registry passes the explicit monitor to the sole session factory");
+    expectContains(source, "createOverviewSession(monitor->m_activeWorkspace, monitor, swipe, forceGrid)", "registry passes the explicit monitor to the sole session factory");
     expectContains(dispatchersSource, "failed to initialize native scrolling overview", "dispatcher reports fail-closed scrolling creation");
     expectContains(gestureSource, "createOverview(monitor, true)", "gesture creates sessions through the monitor registry and sole factory");
     expectAbsent(dispatchersSource + gestureSource, "std::make_unique<COverview>", "callers never instantiate the concrete grid implementation");
@@ -1157,9 +1157,9 @@ int main() {
     expectAbsent(scrollingInstallInput, ": m_monitor.lock()", "unbound touch devices are not guessed onto the overview monitor");
     const auto scrollingRefresh = extractFunction(scrollingSource, "bool CScrollingOverview::refreshScene(");
     expectContains(scrollingRefresh, "nextUnusedOrdinaryWorkspaceID(workspaceIDs)", "terminal scene shares the transaction's first-unused allocation policy");
-    expectOrder(scrollingRefresh, "workspaceIDs.push_back(workspaceID(workspace))", "if (workspace->m_monitor != MON)", "terminal allocation includes ordinary IDs on every monitor");
+    expectOrder(scrollingRefresh, "workspaceIDs.push_back(workspaceID(workspace))", "if (workspace->m_monitor != MON", "terminal allocation includes ordinary IDs on every monitor");
     const auto scrollingPreRender = extractFunction(scrollingSource, "void CScrollingOverview::onPreRender(");
-    expectOrder(scrollingRefresh, "const bool hadScene = m_scene.valid", "m_scene = buildScene(", "scene refresh distinguishes an existing viewport from first open");
+    expectOrder(scrollingRefresh, "const bool hadScene = m_scene.valid", "buildScene(specs, workspaceID(m_startedOn), sceneConfig)", "scene refresh distinguishes an existing viewport from first open");
     expectContains(scrollingRefresh, "hadScene ? clampPan(m_scene, m_pan, MON->m_size.y) : initialPan(", "content refresh retains pan while first open centers the active row");
     expectContains(scrollingRefresh, "focusAfterRefresh(m_scene, m_focus, workspaceID(m_startedOn))", "runtime refresh uses the tested surviving-focus policy");
     expectAbsent(scrollingRefresh, "m_focus = {.kind", "content refresh does not overwrite keyboard selection with the opening workspace");

@@ -61,6 +61,17 @@ CHyprColor applyTransitionOpacity(const CHyprColor& color, const SOverviewTransi
     return color.modifyA(color.a * transition.opacity);
 }
 
+// The focus frame reuses the grid's focus border color; a gradient contributes its first stop.
+CHyprColor focusBorderColor() {
+    const auto spec = CompatHyprlandAPI::stringValue("plugin:hyprexpo:border_color_focus");
+    Hyprexpo::SColorRGBA solid;
+    if (Hyprexpo::parseSolidColorSpec(spec, solid))
+        return CHyprColor{solid.r, solid.g, solid.b, solid.a};
+    if (const auto gradient = parseGradientSpec(spec); gradient.valid)
+        return gradient.c1;
+    return CHyprColor{1.0, 0.8, 0.4, 1.0};
+}
+
 void scheduleScrollingOverviewRemoval(uint64_t monitorKey, uint64_t generation) {
     g_pEventLoopManager->doLater([monitorKey, generation]() {
         auto* const OV = overviewForSession(monitorKey, generation);
@@ -90,8 +101,9 @@ EOutputTransform outputTransform(wl_output_transform transform) {
 
 }
 
-CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe, uint64_t sessionGeneration, const std::optional<SWorkspaceSnapshot>& initialSnapshot) :
-    m_startedOn(startedOn), m_monitor(monitor), m_sessionGeneration(sessionGeneration), m_isSwiping(swipe),
+CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe, uint64_t sessionGeneration, const std::optional<SWorkspaceSnapshot>& initialSnapshot,
+                                       bool windowGrid) :
+    m_startedOn(startedOn), m_monitor(monitor), m_sessionGeneration(sessionGeneration), m_isSwiping(swipe), m_windowGrid(windowGrid),
     m_selectedWorkspaceID(startedOn ? workspaceID(startedOn) : 0) {
     Animation::mgr()->createAnimation(0.F, m_transitionProgress, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
     m_transitionProgress->setUpdateCallback([monitorKey = overviewMonitorKey(monitor), generation = m_sessionGeneration](auto) {
@@ -100,6 +112,13 @@ CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLM
     });
     m_valid = refreshScene(initialSnapshot);
     if (m_valid) {
+        // Open on the window that already has focus rather than the first one in the tape.
+        const auto focused = Desktop::focusState()->window();
+        const auto target = std::ranges::find_if(m_renderTargets, [&](const auto& item) { return focused && item.windowRef.lock() == focused; });
+        if (target != m_renderTargets.end()) {
+            m_focus = {.kind = EHitKind::Target, .workspaceID = target->workspaceID, .targetToken = target->targetToken};
+            updateSelectionFromFocus();
+        }
         installInputListeners();
         enterOverviewSubmap(m_submapActive);
         if (!swipe)
@@ -114,6 +133,7 @@ CScrollingOverview::~CScrollingOverview() {
     m_closeAnimationTimer.reset();
     resetInputState(EResetReason::Teardown);
     releaseAllCaptureState();
+    m_numberLabels.clear();
 }
 
 bool CScrollingOverview::valid() const {
@@ -135,7 +155,8 @@ SInputContext CScrollingOverview::inputContext() const {
         },
         .pan = m_pan,
         .viewportHeight = MON->m_size.y,
-        .dragThreshold = 12.0,
+        // The window grid only selects; its geometry has no native drop positions.
+        .dragThreshold = m_windowGrid ? 1.0e9 : 12.0,
     };
 }
 
@@ -262,6 +283,12 @@ void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const S
         }
     }
 
+    // Hover is keyboard focus, so confirm selects the window under the pointer.
+    if (effects.hoverChanged && m_inputState.hover.kind == EHitKind::Target) {
+        m_focus = {.kind = EHitKind::Target, .workspaceID = m_inputState.hover.workspaceID, .targetToken = m_inputState.hover.targetToken};
+        updateSelectionFromFocus();
+    }
+
     if (effects.selection) {
         m_focus = {.kind = effects.selection->kind, .workspaceID = effects.selection->workspaceID, .targetToken = effects.selection->targetToken};
         updateSelectionFromFocus();
@@ -298,8 +325,10 @@ void CScrollingOverview::installInputListeners() {
         if (info.cancelled || pointerOverview() != this)
             return;
         const auto point = g_pInputManager->getMouseCoordsInternal();
-        const auto effects = processInput({.kind = EInputKind::MouseMove, .globalLogicalPoint = {point.x, point.y}});
-        info.cancelled = info.cancelled || effects.consume;
+        processInput({.kind = EInputKind::MouseMove, .globalLogicalPoint = {point.x, point.y}});
+        // With follow_mouse, motion reaching the windows underneath refocuses them, and
+        // their focus damage rebuilds the scene and clears hover on every move.
+        info.cancelled = !m_closeCommitted;
     });
     mouseButtonHook = Event::bus()->m_events.input.mouse.button.listen([this](const IPointer::SButtonEvent& event, Event::SCallbackInfo& info) {
         if (info.cancelled || pointerOverview() != this)
@@ -418,7 +447,7 @@ bool CScrollingOverview::sceneTopologyCurrent() const {
 
     const auto workspaces = State::workspaceState()->workspacesCopy();
     const auto count = std::ranges::count_if(workspaces, [&](const auto& ws) { return ws && ws->type() != Workspace::eWorkspaceType::SPECIAL && ws->m_monitor == MON; });
-    if (static_cast<size_t>(count) != m_rows.size())
+    if (!m_windowGrid && static_cast<size_t>(count) != m_rows.size())
         return false;
 
     for (const auto& row : m_rows) {
@@ -457,6 +486,30 @@ bool CScrollingOverview::sceneTopologyCurrent() const {
     return true;
 }
 
+std::vector<SWindowGridItem> CScrollingOverview::windowGridItems() const {
+    std::vector<SWindowGridItem> items;
+    const auto row = workspaceRow(m_startedOn ? workspaceID(m_startedOn) : 0);
+    if (!row || row->kind != EWorkspaceKind::Scrolling)
+        return items;
+    const bool showPinned = showPinnedWindowsInPreview();
+    std::unordered_set<uint64_t> seen;
+    const auto add = [&](const STargetSnapshot& target) {
+        if ((target.pinned && !showPinned) || !seen.insert(targetToken(target)).second)
+            return;
+        items.push_back({.token = targetToken(target), .size = {target.layoutBox.w, target.layoutBox.h}});
+    };
+    // Tape order first, so numbers follow the native left-to-right columns; floating windows last.
+    for (const auto& column : row->snapshot.columns) {
+        for (const auto& target : column.targets)
+            add(target);
+    }
+    for (const auto& target : row->snapshot.layoutTargets) {
+        if (target.floating)
+            add(target);
+    }
+    return items;
+}
+
 bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& initialSnapshot) {
     const auto MON = m_monitor.lock();
     if (!MON || !m_startedOn)
@@ -474,7 +527,7 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
         if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL)
             continue;
         workspaceIDs.push_back(workspaceID(workspace));
-        if (workspace->m_monitor != MON)
+        if (workspace->m_monitor != MON || (m_windowGrid && workspace != m_startedOn))
             continue;
         workspaces.push_back(workspace);
     }
@@ -526,7 +579,14 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
         .columnGap = std::max(8.0, MON->m_size.x * 0.008),
         .terminalWorkspaceID = terminalWorkspaceID,
     };
-    m_scene = buildScene(specs, workspaceID(m_startedOn), sceneConfig);
+    m_scene = m_windowGrid ? buildWindowGridScene(m_workspaceID(startedOn), windowGridItems(), {
+                                 .viewportWidth = MON->m_size.x,
+                                 .viewportHeight = MON->m_size.y,
+                                 .margin = std::max(24.0, MON->m_size.y * 0.04),
+                                 .gap = std::max(16.0, MON->m_size.x * 0.015),
+                                 .columns = static_cast<int>(CompatHyprlandAPI::intValue("plugin:hyprexpo:windows_columns")),
+                             }) :
+                             buildScene(specs, m_workspaceID(startedOn), sceneConfig);
     if (!m_scene.valid)
         return false;
     // Client damage refreshes captures without reopening the overview's viewport.
@@ -562,6 +622,22 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
             const auto token = targetToken(target);
             if (!target.floating || !seenTargets.insert(token).second)
                 continue;
+            if (m_windowGrid) {
+                const auto placed = std::ranges::find_if(m_scene.targets, [&](const auto& sceneTarget) { return sceneTarget.token == token; });
+                if (placed == m_scene.targets.end())
+                    continue;
+                m_renderTargets.push_back(SRenderTarget{.workspaceID = row.workspace->m_id,
+                                           .targetToken = token,
+                                           .windowStableID = target.windowStableID,
+                                           .box = sceneBox(placed->box, 0.0),
+                                           .targetRef = target.targetRef,
+                                           .windowRef = target.windowRef,
+                                           .group = target.group,
+                                           .floating = target.floating,
+                                           .fullscreen = target.fullscreen,
+                                           .pinned = target.pinned});
+                continue;
+            }
             const CBox& source = target.layoutBox;
             const double localX = source.x - MON->m_position.x;
             const double localY = source.y - MON->m_position.y;
@@ -604,6 +680,12 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
     refreshCache();
     m_focus = focusAfterRefresh(m_scene, m_focus, workspaceID(m_startedOn));
     updateSelectionFromFocus();
+    // A refresh resets input; keep the stationary pointer's hover instead of blinking it off.
+    if (const auto local = monitorLocalPoint(Hyprexpo::SPoint{g_pInputManager->getMouseCoordsInternal().x, g_pInputManager->getMouseCoordsInternal().y}, inputContext().monitor)) {
+        const auto hit = hitTest(m_scene, *local, m_pan);
+        if (hit.kind == EHitKind::Target)
+            m_inputState.hover = hit;
+    }
     return true;
 }
 
@@ -713,6 +795,7 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
     const auto transition = overviewTransition(m_transitionProgress ? m_transitionProgress->value() : 1.0,
                                                {MON->m_size.x, MON->m_size.y});
     clearWithColor(applyTransitionOpacity(CHyprColor{0.06, 0.06, 0.06, 1.0}, transition));
+    const auto focusColor = focusBorderColor();
     CRegion damageRegion{0, 0, INT16_MAX, INT16_MAX};
 
     for (const auto& workspace : m_scene.workspaces) {
@@ -752,6 +835,32 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
         const bool dragging = m_inputState.mode == EInputMode::WindowDrag && m_inputState.pressed.workspaceID == target.workspaceID && m_inputState.pressed.targetToken == target.targetToken;
         if (hovered || dragging)
             Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(dragging ? CHyprColor{0.20, 0.48, 0.85, 0.20} : CHyprColor{0.85, 0.90, 1.0, 0.12}, transition), {.round = target.fullscreen ? 0 : 8});
+        const bool focused = m_focus.kind == EHitKind::Target && m_focus.workspaceID == target.workspaceID && m_focus.targetToken == target.targetToken;
+        if (focused)
+            Render::GL::g_pHyprOpenGL->renderBorder(ctx, box, focusColor,
+                                                    {.round = target.fullscreen ? 0 : 8, .borderSize = static_cast<int>(std::max(2.0, std::round(3.0 * MON->m_scale))), .a = static_cast<float>(transition.opacity)});
+    }
+
+    if (!m_windowGrid)
+        return;
+    // Digit badges: 1-9 then 0 for the tenth window, matching the number keys that select them.
+    const double badgePixels = std::round(36.0 * MON->m_scale);
+    if (m_numberLabelPixels != badgePixels) {
+        m_numberLabels.clear();
+        m_numberLabelPixels = badgePixels;
+    }
+    const auto numbered = numberedTargets();
+    for (size_t i = 0; i < numbered.size() && i < 10; ++i) {
+        if (m_numberLabels.size() <= i)
+            m_numberLabels.resize(i + 1);
+        if (!m_numberLabels[i])
+            m_numberLabels[i] = renderNumberTexture(std::to_string((i + 1) % 10), CHyprColor{1.0, 1.0, 1.0, 1.0}, Vector2D{badgePixels, badgePixels}, MON->m_scale, 18);
+        CBox box = numbered[i]->box;
+        box = applyTransition({box.x + 8.0, box.y + 8.0, 36.0, 36.0}, {MON->m_size.x, MON->m_size.y}, transition);
+        box.scale(MON->m_scale).round();
+        Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.0, 0.0, 0.0, 0.65}, transition), {.round = static_cast<int>(box.h / 2.0)});
+        if (m_numberLabels[i])
+            Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, m_numberLabels[i], box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity)});
     }
 }
 
@@ -835,6 +944,12 @@ bool CScrollingOverview::commitSelection() {
             }
             if (selectedWindow)
                 break;
+        }
+        // Floating windows are not tape columns; only the window grid can select them.
+        for (const auto& target : snapshot.snapshot->layoutTargets) {
+            if (selectedWindow || !m_windowGrid || !target.floating || target.windowStableID != m_selectedStableID)
+                continue;
+            selectedWindow = target.windowRef.lock();
         }
         if (!selectedWindow || !m_selectedTarget.lock() || m_selectedWindow.lock() != selectedWindow)
             return false;
@@ -989,6 +1104,16 @@ bool CScrollingOverview::onKbSelectToken(int visibleIndex) {
     return visibleIndex >= 0 && selectVisibleIndex(static_cast<size_t>(visibleIndex));
 }
 
+std::vector<const CScrollingOverview::SRenderTarget*> CScrollingOverview::numberedTargets() const {
+    std::vector<const SRenderTarget*> numbered;
+    for (const auto& placed : m_scene.targets) {
+        const auto target = std::ranges::find_if(m_renderTargets, [&](const auto& item) { return item.workspaceID == placed.workspaceID && item.targetToken == placed.token; });
+        if (target != m_renderTargets.end())
+            numbered.push_back(&*target);
+    }
+    return numbered;
+}
+
 bool CScrollingOverview::selectVisibleToken(const std::string& token) {
     if (m_closing || m_closeCommitted)
         return false;
@@ -1013,6 +1138,14 @@ bool CScrollingOverview::selectWorkspaceByID(int64_t workspaceID) {
 bool CScrollingOverview::selectVisibleIndex(size_t index) {
     if (m_closing || m_closeCommitted)
         return false;
+    if (m_windowGrid) {
+        const auto numbered = numberedTargets();
+        if (index >= numbered.size())
+            return false;
+        m_focus = {.kind = EHitKind::Target, .workspaceID = numbered[index]->workspaceID, .targetToken = numbered[index]->targetToken};
+        updateSelectionFromFocus();
+        return true;
+    }
     if (index >= m_rows.size() || !m_rows[index].workspace)
         return false;
     return selectWorkspaceByID(workspaceID(m_rows[index].workspace));
@@ -1048,6 +1181,10 @@ bool CScrollingOverview::ownsAnimVar(const WP<Hyprutils::Animation::CBaseAnimate
 
 bool CScrollingOverview::ownsPointerInput() const {
     return !m_closeCommitted && m_inputState.owner == EInputOwner::Mouse;
+}
+
+bool CScrollingOverview::isWindowGrid() const {
+    return m_windowGrid;
 }
 
 bool CScrollingOverview::ownsTouchInput(int32_t touchId) const {

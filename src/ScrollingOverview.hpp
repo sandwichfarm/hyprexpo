@@ -18,7 +18,8 @@
 
 class CScrollingOverview final : public IOverviewSession {
   public:
-    CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe, uint64_t sessionGeneration, const std::optional<Hyprexpo::Scrolling::SWorkspaceSnapshot>& initialSnapshot);
+    CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe, uint64_t sessionGeneration, const std::optional<Hyprexpo::Scrolling::SWorkspaceSnapshot>& initialSnapshot,
+                       bool windowGrid = false);
     ~CScrollingOverview() override;
 
     bool valid() const;
@@ -61,6 +62,7 @@ class CScrollingOverview final : public IOverviewSession {
     bool ownsAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var) const override;
     bool ownsPointerInput() const override;
     bool ownsTouchInput(int32_t touchId) const override;
+    bool isWindowGrid() const override;
 
   private:
     struct SCacheKey {
@@ -104,6 +106,8 @@ class CScrollingOverview final : public IOverviewSession {
     };
 
     bool refreshScene(const std::optional<Hyprexpo::Scrolling::SWorkspaceSnapshot>& initialSnapshot = std::nullopt);
+    std::vector<Hyprexpo::Scrolling::SWindowGridItem> windowGridItems() const;
+    std::vector<const SRenderTarget*> numberedTargets() const;
     bool sceneTopologyCurrent() const;
     void refreshCache();
     void releaseCacheEntry(SCacheEntry& entry);
@@ -137,6 +141,7 @@ class CScrollingOverview final : public IOverviewSession {
     bool                                      m_damageDirty = false;
     bool                                      m_showPinnedWindows = false;
     bool                                      m_submapActive = false;
+    bool                                      m_windowGrid = false;
     double                                    m_pan = 0.0;
     double                                    m_swipeDelta = 0.0;
     PHLANIMVAR<float> m_transitionProgress;
@@ -150,6 +155,8 @@ class CScrollingOverview final : public IOverviewSession {
     std::vector<SWorkspaceRow>                m_rows;
     std::vector<SRenderTarget>                m_renderTargets;
     std::vector<SCacheEntry>                  m_cache;
+    std::vector<SP<Render::ITexture>>         m_numberLabels;
+    double                                    m_numberLabelPixels = 0.0;
     Hyprexpo::Scrolling::SInputState          m_inputState;
     Hyprexpo::Scrolling::SDropSource          m_pendingDropSource;
     std::optional<Hyprexpo::Scrolling::SDropIntent> m_pendingDropIntent;

@@ -42,6 +42,7 @@ enum class ENumberKeyMode {
 enum class EOverviewModePreference {
     Auto,
     Grid,
+    Windows,
 };
 
 struct SWorkspaceMethodSpec {

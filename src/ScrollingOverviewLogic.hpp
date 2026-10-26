@@ -173,6 +173,19 @@ struct SCapturePlan {
     std::vector<SCaptureAllocation> allocations;
 };
 
+struct SWindowGridItem {
+    uint64_t token = 0;
+    SSize    size;
+};
+
+struct SWindowGridConfig {
+    double viewportWidth  = 0.0;
+    double viewportHeight = 0.0;
+    double margin         = 0.0;
+    double gap            = 0.0;
+    int    columns        = 0;
+};
+
 struct SOverviewTransition {
     double progress = 0.0;
     double opacity  = 0.0;
@@ -182,6 +195,9 @@ struct SOverviewTransition {
 
 STapeLayout layoutTape(const STapeSpec& tape, SPoint origin, double crossExtent, double gap);
 SScene      buildScene(const std::vector<SWorkspaceSpec>& workspaces, int64_t activeWorkspaceID, const SSceneConfig& config);
+// One workspace's windows as a fixed grid that fits the viewport; columns <= 0 picks ceil(sqrt(n)).
+int         windowGridColumns(size_t count, int requestedColumns);
+SScene      buildWindowGridScene(int64_t workspaceID, const std::vector<SWindowGridItem>& items, const SWindowGridConfig& config);
 double      initialPan(const SScene& scene, int64_t activeWorkspaceID, double viewportHeight);
 double      clampPan(const SScene& scene, double pan, double viewportHeight);
 double      panBy(const SScene& scene, double currentPan, double delta, double viewportHeight);

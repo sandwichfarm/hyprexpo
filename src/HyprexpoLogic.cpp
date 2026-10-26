@@ -475,6 +475,8 @@ EOverviewModePreference overviewModePreferenceFromString(const std::string& mode
     const auto normalized = lowerString(trimString(mode));
     if (normalized == "grid")
         return EOverviewModePreference::Grid;
+    if (normalized == "windows")
+        return EOverviewModePreference::Windows;
 
     return EOverviewModePreference::Auto;
 }

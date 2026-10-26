@@ -213,6 +213,64 @@ SScene buildScene(const std::vector<SWorkspaceSpec>& workspaces, int64_t activeW
     return result;
 }
 
+int windowGridColumns(size_t count, int requestedColumns) {
+    if (count == 0)
+        return 1;
+    const int automatic = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(count))));
+    return std::clamp(requestedColumns > 0 ? requestedColumns : automatic, 1, static_cast<int>(count));
+}
+
+SScene buildWindowGridScene(int64_t workspaceID, const std::vector<SWindowGridItem>& items, const SWindowGridConfig& config) {
+    SScene result;
+    if (!finitePositive(config.viewportWidth) || !finitePositive(config.viewportHeight) || !finiteNonNegative(config.margin) || !finiteNonNegative(config.gap)) {
+        result.error = "invalid window grid geometry";
+        return result;
+    }
+
+    const SRect viewport{0.0, 0.0, config.viewportWidth, config.viewportHeight};
+    result.workspaces.push_back({.workspaceID = workspaceID, .kind = items.empty() ? EWorkspaceKind::Empty : EWorkspaceKind::Scrolling, .direction = EDirection::Right, .box = viewport});
+    result.contentHeight = config.viewportHeight;
+    result.valid         = true;
+    if (items.empty())
+        return result;
+
+    const int    columns = windowGridColumns(items.size(), config.columns);
+    const int    rows    = static_cast<int>((items.size() + columns - 1) / columns);
+    const double cellW   = (config.viewportWidth - 2.0 * config.margin - (columns - 1) * config.gap) / columns;
+    const double cellH   = (config.viewportHeight - 2.0 * config.margin - (rows - 1) * config.gap) / rows;
+    if (!finitePositive(cellW) || !finitePositive(cellH)) {
+        result = {};
+        result.error = "window grid cells do not fit the viewport";
+        return result;
+    }
+
+    for (size_t i = 0; i < items.size(); ++i) {
+        const int row = static_cast<int>(i) / columns;
+        const int col = static_cast<int>(i) % columns;
+        // A partial last row is centered rather than left-aligned.
+        const int    inRow  = row == rows - 1 ? static_cast<int>(items.size()) - row * columns : columns;
+        const double rowW   = inRow * cellW + (inRow - 1) * config.gap;
+        const double cellX  = (config.viewportWidth - rowW) / 2.0 + col * (cellW + config.gap);
+        const double cellY  = config.margin + row * (cellH + config.gap);
+        const auto&  size   = items[i].size;
+        double       w      = cellW;
+        double       h      = cellH;
+        if (finitePositive(size.w) && finitePositive(size.h)) {
+            const double scale = std::min(cellW / size.w, cellH / size.h);
+            w                  = size.w * scale;
+            h                  = size.h * scale;
+        }
+
+        SSceneTarget target;
+        target.token             = items[i].token;
+        target.nativeColumnIndex = i;
+        target.box               = {cellX + (cellW - w) / 2.0, cellY + (cellH - h) / 2.0, w, h};
+        target.workspaceID       = workspaceID;
+        result.targets.push_back(target);
+    }
+    return result;
+}
+
 double clampPan(const SScene& scene, double pan, double viewportHeight) {
     if (!scene.valid || !std::isfinite(pan) || !finitePositive(viewportHeight))
         return 0.0;

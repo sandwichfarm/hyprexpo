@@ -30,6 +30,7 @@ inline constexpr unsigned    BG_COL_DEFAULT                  = 0xFF111111;
 inline constexpr const char* WORKSPACE_METHOD_DEFAULT        = "center current";
 inline constexpr const char* OVERVIEW_MODE_DEFAULT           = "auto";
 inline constexpr int         CROSS_MONITOR_DEFAULT           = 0;
+inline constexpr int         WINDOWS_COLUMNS_DEFAULT         = 0;
 inline constexpr int         SKIP_EMPTY_DEFAULT              = 0;
 inline constexpr int         MAX_WORKSPACE_DEFAULT           = 0;
 inline constexpr int         SHOW_WORKSPACE_NUMBERS_DEFAULT  = 0;

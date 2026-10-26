@@ -132,6 +132,7 @@ static Config::INTEGER intDefault(const std::string& name) {
         {"plugin:hyprexpo:columns", HyprexpoConfig::COLUMNS_DEFAULT},
         {"plugin:hyprexpo:rows", HyprexpoConfig::ROWS_DEFAULT},
         {"plugin:hyprexpo:cross_monitor", HyprexpoConfig::CROSS_MONITOR_DEFAULT},
+        {"plugin:hyprexpo:windows_columns", HyprexpoConfig::WINDOWS_COLUMNS_DEFAULT},
         {"plugin:hyprexpo:gaps_in", HyprexpoConfig::GAPS_IN_DEFAULT},
         {"plugin:hyprexpo:bg_col", HyprexpoConfig::BG_COL_DEFAULT},
         {"plugin:hyprexpo:gesture_distance", HyprexpoConfig::GESTURE_DISTANCE_DEFAULT},
@@ -725,14 +726,14 @@ bool COverview::ownsPointerInput() const {
     return g_overviewDrag.state.active && g_overviewDrag.state.sourceMonitorKey == overviewMonitorKey(monitor());
 }
 
-IOverviewSession* createOverview(const PHLMONITOR& monitor, bool swipe) {
+IOverviewSession* createOverview(const PHLMONITOR& monitor, bool swipe, bool forceGrid) {
     if (!monitor || !monitor->m_activeWorkspace)
         return nullptr;
 
     if (overviewForMonitor(monitor))
         return nullptr;
 
-    auto session = createOverviewSession(monitor->m_activeWorkspace, monitor, swipe);
+    auto session = createOverviewSession(monitor->m_activeWorkspace, monitor, swipe, forceGrid);
     if (!session)
         return nullptr;
     g_overviews.push_back(std::move(session));

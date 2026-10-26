@@ -282,7 +282,9 @@ bool shouldSelectWorkspaceFromKey(const IKeyboard::SKeyEvent& event) {
     if (mode == Hyprexpo::ENumberKeyMode::Passthrough)
         return false;
 
-    if (mode == Hyprexpo::ENumberKeyMode::Index) {
+    // A window grid has no workspace tiles, so digits always pick its numbered windows.
+    const auto* const ACTIVE = activeOverview();
+    if (mode == Hyprexpo::ENumberKeyMode::Index || (ACTIVE && ACTIVE->isWindowGrid())) {
         const int visibleIndex = Hyprexpo::numberKeyToVisibleIndex(arg[0] - '0');
         if (visibleIndex >= 0) {
             if (auto* const OV = activeOverview(); OV && OV->onKbSelectToken(visibleIndex))
@@ -496,6 +498,24 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
             const auto result = bringWindowFromWorkspace(OV->selectedWorkspaceID(), DESTINATION);
             closeOverviews(false);
             return result;
+        }
+        return {};
+    }
+
+    // next: open the overview, then escalate a window grid to the workspace grid; further presses do nothing.
+    if (arg == "next") {
+        if (!overviewOpen())
+            return openOverviews(ALL_MONITORS);
+        std::vector<PHLMONITOR> escalated;
+        forEachOverview([&escalated](IOverviewSession& overview) {
+            if (overview.isWindowGrid() && !overview.closeCommitted())
+                escalated.push_back(overview.monitor());
+        });
+        for (const auto& monitor : escalated) {
+            destroyOverview(overviewForMonitor(monitor));
+            renderingOverview = true;
+            createOverview(monitor, false, true);
+            renderingOverview = false;
         }
         return {};
     }

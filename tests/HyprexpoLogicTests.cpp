@@ -299,6 +299,40 @@ void checkScrollingSceneAndInputMath() {
     expect(moveFocus(scene, first, EFocusDirection::Left).targetToken == 101, "spatial focus stays put when no candidate exists");
 }
 
+void checkWindowGridScene() {
+    using namespace Hyprexpo::Scrolling;
+
+    expect(windowGridColumns(0, 0) == 1 && windowGridColumns(2, 0) == 2 && windowGridColumns(5, 0) == 3, "automatic window grid columns use ceil(sqrt(n))");
+    expect(windowGridColumns(2, 4) == 2 && windowGridColumns(7, 3) == 3, "requested window grid columns clamp to the window count");
+
+    const SWindowGridConfig config{.viewportWidth = 1920.0, .viewportHeight = 1200.0, .margin = 40.0, .gap = 20.0, .columns = 0};
+    const auto two = buildWindowGridScene(4, {{.token = 11, .size = {1849.0, 1180.0}}, {.token = 12, .size = {1849.0, 1180.0}}}, config);
+    expect(two.valid && two.workspaces.size() == 1 && two.targets.size() == 2, "window grid contains only the requested workspace's windows");
+    expect(near(two.contentHeight, 1200.0) && near(clampPan(two, 500.0, 1200.0), 0.0), "window grid never pans");
+    bool inside = true;
+    for (const auto& target : two.targets)
+        inside = inside && target.box.x >= 40.0 - 0.001 && target.box.y >= 40.0 - 0.001 && target.box.x + target.box.w <= 1880.001 && target.box.y + target.box.h <= 1160.001;
+    expect(inside, "every window grid preview fits inside the viewport margins");
+    expect(near(two.targets[0].box.w / two.targets[0].box.h, 1849.0 / 1180.0), "window grid previews keep the window aspect ratio");
+    expect(two.targets[0].box.x < two.targets[1].box.x && near(two.targets[0].box.y, two.targets[1].box.y), "window grid keeps tape order left to right");
+
+    const auto right = moveFocus(two, {.kind = EHitKind::Target, .workspaceID = 4, .targetToken = 11}, EFocusDirection::Right);
+    expect(right.kind == EHitKind::Target && right.targetToken == 12, "window grid focus moves to the next preview");
+    const auto& second = two.targets[1];
+    const auto hit = hitTest(two, {second.box.x + 1.0, second.box.y + 1.0}, 0.0);
+    expect(hit.kind == EHitKind::Target && hit.targetToken == 12, "window grid hit test returns the exact preview");
+    expect(hitTest(two, {5.0, 5.0}, 0.0).kind == EHitKind::Outside, "window grid background is not a selectable target");
+
+    const auto three = buildWindowGridScene(5, {{.token = 1, .size = {800, 600}}, {.token = 2, .size = {800, 600}}, {.token = 3, .size = {800, 600}}}, config);
+    const double lastCenter = three.targets[2].box.x + three.targets[2].box.w / 2.0;
+    expect(three.valid && near(lastCenter, 960.0), "a partial last window grid row is centered");
+    const auto down = moveFocus(three, {.kind = EHitKind::Target, .workspaceID = 5, .targetToken = 1}, EFocusDirection::Down);
+    expect(down.targetToken == 3, "window grid down focus reaches the next row");
+
+    const auto empty = buildWindowGridScene(6, {}, config);
+    expect(empty.valid && empty.targets.empty() && empty.workspaces.front().kind == EWorkspaceKind::Empty, "an empty workspace still opens an empty window grid");
+}
+
 void checkScrollingRefreshFocus() {
     using namespace Hyprexpo::Scrolling;
 
@@ -1186,6 +1220,7 @@ int main() {
     expect(overviewModePreferenceFromString("auto") == EOverviewModePreference::Auto, "explicit auto overview mode parses");
     expect(overviewModePreferenceFromString(" GRID ") == EOverviewModePreference::Grid, "grid overview mode is case-insensitive and trimmed");
     expect(overviewModePreferenceFromString("") == EOverviewModePreference::Auto, "empty overview mode config falls back to auto");
+    expect(overviewModePreferenceFromString("windows") == EOverviewModePreference::Windows, "windows overview mode parses");
     expect(overviewModePreferenceFromString("scrolling") == EOverviewModePreference::Auto, "unrecognized overview mode values safely preserve auto behavior");
 
     const auto boundedGapFill = expandDynamicWorkspaceIDs({2, 4}, true, 64);
@@ -1380,6 +1415,7 @@ int main() {
     checkScrollingTapeDirections();
     checkScrollingSceneAndInputMath();
     checkScrollingRefreshFocus();
+    checkWindowGridScene();
     checkScrollingMixedRowViewport();
     checkScrollingDropIntents();
     checkScrollingCaptureBudget();
