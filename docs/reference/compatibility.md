@@ -40,19 +40,19 @@ tracks the recovery and the affected feature PRs.
 
 ## hyprpm and Nix
 
-The current release pins select the landed v0.56.2+5 source on master,
+Hyprland v0.57.0 is pinned to the landed v0.57.0 promotion on master. The
+v0.56.1 and v0.56.2 pins keep selecting the last validated v0.56.2+5 source,
 including the centered-row keyboard navigation fix from PR #165:
 
 | Hyprland release | Pinned HyprExpo commit |
 | --- | --- |
 | v0.56.1 | `59bf4d378cecde9ed849e9c562306738b1583016` |
 | v0.56.2 | `59bf4d378cecde9ed849e9c562306738b1583016` |
+| v0.57.0 | `34e5fa30198b00a53169739ce1c585dba4c939b8` |
 
-Hyprland v0.57.0 (`0aa6745f705f2c4b0a5004eb019ef76e5bbdb426`) has no pin yet; hyprpm
-falls back to the latest source of the configured branch for an unpinned
-compositor commit. Add that pin only after the promoted source has landed on
-`master`, passed `make check-pins REF=HEAD`, and loaded in a disposable
-v0.57.0 compositor.
+The v0.57.0 pin source passed the exact Nix build under both the Development
+and Release gates and loaded in a disposable v0.57.0 compositor; see the
+[v0.57.0 chase receipt](./chase-receipts/2026-11-01-v0.57.0.md).
 
 Changing current source does not update what those pins select. Before moving
 a pin, build and test the proposed plugin commit against that exact tagged
