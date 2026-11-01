@@ -1,6 +1,7 @@
 import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -61,6 +62,24 @@ class TargetContractTests(unittest.TestCase):
         del metadata["locks"]["nodes"]["nixpkgs"]["locked"]["narHash"]
         with self.assertRaises(ValueError):
             ci.verify_lock(metadata, rev)
+
+    def test_flake_input_lock_and_development_target_name_one_commit(self):
+        flake = re.search(r'rev = "([0-9a-f]{40})"', (ROOT / "flake.nix").read_text()).group(1)
+        lock = json.loads((ROOT / "flake.lock").read_text())
+        hyprland = lock["nodes"][lock["nodes"][lock["root"]]["inputs"]["hyprland"]]["locked"]
+        development = ci.targets()["development"][0]["rev"]
+        self.assertEqual(flake, hyprland["rev"])
+        self.assertEqual(development, hyprland["rev"])
+        self.assertTrue(hyprland.get("narHash"))
+
+    def test_user_docs_declare_every_release_target(self):
+        readme = (ROOT / "README.md").read_text()
+        compatibility = (ROOT / "docs/reference/compatibility.md").read_text()
+        for target in ci.targets()["release"]:
+            with self.subTest(target=target["name"]):
+                self.assertIn(target["name"], readme)
+                self.assertIn(target["name"], compatibility)
+                self.assertIn(target["rev"], compatibility)
 
     def test_docs_and_unrelated_workflows_do_not_require_a_nix_build(self):
         self.assertFalse(ci.needs_build({"README.md", "docs/guides/runtime-smoke.md"}))

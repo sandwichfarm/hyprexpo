@@ -136,6 +136,30 @@ class WatchHyprlandTests(unittest.TestCase):
         self.assertEqual([item["tag"] for item in report["eligible_releases"]], ["v0.55.3"])
         self.assertEqual(report["release_reviews"], [])
 
+    def test_newer_minor_release_is_eligible_with_its_peeled_tag_commit(self):
+        release = {"id": 426539973, "tag_name": "v0.57.0", "target_commitish": "v0.57.0", "published_at": "2026-10-28T10:42:35Z"}
+        report = json.loads(run(fixture(
+            release_targets=[{"name": "v0.56.1", "rev": "q" * 40}, {"name": "v0.56.2", "rev": "r" * 40}],
+            releases=[release],
+            tags={"v0.57.0": "c" * 40},
+        )).stdout)
+        self.assertEqual(report["eligible_releases"], [{"id": 426539973, "tag": "v0.57.0", "tag_commit": "c" * 40, "target": "v0.57.0", "published_at": "2026-10-28T10:42:35Z"}])
+        self.assertEqual(report["release_reviews"], [])
+
+    def test_adopted_release_is_neither_eligible_nor_a_review_item(self):
+        release = {"id": 426539973, "tag_name": "v0.57.0", "target_commitish": "v0.57.0"}
+        report = json.loads(run(fixture(
+            target="c" * 40,
+            main="c" * 40,
+            release_targets=[{"name": "v0.57.0", "rev": "c" * 40}],
+            releases=[release],
+            tags={"v0.57.0": "c" * 40},
+            records=[evidence("t" * 40, "c" * 40)],
+        )).stdout)
+        self.assertEqual(report["eligible_releases"], [])
+        self.assertEqual(report["release_reviews"], [])
+        self.assertEqual(report["status"], "up_to_date")
+
     def test_tag_only_malformed_and_retargeted_releases_are_review_items(self):
         releases = [
             {"id": 1, "tag_name": "nightly", "target_commitish": "main"},
