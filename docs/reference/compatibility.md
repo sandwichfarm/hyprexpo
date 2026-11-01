@@ -72,8 +72,8 @@ untested.
 See [feature integration](./feature-integration.md) for the historical integration
 checkpoints, release revalidation and remaining test boundaries.
 
-The flake pins Hyprland v0.57.0 (`0aa6745f705f2c4b0a5004eb019ef76e5bbdb426`), the
-same commit as the compatibility target above. Nix users should keep the plugin's
+The `master` flake pins Hyprland v0.57.0 (`0aa6745f705f2c4b0a5004eb019ef76e5bbdb426`).
+This development checkout pins `ecbcfe6e36ab8e510d464bb2e72c550710563093`, its development target. Nix users should keep the plugin's
 Hyprland input aligned with their system input through `default.nix` and the
 Hyprland plugin packaging path. Overrides must select a supported release;
 following an arbitrary development revision is not a compatibility guarantee.

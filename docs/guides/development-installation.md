@@ -6,7 +6,7 @@ for a development build, and a development branch name is not proof that an
 arbitrary upstream tip is compatible.
 
 The development candidate targets Hyprland
-`0aa6745f705f2c4b0a5004eb019ef76e5bbdb426`. Before installing, check the candidate's
+`ecbcfe6e36ab8e510d464bb2e72c550710563093`. Before installing, check the candidate's
 flake lock and the running compositor's `hyprctl version` output against the
 [validation receipt](../reference/workflow-validation.md). Test in a disposable
 compositor before changing a desktop.
@@ -79,7 +79,7 @@ failure state and the resulting artifact. For failures, rerun the command with
 See the [official plugin installation guide](https://wiki.hypr.land/Plugins/Using-Plugins/)
 and the installed `hyprpm --help` for the supported command surface. The revision
 selection and pin-bypass behavior are implemented in
-[Hyprland's plugin manager](https://github.com/hyprwm/Hyprland/blob/0aa6745f705f2c4b0a5004eb019ef76e5bbdb426/hyprpm/src/core/PluginManager.cpp).
+[Hyprland's plugin manager](https://github.com/hyprwm/Hyprland/blob/ecbcfe6e36ab8e510d464bb2e72c550710563093/hyprpm/src/core/PluginManager.cpp).
 
 The completed development manager proof used an isolated Ubuntu VM with an
 exact Nix dependency shell, genuine generated headers, and a transparent
@@ -96,7 +96,7 @@ pinned development target:
 
 ```nix
 inputs = {
-  hyprland.url = "github:hyprwm/Hyprland/0aa6745f705f2c4b0a5004eb019ef76e5bbdb426";
+  hyprland.url = "github:hyprwm/Hyprland/ecbcfe6e36ab8e510d464bb2e72c550710563093";
   hyprexpo = {
     url = "github:sandwichfarm/hyprexpo/hyprland-git";
     inputs.hyprland.follows = "hyprland";
