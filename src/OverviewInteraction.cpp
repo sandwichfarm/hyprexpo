@@ -10,7 +10,7 @@
 #include <hyprland/src/pointer/cursor/CursorShapeOverrideController.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
-#include <hyprland/src/managers/KeybindManager.hpp>
+#include <hyprland/src/keybinds/Manager.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/config/shared/workspace/WorkspaceRuleManager.hpp>
@@ -157,7 +157,7 @@ PHLWINDOW COverview::windowAtTilePoint(int id, const Vector2D& localPoint) const
     }
     else {
         for (const auto& w : State::workspaceState()->workspacesCopy()) {
-            if (w->m_id == images[id].workspaceID) {
+            if (workspaceHasID(w, images[id].workspaceID)) {
                 WORKSPACE = w;
                 break;
             }
@@ -283,7 +283,7 @@ PHLWORKSPACE COverview::ensureWorkspaceForTile(int id) {
 
     PHLWORKSPACE workspace;
     for (const auto& w : State::workspaceState()->workspacesCopy()) {
-        if (w->m_id == image.workspaceID) {
+        if (workspaceHasID(w, image.workspaceID)) {
             workspace = w;
             break;
         }
@@ -291,7 +291,7 @@ PHLWORKSPACE COverview::ensureWorkspaceForTile(int id) {
 
     if (!workspace) {
         const auto bound = crossMonitor ? Config::workspaceRuleMgr()->getBoundMonitorForWS(std::to_string(image.workspaceID)) : PHLMONITOR{};
-        workspace = State::workspaceState()->create(image.workspaceID, bound ? bound->m_id : MON->m_id, std::to_string(image.workspaceID), false);
+        workspace = createWorkspaceForMonitor(image.workspaceID, bound ? bound : MON);
     }
 
     image.pWorkspace = workspace;
@@ -318,7 +318,7 @@ bool COverview::finishWindowDrag() {
             PHLWORKSPACE SOURCEWS = SOURCEOV->images[SOURCE].pWorkspace;
             if (!SOURCEWS) {
                 for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-                    if (workspace->m_id == SOURCEOV->images[SOURCE].workspaceID) {
+                    if (workspaceHasID(workspace, SOURCEOV->images[SOURCE].workspaceID)) {
                         SOURCEWS = workspace;
                         break;
                     }
@@ -327,7 +327,7 @@ bool COverview::finishWindowDrag() {
 
             const auto TARGETWS = TARGETOV->ensureWorkspaceForTile(TARGET);
             if (TARGETWS && TARGETWS->m_monitor.lock() != TARGETMON)
-                Log::logger->log(Log::ERR, "[hyprexpo] rejected drag target workspace on the wrong monitor");
+                Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] rejected drag target workspace on the wrong monitor");
             else if (windowVisibleOnWorkspace(g_overviewDrag.window, SOURCEWS) && TARGETWS && TARGETWS != SOURCEWS) {
                 const int64_t SOURCEWORKSPACEID = SOURCEOV->images[SOURCE].workspaceID;
                 const int64_t TARGETWORKSPACEID = TARGETOV->images[TARGET].workspaceID;
@@ -359,7 +359,7 @@ bool COverview::moveWindowBetweenVisibleIndices(size_t sourceIndex, size_t targe
     }
     else {
         for (const auto& w : State::workspaceState()->workspacesCopy()) {
-            if (w->m_id == images[SOURCE].workspaceID) {
+            if (workspaceHasID(w, images[SOURCE].workspaceID)) {
                 SOURCEWS = w;
                 break;
             }
@@ -683,7 +683,7 @@ void COverview::onWindowMoveToWorkspace(const PHLWINDOW& window, const PHLWORKSP
         return;
 
     const bool movedOnOverviewMonitor = window->m_monitor == monitor || (window->m_workspace && window->m_workspace->m_monitor == monitor) || (workspace && workspace->m_monitor == monitor);
-    if (!Hyprexpo::shouldAbortOverviewCloseForWorkspaceMove(window->m_pinned, movedOnOverviewMonitor))
+    if (!Hyprexpo::shouldAbortOverviewCloseForWorkspaceMove((window->m_state & Desktop::View::WINDOW_STATE_PINNED) != Desktop::View::WINDOW_STATE_NONE, movedOnOverviewMonitor))
         return;
 
     externalWorkspaceMoveDuringClose = true;
@@ -786,7 +786,7 @@ void enterOverviewSubmap(bool& submapActive) {
         //
         // The capture is global, not per-overview: only the first overview to open sees
         // the user's real submap. The others would capture "hyprexpo" and restore that.
-        g_previousSubmap = g_pKeybindManager->getCurrentSubmap().name;
+        g_previousSubmap = Keybinds::mgr()->currentSubmap();
         // switch to a dedicated submap for hyprexpo navigation
         (void)Config::Actions::setSubmap("hyprexpo");
     }

@@ -23,14 +23,14 @@ class CScrollingOverview final : public IOverviewSession {
 
     bool valid() const;
 
-    void render() override;
+    void render(Render::CRenderContext& ctx) override;
     void damage() override;
     void onDamageReported() override;
     void onPreRender() override;
     void onConfigReload() override;
     void prepareForTeardown() override;
     std::expected<std::string, std::string> injectScrollingInput(const std::string& sequence) override;
-    void fullRender() override;
+    void fullRender(Render::CRenderContext& ctx) override;
     void setClosing(bool closing) override;
     void beginCancelSwipe() override;
     bool closeCommitted() const override;

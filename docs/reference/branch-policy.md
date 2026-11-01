@@ -31,7 +31,7 @@ the release line as receiving no further fixes.
 ## How This Fits the Ecosystem
 
 Arch's rolling distribution still packages versioned Hyprland releases. As of
-2026-09-07, its Extra package is `0.56.2-2`; following development Git is a
+2026-11-01, its Extra package is `0.57.0-1`; following development Git is a
 separate compatibility choice. [Arch package](https://archlinux.org/packages/extra/x86_64/hyprland/)
 
 Hyprland's official plugins serve released Hyprland versions through hyprpm

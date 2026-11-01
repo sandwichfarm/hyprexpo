@@ -2,6 +2,7 @@
 
 #include "ScrollingRequestId.hpp"
 #include "globals.hpp"
+#include "WorkspaceCompat.hpp"
 
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/output/Monitor.hpp>
@@ -176,7 +177,7 @@ PHLWORKSPACE resolveWorkspace(const std::string& selector) {
     if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size())
         return {};
     for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-        if (workspace && workspace->m_id == workspaceID)
+        if (workspaceHasID(workspace, workspaceID))
             return workspace;
     }
     return {};

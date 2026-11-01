@@ -18,8 +18,15 @@ Release builds attach `release-provenance.txt` next to `hyprexpo.so`. That file 
 
 | Release | Hyprland source commit |
 | --- | --- |
-| v0.56.1 | `5c9377c15f85c50648f35ca5a213754f95b93ca0` |
-| v0.56.2 | `efb50993780079460b0cbed1363e2166a2de1d9f` |
+| v0.57.0 | `0aa6745f705f2c4b0a5004eb019ef76e5bbdb426` |
+
+Hyprland v0.56.1 (`5c9377c15f85c50648f35ca5a213754f95b93ca0`) and v0.56.2
+(`efb50993780079460b0cbed1363e2166a2de1d9f`) left the build matrix with the
+v0.57.0 promotion: this source uses the reworked workspace, window, render-pass
+and Lua/config APIs and does not compile against them. Their hyprpm pins below
+still select the last validated v0.56.2+5 source. No maintenance branch exists,
+so that line receives no further fixes unless one is created from
+`59bf4d378cecde9ed849e9c562306738b1583016`.
 
 Build the plugin against the revision and dependency ABI that will load it.
 A successful build for one release does not make its `.so` interchangeable
@@ -41,6 +48,12 @@ including the centered-row keyboard navigation fix from PR #165:
 | v0.56.1 | `59bf4d378cecde9ed849e9c562306738b1583016` |
 | v0.56.2 | `59bf4d378cecde9ed849e9c562306738b1583016` |
 
+Hyprland v0.57.0 (`0aa6745f705f2c4b0a5004eb019ef76e5bbdb426`) has no pin yet; hyprpm
+falls back to the latest source of the configured branch for an unpinned
+compositor commit. Add that pin only after the promoted source has landed on
+`master`, passed `make check-pins REF=HEAD`, and loaded in a disposable
+v0.57.0 compositor.
+
 Changing current source does not update what those pins select. Before moving
 a pin, build and test the proposed plugin commit against that exact tagged
 Hyprland release, verify the plugin commit is an ancestor of the published
@@ -59,7 +72,8 @@ untested.
 See [feature integration](./feature-integration.md) for the historical integration
 checkpoints, release revalidation and remaining test boundaries.
 
-The flake has an explicit v0.56.2 reference. Nix users should keep the plugin's
+The flake pins Hyprland v0.57.0 (`0aa6745f705f2c4b0a5004eb019ef76e5bbdb426`), the
+same commit as the compatibility target above. Nix users should keep the plugin's
 Hyprland input aligned with their system input through `default.nix` and the
 Hyprland plugin packaging path. Overrides must select a supported release;
 following an arbitrary development revision is not a compatibility guarantee.
@@ -98,7 +112,7 @@ Keep release hyprpm pins intact and distribute git artifacts separately.
 Port each API boundary with its existing behavior and tests preserved. Check
 window mapping, pinned-window save/restore, alpha animations, keybind modifiers,
 and exact-submap restoration when adopting the newer window/keybind APIs.
-Before merging any shared compatibility code, require the v0.56.1/v0.56.2
-build matrix to stay green and run a separate build/load test for the pinned
+Before merging any shared compatibility code, require the declared release
+build matrix (currently v0.57.0) to stay green and run a separate build/load test for the pinned
 git revision. A future tagged release can become a supported default after
 those checks and matching nested interaction tests pass.

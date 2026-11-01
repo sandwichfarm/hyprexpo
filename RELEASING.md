@@ -13,15 +13,15 @@ An existing supported tag can be used for a rehearsal without publishing it agai
 
 Run this from updated `master`, after all compatibility work has landed:
 
-First verify the candidate against the exact Hyprland v0.56.1 and v0.56.2 tags
-with tests and forced builds in separate output directories, as described in
-[the compatibility guide](docs/reference/compatibility.md). Keep the release
-pins from PR #112 until the replacement commit has matching build and load
+First verify the candidate against the exact Hyprland v0.57.0 tag with tests
+and forced builds in isolated output directories, as described in
+[the compatibility guide](docs/reference/compatibility.md). Keep the existing
+release pins until the replacement commit has matching build and load
 evidence. The flake's default must stay on an explicit supported release.
 
 ```sh
 make check-pins        # 1. verify every hyprpm plugin pin is on master's history
-make version v0.56.2+5 # 2. write + commit VERSION only if it has not landed
+make version v0.57.0   # 2. write + commit VERSION only if it has not landed
 make tag               # 3. create the matching annotated git tag
 make publish           # 4. push branch + tag (triggers the release workflow)
 ```

@@ -9,22 +9,22 @@ IOverviewSession* COverviewPassElement::overview() const {
     return overviewForSession(overviewMonitorKey(m_monitor.lock()), m_sessionGeneration);
 }
 
-std::vector<UP<IPassElement>> COverviewPassElement::draw() {
+std::vector<UP<IPassElement>> COverviewPassElement::draw(Render::CRenderContext& ctx) {
     if (auto* const OV = overview())
-        OV->fullRender();
+        OV->fullRender(ctx);
 
     return {};
 }
 
-bool COverviewPassElement::needsLiveBlur() {
+bool COverviewPassElement::needsLiveBlur(Render::CRenderContext&) {
     return false;
 }
 
-bool COverviewPassElement::needsPrecomputeBlur() {
+bool COverviewPassElement::needsPrecomputeBlur(Render::CRenderContext&) {
     return false;
 }
 
-std::optional<CBox> COverviewPassElement::boundingBox() {
+std::optional<CBox> COverviewPassElement::boundingBox(Render::CRenderContext&) {
     const auto MON = m_monitor.lock();
     if (!overview() || !MON)
         return std::nullopt;
@@ -32,7 +32,7 @@ std::optional<CBox> COverviewPassElement::boundingBox() {
     return CBox{{}, MON->m_size};
 }
 
-CRegion COverviewPassElement::opaqueRegion() {
+CRegion COverviewPassElement::opaqueRegion(Render::CRenderContext&) {
     const auto MON = m_monitor.lock();
     if (!overview() || !MON)
         return CRegion{};
