@@ -842,6 +842,12 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
         const bool hovered = m_inputState.hover.kind == EHitKind::Target && m_inputState.hover.workspaceID == target.workspaceID && m_inputState.hover.targetToken == target.targetToken;
         const bool dragging = m_inputState.mode == EInputMode::WindowDrag && m_inputState.pressed.workspaceID == target.workspaceID && m_inputState.pressed.targetToken == target.targetToken;
         const bool focused = m_focus.kind == EHitKind::Target && m_focus.workspaceID == target.workspaceID && m_focus.targetToken == target.targetToken;
+        // Capture sizes use ceil and draw boxes use round; a 1px difference would resample the
+        // whole preview and soften text. At rest, draw the texture at its exact pixel size.
+        if (entry && entry->texture && std::abs(box.w - entry->texture->m_size.x) <= 2.0 && std::abs(box.h - entry->texture->m_size.y) <= 2.0) {
+            box.w = entry->texture->m_size.x;
+            box.h = entry->texture->m_size.y;
+        }
         // Fullscreen previews fill their whole slot, like the screen they mirror.
         const int  targetRound = target.fullscreen ? 0 : clampRound(focused ? focusRound : hovered ? hoverRound : baseRound, box);
         if (entry && entry->texture)

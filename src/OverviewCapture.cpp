@@ -396,6 +396,16 @@ SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, 
         ctx.m_data.blockScreenShader = true;
         rendererState.finish();
 
+        // Shrinking a native capture by more than 2x in one linear sample skips most source
+        // pixels and garbles text. Mipmaps of the throwaway source give a filtered fit
+        // once per capture; the stored preview and per-frame drawing stay the same size.
+        if (const auto sourceTexture = sourceFramebuffer->getTexture(); sourceTexture && (sourcePixels.x > fitted->w * 2.0 || sourcePixels.y > fitted->h * 2.0)) {
+            glBindTexture(GL_TEXTURE_2D, sourceTexture->m_texID);
+            glGenerateMipmap(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            sourceTexture->minFilter = GL_LINEAR_MIPMAP_LINEAR;
+        }
+
         CRegion targetDamage{0, 0, width, height};
         if (!sourceFramebuffer->getTexture() || !g_pHyprRenderer->beginFullFakeRender(monitor, targetDamage, framebuffer)) {
             result.error = "target preview render failed";
@@ -412,7 +422,9 @@ SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, 
         Render::GL::g_pHyprOpenGL->scissor(targetCtx, static_cast<const pixman_box32*>(nullptr));
         glClearColor(0.F, 0.F, 0.F, 0.F);
         glClear(GL_COLOR_BUFFER_BIT);
-        Render::GL::g_pHyprOpenGL->renderTextureInternal(targetCtx, sourceFramebuffer->getTexture(), CBox{fitted->x, fitted->y, fitted->w, fitted->h}, {.damage = &targetDamage});
+        // Whole-pixel placement: a fractional offset blends every texel with its neighbor.
+        const CBox fittedBox{std::round(fitted->x), std::round(fitted->y), std::round(fitted->w), std::round(fitted->h)};
+        Render::GL::g_pHyprOpenGL->renderTextureInternal(targetCtx, sourceFramebuffer->getTexture(), fittedBox, {.damage = &targetDamage});
         targetCtx.m_data.blockScreenShader = true;
         rendererState.finish();
         rendererState.restore();
