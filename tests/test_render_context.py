@@ -25,16 +25,32 @@ class RenderContextTests(unittest.TestCase):
         guard = "class CRendererStateGuard" + source.split("class CRendererStateGuard", 1)[1].split("class CMonitorStateGuard", 1)[0]
         fixture = r'''
 #include <cassert>
+using GLint = int;
+constexpr int GL_VIEWPORT = 0x0BA2;
+static GLint g_viewport[4] = {0, 0, 1920, 1080};
+static void glGetIntegerv(int, GLint* out) { for (int i = 0; i < 4; ++i) out[i] = g_viewport[i]; }
+struct Vector2D { double x = -1, y = -1; bool operator==(const Vector2D&) const = default; };
+struct Mat3x3 { double m = 0; };
 namespace Render {
+struct SRenderModifData { int modifs = 0; };
+enum eRenderProjectionType { RPT_MONITOR, RPT_EXPORT };
 struct CRenderContext {
     bool m_blockSurfaceFeedback = false, m_renderingSnapshot = false;
-    struct { bool blockScreenShader = false; } m_data;
+    struct {
+        bool blockScreenShader = false;
+        SRenderModifData renderModif;
+        eRenderProjectionType projectionType = RPT_MONITOR;
+        Mat3x3 targetProjection;
+        Vector2D fbSize;
+        bool noSimplify = false, transformDamage = true;
+    } m_data;
 };
 struct IHyprRenderer {
     CRenderContext ctx;
     int ends = 0;
     CRenderContext& context() { return ctx; }
     void endRender() { ++ends; ctx = {}; }
+    void setViewport(int x, int y, int w, int h) { g_viewport[0] = x; g_viewport[1] = y; g_viewport[2] = w; g_viewport[3] = h; }
 };
 }
 '''
@@ -77,6 +93,30 @@ int main() {
         }
         assert(renderer.ends == 2);
         checkOriginal();
+        {
+            renderer.ctx.m_data.fbSize = {640, 480};
+            renderer.ctx.m_data.noSimplify = flags & 1;
+            renderer.ctx.m_data.transformDamage = flags & 2;
+            renderer.ctx.m_data.projectionType = Render::RPT_MONITOR;
+            g_viewport[2] = 640;
+            g_viewport[3] = 480;
+            CRendererStateGuard guard(&renderer, true);
+            guard.begun();
+            renderer.ctx.m_data.fbSize = {64, 32};
+            renderer.ctx.m_data.noSimplify = !(flags & 1);
+            renderer.ctx.m_data.projectionType = Render::RPT_EXPORT;
+            renderer.setViewport(0, 0, 64, 32);
+            guard.finish();
+            guard.restore();
+            assert(guard.restored());
+            checkOriginal();
+            assert((renderer.ctx.m_data.fbSize == Vector2D{640, 480}));
+            assert(renderer.ctx.m_data.noSimplify == bool(flags & 1));
+            assert(renderer.ctx.m_data.transformDamage == bool(flags & 2));
+            assert(renderer.ctx.m_data.projectionType == Render::RPT_MONITOR);
+            assert(g_viewport[2] == 640 && g_viewport[3] == 480);
+        }
+        assert(renderer.ends == 3);
     }
 }
 '''
