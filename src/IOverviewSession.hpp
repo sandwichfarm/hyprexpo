@@ -82,6 +82,9 @@ IOverviewSession* overviewForSession(uint64_t monitorKey, uint64_t generation);
 IOverviewSession* overviewForGlobalPoint(const Vector2D& point);
 IOverviewSession* overviewForAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var);
 IOverviewSession* createOverview(const PHLMONITOR& monitor, bool swipe = false, bool forceGrid = false);
+// Overviews own pointer motion, so clients never update the cursor; keep it visible (show_cursor)
+// and optionally force the overview's arrow shape or resend the pointer position.
+void ensureOverviewCursorVisible(bool forceOverviewShape = false, bool refreshPosition = false);
 uint64_t overviewMonitorKey(const PHLMONITOR& monitor);
 bool overviewRegistered(const IOverviewSession* overview);
 bool overviewOpen();

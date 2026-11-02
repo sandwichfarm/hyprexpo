@@ -304,6 +304,27 @@ bool isGradientBorderSpec(const std::string& borderSpec) {
     return Hyprexpo::isGradientBorderSpec(borderSpec);
 }
 
+std::optional<Config::CGradientValueData> borderGradientFromSpec(const std::string& borderSpec) {
+    if (borderSpec.empty())
+        return std::nullopt;
+    if (isGradientBorderSpec(borderSpec)) {
+        const auto spec = parseGradientSpec(borderSpec);
+        if (!spec.valid)
+            return std::nullopt;
+        Config::CGradientValueData grad;
+        grad.m_colors = {spec.c1, spec.c2};
+        grad.m_angle  = spec.angleDeg * (float)M_PI / 180.f;
+        grad.updateColorsOk();
+        return grad;
+    }
+    Hyprexpo::SColorRGBA parsed;
+    if (!Hyprexpo::parseSolidColorSpec(borderSpec, parsed))
+        return std::nullopt;
+    Config::CGradientValueData grad{CHyprColor{parsed.r, parsed.g, parsed.b, parsed.a}};
+    grad.updateColorsOk();
+    return grad;
+}
+
 SP<Render::ITexture> renderNumberTexture(const std::string& text, const CHyprColor& color, const Vector2D& bufferSize, const float scale, const int fontSize) {
     const auto CAIROSURFACE = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, bufferSize.x, bufferSize.y);
     const auto CAIRO        = cairo_create(CAIROSURFACE);
@@ -963,7 +984,7 @@ static bool shouldShowCursorDuringOverview() {
     return **PSHOWCURSOR;
 }
 
-static void ensureOverviewCursorVisible(bool forceOverviewShape = false, bool refreshPosition = false) {
+void ensureOverviewCursorVisible(bool forceOverviewShape, bool refreshPosition) {
     if (!shouldShowCursorDuringOverview())
         return;
 

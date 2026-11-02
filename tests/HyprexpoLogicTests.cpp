@@ -504,6 +504,20 @@ void checkScrollingOverviewTransition() {
     expect(near(transitionForSwipe(false, 500.0, 100.0), 1.0) && near(transitionForSwipe(true, 500.0, 100.0), 0.0), "swipe transition progress clamps at both animation endpoints");
 }
 
+void checkTileRoundingRules() {
+    using namespace Hyprexpo;
+    const auto inherit = resolveTileRounding(8, -1, -1, -1, 2.5F, 1.5);
+    expect(inherit.base == 12 && inherit.focus == 12 && inherit.current == 12 && inherit.hover == 12 && inherit.power == 2.5F,
+           "tile rounding scales the base radius and -1 variants inherit it");
+    const auto explicitVariants = resolveTileRounding(0, 4, 0, 10, 2.0F, 2.0);
+    expect(explicitVariants.base == 0 && explicitVariants.focus == 8 && explicitVariants.current == 0 && explicitVariants.hover == 20,
+           "explicit tile rounding variants, including 0, override the base");
+    expect(resolveTileRounding(-5, -1, -1, -1, 2.0F, 1.0).base == 0, "a negative base radius is treated as square corners");
+    expect(resolveTileRounding(10, -1, -1, -1, 2.0F, 0.0).base == 10, "an invalid monitor scale falls back to logical pixels");
+    expect(clampTileRound(50, 40.0, 100.0) == 20 && clampTileRound(5, 40.0, 100.0) == 5 && clampTileRound(5, 0.0, 10.0) == 0 && clampTileRound(-3, 40.0, 40.0) == 0,
+           "corner radius is clamped to half the shorter side");
+}
+
 void checkScrollingMouseInputState() {
     using namespace Hyprexpo;
     using namespace Hyprexpo::Scrolling;
@@ -537,6 +551,17 @@ void checkScrollingMouseInputState() {
            "under-threshold left release selects exactly the pressed target once");
     state = result.state;
     expect(state.mode == EInputMode::Idle, "click release returns input ownership to idle");
+
+    {
+        auto selectOnly = context;
+        selectOnly.dragEnabled = false;
+        auto pressed = transitionInput(state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = BTN_LEFT, .pressed = true}, selectOnly);
+        auto moved = transitionInput(pressed.state, {.kind = EInputKind::MouseMove, .globalLogicalPoint = {targetGlobal.x + 400.0, targetGlobal.y}}, selectOnly);
+        expect(!moved.effects.beginDrag && moved.state.mode == EInputMode::MousePressPending, "a select-only scene never starts a window drag however far the pointer moves");
+        auto released = transitionInput(moved.state, {.kind = EInputKind::MouseButton, .globalLogicalPoint = targetGlobal, .button = BTN_LEFT, .pressed = false}, selectOnly);
+        expect(released.effects.selection && released.effects.selection->targetToken == target.token && released.state.mode == EInputMode::Idle,
+               "a select-only press released back on its window selects it");
+    }
 
     for (const auto button : {BTN_RIGHT, BTN_MIDDLE}) {
         for (const auto pressed : {true, false}) {
@@ -1423,6 +1448,7 @@ int main() {
     checkScrollingInputCoordinates();
     checkScrollingRequestIds();
     checkScrollingOverviewTransition();
+    checkTileRoundingRules();
     checkScrollingMouseInputState();
     checkScrollingTouchAndResetState();
     checkScrollingMutationTransactions();

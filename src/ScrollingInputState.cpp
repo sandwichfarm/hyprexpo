@@ -295,7 +295,7 @@ SInputTransition transitionInput(const SInputState& state, const SInputEvent& ev
         }
 
         const double distance = std::hypot(event.globalLogicalPoint.x - state.pressGlobalPoint.x, event.globalLogicalPoint.y - state.pressGlobalPoint.y);
-        if (state.mode == EInputMode::MousePressPending && distance >= context.dragThreshold) {
+        if (state.mode == EInputMode::MousePressPending && context.dragEnabled && distance >= context.dragThreshold) {
             result.state.mode = EInputMode::WindowDrag;
             result.state.dragSource = dropSourceFor(*context.scene, state.pressed);
             result.effects.beginDrag = true;
@@ -400,7 +400,7 @@ SInputTransition transitionInput(const SInputState& state, const SInputEvent& ev
             result.effects.panDelta = next - context.pan;
         } else {
             const double distance = std::hypot(event.globalLogicalPoint.x - state.pressGlobalPoint.x, event.globalLogicalPoint.y - state.pressGlobalPoint.y);
-            if (state.mode == EInputMode::TouchPressPending && distance >= context.dragThreshold) {
+            if (state.mode == EInputMode::TouchPressPending && context.dragEnabled && distance >= context.dragThreshold) {
                 result.state.mode = EInputMode::WindowDrag;
                 result.state.dragSource = dropSourceFor(*context.scene, state.pressed);
                 result.effects.beginDrag = true;

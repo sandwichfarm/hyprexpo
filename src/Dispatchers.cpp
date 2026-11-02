@@ -512,10 +512,19 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
                 escalated.push_back(overview.monitor());
         });
         for (const auto& monitor : escalated) {
+            // destroyOverview drops keyboard ownership; the grid replacing it inherits it.
+            const bool ownedKeyboard = g_keyboardOverviewMonitor.lock() == monitor;
             destroyOverview(overviewForMonitor(monitor));
             renderingOverview = true;
-            createOverview(monitor, false, true);
+            auto* const GRID = createOverview(monitor, false, true);
             renderingOverview = false;
+            if (!GRID) {
+                // Never leave this monitor without an overview while the others stay open.
+                closeOverviews(false);
+                return {.success = false, .error = "workspace overview could not replace the window grid"};
+            }
+            if (ownedKeyboard)
+                g_keyboardOverviewMonitor = monitor;
         }
         return {};
     }

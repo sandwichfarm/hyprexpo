@@ -99,7 +99,8 @@ plugin {
 | `plugin:hyprexpo:gaps_out` | int | outer margin around the grid in pixels | `0` |
 | `plugin:hyprexpo:bg_col` | color | grid background color | `0xFF111111` |
 | `plugin:hyprexpo:workspace_method` | string | placement: `center current` or `first <workspace>` | `center current` |
-| `plugin:hyprexpo:overview_mode` | string | `auto` detects Hyprland's native `scrolling` layout on the triggering workspace and opens the scrolling overview for it; `grid` always opens the classic workspace grid regardless of detected layout. Unrecognized values behave as `auto` | `auto` |
+| `plugin:hyprexpo:overview_mode` | string | `auto` detects Hyprland's native `scrolling` layout on the triggering workspace and opens the scrolling overview for it; `grid` always opens the classic workspace grid regardless of detected layout; `windows` opens a grid of the triggering scrolling workspace's own windows (numbered 1–9, then 0; `expo next` escalates it to the workspace grid), while other workspaces open the workspace grid. Unrecognized values behave as `auto` | `auto` |
+| `plugin:hyprexpo:windows_columns` | int | columns in the `overview_mode = windows` grid; `0` picks automatically from the window count (range `0`–`16`) | `0` |
 | `plugin:hyprexpo:skip_empty` | bool int | skip empty workspaces using selector `m` when enabled | `0` |
 | `plugin:hyprexpo:max_workspace` | int | when `skip_empty = 0`, cap sequential overview tiles at this workspace ID; `0` keeps Hyprland selector behavior | `0` |
 | `plugin:hyprexpo:gesture_distance` | int | swipe distance considered complete | `200` |

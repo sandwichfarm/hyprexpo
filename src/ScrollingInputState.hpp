@@ -107,6 +107,7 @@ struct SInputContext {
     double           pan = 0.0;
     double           viewportHeight = 0.0;
     double           dragThreshold = 12.0;
+    bool             dragEnabled   = true;
 };
 
 struct SParsedInputStep {

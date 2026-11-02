@@ -16,6 +16,7 @@
 #include <hyprland/src/desktop/state/FocusState.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/managers/input/InputManager.hpp>
+#include <hyprland/src/pointer/cursor/CursorShapeOverrideController.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
 #include <hyprland/src/render/Renderer.hpp>
@@ -61,15 +62,10 @@ CHyprColor applyTransitionOpacity(const CHyprColor& color, const SOverviewTransi
     return color.modifyA(color.a * transition.opacity);
 }
 
-// The focus frame reuses the grid's focus border color; a gradient contributes its first stop.
-CHyprColor focusBorderColor() {
-    const auto spec = CompatHyprlandAPI::stringValue("plugin:hyprexpo:border_color_focus");
-    Hyprexpo::SColorRGBA solid;
-    if (Hyprexpo::parseSolidColorSpec(spec, solid))
-        return CHyprColor{solid.r, solid.g, solid.b, solid.a};
-    if (const auto gradient = parseGradientSpec(spec); gradient.valid)
-        return gradient.c1;
-    return CHyprColor{1.0, 0.8, 0.4, 1.0};
+// Logical-to-pixel box with the same size rounding as window capture requests, so a resting
+// preview maps texel-for-pixel regardless of its fractional position.
+CBox pixelBox(const CBox& logical, double scale) {
+    return {std::round(logical.x * scale), std::round(logical.y * scale), std::max(1.0, std::round(logical.w * scale)), std::max(1.0, std::round(logical.h * scale))};
 }
 
 void scheduleScrollingOverviewRemoval(uint64_t monitorKey, uint64_t generation) {
@@ -113,14 +109,20 @@ CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLM
     m_valid = refreshScene(initialSnapshot);
     if (m_valid) {
         // Open on the window that already has focus rather than the first one in the tape.
+        // Floating overlays in the tape view are drawn but are not navigable scene targets.
         const auto focused = Desktop::focusState()->window();
-        const auto target = std::ranges::find_if(m_renderTargets, [&](const auto& item) { return focused && item.windowRef.lock() == focused; });
+        const auto target = std::ranges::find_if(m_renderTargets, [&](const auto& item) {
+            return focused && item.windowRef.lock() == focused &&
+                std::ranges::any_of(m_scene.targets, [&](const auto& sceneTarget) { return sceneTarget.workspaceID == item.workspaceID && sceneTarget.token == item.targetToken; });
+        });
         if (target != m_renderTargets.end()) {
             m_focus = {.kind = EHitKind::Target, .workspaceID = target->workspaceID, .targetToken = target->targetToken};
             updateSelectionFromFocus();
         }
+        loadStyle();
         installInputListeners();
         enterOverviewSubmap(m_submapActive);
+        ensureOverviewCursorVisible(true, false);
         if (!swipe)
             *m_transitionProgress = 1.F;
     }
@@ -128,6 +130,15 @@ CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLM
 
 CScrollingOverview::~CScrollingOverview() {
     leaveOverviewSubmap(m_submapActive);
+    if (m_valid) {
+        // Hand the cursor shape back; clients resend theirs on the deferred motion.
+        Pointer::Cursor::overrideController->unsetOverride(Pointer::Cursor::CURSOR_OVERRIDE_UNKNOWN);
+        ensureOverviewCursorVisible(false, false);
+        g_pEventLoopManager->doLater([]() {
+            if (g_pInputManager)
+                g_pInputManager->simulateMouseMovement();
+        });
+    }
     if (m_closeAnimationTimer)
         m_closeAnimationTimer->cancel();
     m_closeAnimationTimer.reset();
@@ -155,8 +166,9 @@ SInputContext CScrollingOverview::inputContext() const {
         },
         .pan = m_pan,
         .viewportHeight = MON->m_size.y,
+        .dragThreshold = 12.0,
         // The window grid only selects; its geometry has no native drop positions.
-        .dragThreshold = m_windowGrid ? 1.0e9 : 12.0,
+        .dragEnabled = !m_windowGrid,
     };
 }
 
@@ -283,10 +295,17 @@ void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const S
         }
     }
 
-    // Hover is keyboard focus, so confirm selects the window under the pointer.
-    if (effects.hoverChanged && m_inputState.hover.kind == EHitKind::Target) {
-        m_focus = {.kind = EHitKind::Target, .workspaceID = m_inputState.hover.workspaceID, .targetToken = m_inputState.hover.targetToken};
-        updateSelectionFromFocus();
+    // Hover is keyboard focus, so confirm selects the window under the pointer. Real pointer
+    // motion also reclaims focus that the keyboard moved away while the pointer stayed on one
+    // window; a stationary pointer never overrides keyboard navigation.
+    const bool pointerMoved = previousState.lastGlobalPoint.x != m_inputState.lastGlobalPoint.x || previousState.lastGlobalPoint.y != m_inputState.lastGlobalPoint.y;
+    if (m_inputState.hover.kind == EHitKind::Target && (effects.hoverChanged || pointerMoved)) {
+        const SFocusRef hovered{.kind = EHitKind::Target, .workspaceID = m_inputState.hover.workspaceID, .targetToken = m_inputState.hover.targetToken};
+        if (effects.hoverChanged || m_focus.kind != hovered.kind || m_focus.workspaceID != hovered.workspaceID || m_focus.targetToken != hovered.targetToken) {
+            m_focus = hovered;
+            updateSelectionFromFocus();
+            damage();
+        }
     }
 
     if (effects.selection) {
@@ -329,6 +348,9 @@ void CScrollingOverview::installInputListeners() {
         // With follow_mouse, motion reaching the windows underneath refocuses them, and
         // their focus damage rebuilds the scene and clears hover on every move.
         info.cancelled = !m_closeCommitted;
+        // Clients no longer see the pointer, so they cannot restore a hidden or I-beam cursor.
+        if (info.cancelled)
+            ensureOverviewCursorVisible();
     });
     mouseButtonHook = Event::bus()->m_events.input.mouse.button.listen([this](const IPointer::SButtonEvent& event, Event::SCallbackInfo& info) {
         if (info.cancelled || pointerOverview() != this)
@@ -447,7 +469,7 @@ bool CScrollingOverview::sceneTopologyCurrent() const {
 
     const auto workspaces = State::workspaceState()->workspacesCopy();
     const auto count = std::ranges::count_if(workspaces, [&](const auto& ws) { return ws && ws->type() != Workspace::eWorkspaceType::SPECIAL && ws->m_monitor == MON; });
-    if (!m_windowGrid && static_cast<size_t>(count) != m_rows.size())
+    if (static_cast<size_t>(count) != m_rows.size())
         return false;
 
     for (const auto& row : m_rows) {
@@ -568,25 +590,29 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
 
     if (specs.empty())
         return false;
-    const int64_t terminalWorkspaceID = nextUnusedOrdinaryWorkspaceID(workspaceIDs);
-    if (terminalWorkspaceID <= 0)
-        return false;
-    const SSceneConfig sceneConfig{
-        .viewportWidth = MON->m_size.x,
-        .viewportHeight = MON->m_size.y,
-        .rowHeight = std::max(64.0, MON->m_size.y * 0.68),
-        .rowGap = std::max(12.0, MON->m_size.y * 0.025),
-        .columnGap = std::max(8.0, MON->m_size.x * 0.008),
-        .terminalWorkspaceID = terminalWorkspaceID,
-    };
-    m_scene = m_windowGrid ? buildWindowGridScene(workspaceID(m_startedOn), windowGridItems(), {
+    if (m_windowGrid) {
+        // One workspace's windows only: no tape rows and no terminal "new workspace" row.
+        m_scene = buildWindowGridScene(workspaceID(m_startedOn), windowGridItems(), {
+                                           .viewportWidth = MON->m_size.x,
+                                           .viewportHeight = MON->m_size.y,
+                                           .margin = std::max(24.0, MON->m_size.y * 0.04),
+                                           .gap = std::max(16.0, MON->m_size.x * 0.015),
+                                           .columns = static_cast<int>(CompatHyprlandAPI::intValue("plugin:hyprexpo:windows_columns")),
+                                       });
+    } else {
+        const int64_t terminalWorkspaceID = nextUnusedOrdinaryWorkspaceID(workspaceIDs);
+        if (terminalWorkspaceID <= 0)
+            return false;
+        m_scene = buildScene(specs, workspaceID(m_startedOn),
+                             {
                                  .viewportWidth = MON->m_size.x,
                                  .viewportHeight = MON->m_size.y,
-                                 .margin = std::max(24.0, MON->m_size.y * 0.04),
-                                 .gap = std::max(16.0, MON->m_size.x * 0.015),
-                                 .columns = static_cast<int>(CompatHyprlandAPI::intValue("plugin:hyprexpo:windows_columns")),
-                             }) :
-                             buildScene(specs, workspaceID(m_startedOn), sceneConfig);
+                                 .rowHeight = std::max(64.0, MON->m_size.y * 0.68),
+                                 .rowGap = std::max(12.0, MON->m_size.y * 0.025),
+                                 .columnGap = std::max(8.0, MON->m_size.x * 0.008),
+                                 .terminalWorkspaceID = terminalWorkspaceID,
+                             });
+    }
     if (!m_scene.valid)
         return false;
     // Client damage refreshes captures without reopening the overview's viewport.
@@ -706,8 +732,8 @@ void CScrollingOverview::refreshCache() {
         if (!window)
             continue;
         requests.push_back({.token = target.targetToken,
-                            .width = static_cast<uint32_t>(std::max(1.0, std::ceil(target.box.w * MON->m_scale))),
-                            .height = static_cast<uint32_t>(std::max(1.0, std::ceil(target.box.h * MON->m_scale)))});
+                            .width = static_cast<uint32_t>(std::max(1.0, std::round(target.box.w * MON->m_scale))),
+                            .height = static_cast<uint32_t>(std::max(1.0, std::round(target.box.h * MON->m_scale)))});
     }
     const auto plan = planCaptureBudget(static_cast<uint32_t>(MON->m_pixelSize.x), static_cast<uint32_t>(MON->m_pixelSize.y), budgetMultiplier, requests);
     if (!plan.valid)
@@ -777,7 +803,22 @@ void CScrollingOverview::onPreRender() {
     damage();
 }
 
+void CScrollingOverview::loadStyle() {
+    m_style = {
+        .tileRounding        = CompatHyprlandAPI::intValue("plugin:hyprexpo:tile_rounding"),
+        .tileRoundingFocus   = CompatHyprlandAPI::intValue("plugin:hyprexpo:tile_rounding_focus"),
+        .tileRoundingCurrent = CompatHyprlandAPI::intValue("plugin:hyprexpo:tile_rounding_current"),
+        .tileRoundingHover   = CompatHyprlandAPI::intValue("plugin:hyprexpo:tile_rounding_hover"),
+        .roundingPower       = CompatHyprlandAPI::floatValue("plugin:hyprexpo:tile_rounding_power"),
+        .borderWidth         = static_cast<int>(CompatHyprlandAPI::intValue("plugin:hyprexpo:border_width")),
+        // Same focus border resolution as the workspace grid, including the deprecated gradient key.
+        .focusBorder = borderGradientFromSpec(Hyprexpo::resolveBorderSpec(CompatHyprlandAPI::stringValue("plugin:hyprexpo:border_color_focus"),
+                                                                          CompatHyprlandAPI::stringValue("plugin:hyprexpo:border_grad_focus"))),
+    };
+}
+
 void CScrollingOverview::onConfigReload() {
+    loadStyle();
     resetInputState(EResetReason::Refresh);
     ++m_contentDamageGeneration;
     m_damageDirty = true;
@@ -795,19 +836,16 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
     const auto transition = overviewTransition(m_transitionProgress ? m_transitionProgress->value() : 1.0,
                                                {MON->m_size.x, MON->m_size.y});
     clearWithColor(applyTransitionOpacity(CHyprColor{0.06, 0.06, 0.06, 1.0}, transition));
-    const auto focusColor = focusBorderColor();
     CRegion damageRegion{0, 0, INT16_MAX, INT16_MAX};
-    // Same corner rules as the workspace grid: tile_rounding and its variants, in logical pixels.
-    const auto scaledRound = [&](const char* name, int fallback) {
-        const auto value = CompatHyprlandAPI::intValue(name);
-        return value >= 0 ? std::max(0, static_cast<int>(std::lround(static_cast<double>(value) * MON->m_scale))) : fallback;
-    };
-    const int   baseRound    = scaledRound("plugin:hyprexpo:tile_rounding", 0);
-    const int   focusRound   = scaledRound("plugin:hyprexpo:tile_rounding_focus", baseRound);
-    const int   currentRound = scaledRound("plugin:hyprexpo:tile_rounding_current", baseRound);
-    const int   hoverRound   = scaledRound("plugin:hyprexpo:tile_rounding_hover", baseRound);
-    const float roundPower   = CompatHyprlandAPI::floatValue("plugin:hyprexpo:tile_rounding_power");
-    const auto  clampRound   = [](int round, const CBox& box) { return std::min(round, std::max(0, static_cast<int>(std::floor(std::min(box.w, box.h) / 2.0)))); };
+    // Cached at open and config reload; radii follow the grid's tile_rounding rules exactly.
+    const auto  rounding     = Hyprexpo::resolveTileRounding(m_style.tileRounding, m_style.tileRoundingFocus, m_style.tileRoundingCurrent, m_style.tileRoundingHover,
+                                                             m_style.roundingPower, MON->m_scale);
+    const int   baseRound    = rounding.base;
+    const int   focusRound   = rounding.focus;
+    const int   currentRound = rounding.current;
+    const int   hoverRound   = rounding.hover;
+    const float roundPower   = rounding.power;
+    const auto  clampRound   = [](int round, const CBox& box) { return Hyprexpo::clampTileRound(round, box.w, box.h); };
 
     for (const auto& workspace : m_scene.workspaces) {
         CBox box = applyTransition(sceneBox(workspace.box, m_pan), {MON->m_size.x, MON->m_size.y}, transition);
@@ -834,20 +872,13 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
             continue;
         CBox box = target.box;
         box.y -= m_pan;
-        box = applyTransition(box, {MON->m_size.x, MON->m_size.y}, transition);
-        box.scale(MON->m_scale).round();
+        box = pixelBox(applyTransition(box, {MON->m_size.x, MON->m_size.y}, transition), MON->m_scale);
         if (box.y + box.h <= 0 || box.y >= MON->m_pixelSize.y)
             continue;
         const auto entry = cacheEntry(target.workspaceID, target.targetToken);
         const bool hovered = m_inputState.hover.kind == EHitKind::Target && m_inputState.hover.workspaceID == target.workspaceID && m_inputState.hover.targetToken == target.targetToken;
         const bool dragging = m_inputState.mode == EInputMode::WindowDrag && m_inputState.pressed.workspaceID == target.workspaceID && m_inputState.pressed.targetToken == target.targetToken;
         const bool focused = m_focus.kind == EHitKind::Target && m_focus.workspaceID == target.workspaceID && m_focus.targetToken == target.targetToken;
-        // Capture sizes use ceil and draw boxes use round; a 1px difference would resample the
-        // whole preview and soften text. At rest, draw the texture at its exact pixel size.
-        if (entry && entry->texture && std::abs(box.w - entry->texture->m_size.x) <= 2.0 && std::abs(box.h - entry->texture->m_size.y) <= 2.0) {
-            box.w = entry->texture->m_size.x;
-            box.h = entry->texture->m_size.y;
-        }
         // Fullscreen previews fill their whole slot, like the screen they mirror.
         const int  targetRound = target.fullscreen ? 0 : clampRound(focused ? focusRound : hovered ? hoverRound : baseRound, box);
         if (entry && entry->texture)
@@ -856,9 +887,10 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
             Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(target.pinned ? CHyprColor{0.18, 0.12, 0.12, 1.0} : CHyprColor{0.12, 0.12, 0.12, 1.0}, transition), {.round = targetRound, .roundingPower = roundPower});
         if (hovered || dragging)
             Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(dragging ? CHyprColor{0.20, 0.48, 0.85, 0.20} : CHyprColor{0.85, 0.90, 1.0, 0.12}, transition), {.round = targetRound, .roundingPower = roundPower});
-        if (focused)
-            Render::GL::g_pHyprOpenGL->renderBorder(ctx, box, focusColor,
-                                                    {.round = targetRound, .roundingPower = roundPower, .borderSize = static_cast<int>(std::max(2.0, std::round(3.0 * MON->m_scale))), .a = static_cast<float>(transition.opacity)});
+        // Same focus border as the grid: border_width (0 disables it) and solid or gradient colors.
+        if (focused && m_style.focusBorder && m_style.borderWidth > 0)
+            Render::GL::g_pHyprOpenGL->renderBorder(ctx, box, *m_style.focusBorder,
+                                                    {.round = targetRound, .roundingPower = roundPower, .borderSize = m_style.borderWidth, .a = static_cast<float>(transition.opacity)});
     }
 
     if (!m_windowGrid)

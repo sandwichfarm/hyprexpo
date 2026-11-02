@@ -422,8 +422,10 @@ SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, 
         Render::GL::g_pHyprOpenGL->scissor(targetCtx, static_cast<const pixman_box32*>(nullptr));
         glClearColor(0.F, 0.F, 0.F, 0.F);
         glClear(GL_COLOR_BUFFER_BIT);
-        // Whole-pixel placement: a fractional offset blends every texel with its neighbor.
-        const CBox fittedBox{std::round(fitted->x), std::round(fitted->y), std::round(fitted->w), std::round(fitted->h)};
+        // Whole-pixel edges: a fractional offset blends every texel with its neighbor, and
+        // rounding edges (not size) keeps the letterbox symmetric inside the capture.
+        const double fittedLeft = std::round(fitted->x), fittedTop = std::round(fitted->y);
+        const CBox   fittedBox{fittedLeft, fittedTop, std::round(fitted->x + fitted->w) - fittedLeft, std::round(fitted->y + fitted->h) - fittedTop};
         Render::GL::g_pHyprOpenGL->renderTextureInternal(targetCtx, sourceFramebuffer->getTexture(), fittedBox, {.damage = &targetDamage});
         targetCtx.m_data.blockScreenShader = true;
         rendererState.finish();

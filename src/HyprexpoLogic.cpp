@@ -646,6 +646,24 @@ bool parseSolidColorSpec(const std::string& value, SColorRGBA& out) {
     return parseHexARGB8(spec, out);
 }
 
+STileRounding resolveTileRounding(int64_t base, int64_t focus, int64_t current, int64_t hover, float power, double scale) {
+    const double safeScale = std::isfinite(scale) && scale > 0.0 ? scale : 1.0;
+    const auto   scaled    = [safeScale](int64_t logical) { return std::max(0, static_cast<int>(std::lround(static_cast<double>(logical) * safeScale))); };
+    STileRounding result;
+    result.base    = scaled(std::max<int64_t>(0, base));
+    result.focus   = focus >= 0 ? scaled(focus) : result.base;
+    result.current = current >= 0 ? scaled(current) : result.base;
+    result.hover   = hover >= 0 ? scaled(hover) : result.base;
+    result.power   = power;
+    return result;
+}
+
+int clampTileRound(int round, double width, double height) {
+    const double shorter = std::min(width, height);
+    const int    limit   = std::isfinite(shorter) && shorter > 0.0 ? static_cast<int>(std::floor(shorter / 2.0)) : 0;
+    return std::clamp(round, 0, limit);
+}
+
 SGradientSpec parseGradientSpec(const std::string& value) {
     SGradientSpec spec;
     std::string   normalized = value;

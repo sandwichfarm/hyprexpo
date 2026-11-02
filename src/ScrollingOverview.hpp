@@ -10,6 +10,7 @@
 #include <hyprland/src/managers/eventLoop/EventLoopTimer.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
 #include <hyprland/src/render/Texture.hpp>
+#include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -29,6 +30,7 @@ class CScrollingOverview final : public IOverviewSession {
     void onDamageReported() override;
     void onPreRender() override;
     void onConfigReload() override;
+    void loadStyle();
     void prepareForTeardown() override;
     std::expected<std::string, std::string> injectScrollingInput(const std::string& sequence) override;
     void fullRender(Render::CRenderContext& ctx) override;
@@ -142,6 +144,15 @@ class CScrollingOverview final : public IOverviewSession {
     bool                                      m_showPinnedWindows = false;
     bool                                      m_submapActive = false;
     bool                                      m_windowGrid = false;
+    struct SStyle {
+        int64_t                                   tileRounding        = 0;
+        int64_t                                   tileRoundingFocus   = -1;
+        int64_t                                   tileRoundingCurrent = -1;
+        int64_t                                   tileRoundingHover   = -1;
+        float                                     roundingPower       = 2.F;
+        int                                       borderWidth         = 2;
+        std::optional<Config::CGradientValueData> focusBorder;
+    } m_style;
     double                                    m_pan = 0.0;
     double                                    m_swipeDelta = 0.0;
     PHLANIMVAR<float> m_transitionProgress;

@@ -358,11 +358,12 @@ void COverview::fullRender(Render::CRenderContext& ctx) {
     auto* const* PTILEROUNDC = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_current")->getDataStaticPtr();
     auto* const* PTILEROUNDH = (Hyprlang::INT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:tile_rounding_hover")->getDataStaticPtr();
 
-    const int   BASE_ROUND_SCALED    = std::max(0, (int)std::lround((double)**PTILEROUND * MON->m_scale));
-    const int   FOCUS_ROUND_SCALED   = **PTILEROUNDF >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDF * MON->m_scale)) : BASE_ROUND_SCALED;
-    const int   CURRENT_ROUND_SCALED = **PTILEROUNDC >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDC * MON->m_scale)) : BASE_ROUND_SCALED;
-    const int   HOVER_ROUND_SCALED   = **PTILEROUNDH >= 0 ? std::max(0, (int)std::lround((double)**PTILEROUNDH * MON->m_scale)) : BASE_ROUND_SCALED;
-    const float ROUND_PWR            = **PTOUNDPWR;
+    const auto  ROUNDING             = Hyprexpo::resolveTileRounding(**PTILEROUND, **PTILEROUNDF, **PTILEROUNDC, **PTILEROUNDH, **PTOUNDPWR, MON->m_scale);
+    const int   BASE_ROUND_SCALED    = ROUNDING.base;
+    const int   FOCUS_ROUND_SCALED   = ROUNDING.focus;
+    const int   CURRENT_ROUND_SCALED = ROUNDING.current;
+    const int   HOVER_ROUND_SCALED   = ROUNDING.hover;
+    const float ROUND_PWR            = ROUNDING.power;
 
     std::vector<CBox> tileBoxes(images.size());
     const bool        entryAnimationActive = animateEntry && !closing;
@@ -387,8 +388,7 @@ void COverview::fullRender(Render::CRenderContext& ctx) {
             else if ((int)id == hoveredID)
                 tileRound = HOVER_ROUND_SCALED;
 
-            const int maxCornerPx = std::max(0, (int)std::floor(std::min(texbox.w, texbox.h) / 2.0));
-            tileRound = std::min(tileRound, maxCornerPx);
+            tileRound = Hyprexpo::clampTileRound(tileRound, texbox.w, texbox.h);
 
             float alpha = 1.0f;
             if (entryAnimationActive) {
@@ -566,27 +566,13 @@ void COverview::fullRender(Render::CRenderContext& ctx) {
             return;
 
         const std::string effectiveSpec = Hyprexpo::resolveBorderSpec(borderSpec, deprecatedGradSpec);
-
-        if (isGradientBorderSpec(effectiveSpec)) {
-            const auto spec = parseGradientSpec(effectiveSpec);
-            if (spec.valid) {
-                Config::CGradientValueData grad;
-                grad.m_colors.clear();
-                grad.m_colors.push_back(spec.c1);
-                grad.m_colors.push_back(spec.c2);
-                grad.m_angle = spec.angleDeg * (float)M_PI / 180.f;
-                grad.updateColorsOk();
-                Render::GL::g_pHyprOpenGL->renderBorder(ctx, box, grad, {.round = roundScaled, .roundingPower = ROUND_PWR, .borderSize = BWIDTH});
-            }
-        } else if (!effectiveSpec.empty()) {
-            Hyprexpo::SColorRGBA parsedColor;
-            if (Hyprexpo::parseSolidColorSpec(effectiveSpec, parsedColor)) {
-                CHyprColor color{parsedColor.r, parsedColor.g, parsedColor.b, parsedColor.a};
-                Render::GL::g_pHyprOpenGL->renderBorder(ctx, box, color, {.round = roundScaled, .roundingPower = ROUND_PWR, .borderSize = BWIDTH});
-            } else {
+        const auto        grad          = borderGradientFromSpec(effectiveSpec);
+        if (!grad) {
+            if (!effectiveSpec.empty() && !isGradientBorderSpec(effectiveSpec))
                 Log::logger->log(Log::ERR, Log::logFnName(), "[hyprexpo] invalid border color config: {}", effectiveSpec);
-            }
+            return;
         }
+        Render::GL::g_pHyprOpenGL->renderBorder(ctx, box, *grad, {.round = roundScaled, .roundingPower = ROUND_PWR, .borderSize = BWIDTH});
     };
 
     auto drawProxyBorder = [&](const CBox& proxy, int round, int borderWidth, const std::string& borderSpec, const std::string& fallbackSpec) {

@@ -231,6 +231,18 @@ int                      fallbackTokenToVisibleIndex(const std::string& token);
 bool                     parseHexRGBA8(const std::string& value, SColorRGBA& out);
 bool                     parseSolidColorSpec(const std::string& value, SColorRGBA& out);
 SGradientSpec            parseGradientSpec(const std::string& value);
+
+// Corner radii shared by the workspace grid and the scrolling views. Inputs are logical
+// pixels from tile_rounding*; a negative variant inherits the base. Outputs are scaled.
+struct STileRounding {
+    int   base    = 0;
+    int   focus   = 0;
+    int   current = 0;
+    int   hover   = 0;
+    float power   = 2.F;
+};
+STileRounding resolveTileRounding(int64_t base, int64_t focus, int64_t current, int64_t hover, float power, double scale);
+int           clampTileRound(int round, double width, double height);
 bool                     isGradientBorderSpec(const std::string& value);
 bool                     shouldShowWorkspaceLabel(bool labelEnabled, const std::string& labelShow, bool isHovered, bool isFocused, bool isCurrent);
 std::string              resolveBorderSpec(const std::string& modernSpec, const std::string& legacySpec);
