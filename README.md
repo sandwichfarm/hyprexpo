@@ -290,6 +290,8 @@ maintenance after [the upstream plugin was retired](https://github.com/hyprwm/hy
 See the [original announcement](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
 for the early feature set.
 
+<img width="2089" height="1113" alt="screenshot_2026-11-02_18-01-40" src="https://github.com/user-attachments/assets/b670ed8e-26d7-4e78-9130-404dc20b5a4f" />
+
 ### Related
 
 [colonelpanic8/hyprexpo](https://github.com/colonelpanic8/hyprexpo) is another
