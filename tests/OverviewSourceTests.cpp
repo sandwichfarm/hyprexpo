@@ -1086,6 +1086,11 @@ int main() {
     expectContains(scrollingSource, "CompatHyprlandAPI::intValue(\"plugin:hyprexpo:gesture_distance\")",
                    "scrolling swipe reads gesture distance through the Lua-compatible config boundary");
     expectAbsent(scrollingSource, "HyprlandAPI::getConfigValue", "scrolling session never uses the legacy config getter");
+    const auto scrollingRounding = extractFunction(scrollingSource, "void CScrollingOverview::fullRender(");
+    expectContains(scrollingRounding, "plugin:hyprexpo:tile_rounding\"", "scrolling previews share the grid's tile_rounding radius");
+    expectContains(scrollingRounding, "plugin:hyprexpo:tile_rounding_power", "scrolling previews share the grid's rounding curve");
+    for (const auto& token : {".round = 8", ".round = 12"})
+        expectAbsent(scrollingRounding, token, "scrolling previews do not hardcode a corner radius " + std::string{token});
     expectContains(sessionHeader, "virtual void beginCancelSwipe() = 0", "cancel gesture dispatches through the session interface");
     expectContains(sessionHeader, "virtual void onSwipeEnd(bool switchToSelection) = 0", "session interface retains action-specific swipe completion");
     const auto scrollingCancelBegin = extractFunction(scrollingSource, "void CScrollingOverview::beginCancelSwipe(");

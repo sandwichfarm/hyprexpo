@@ -579,14 +579,14 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
         .columnGap = std::max(8.0, MON->m_size.x * 0.008),
         .terminalWorkspaceID = terminalWorkspaceID,
     };
-    m_scene = m_windowGrid ? buildWindowGridScene(m_workspaceID(startedOn), windowGridItems(), {
+    m_scene = m_windowGrid ? buildWindowGridScene(workspaceID(m_startedOn), windowGridItems(), {
                                  .viewportWidth = MON->m_size.x,
                                  .viewportHeight = MON->m_size.y,
                                  .margin = std::max(24.0, MON->m_size.y * 0.04),
                                  .gap = std::max(16.0, MON->m_size.x * 0.015),
                                  .columns = static_cast<int>(CompatHyprlandAPI::intValue("plugin:hyprexpo:windows_columns")),
                              }) :
-                             buildScene(specs, m_workspaceID(startedOn), sceneConfig);
+                             buildScene(specs, workspaceID(m_startedOn), sceneConfig);
     if (!m_scene.valid)
         return false;
     // Client damage refreshes captures without reopening the overview's viewport.
@@ -626,7 +626,7 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
                 const auto placed = std::ranges::find_if(m_scene.targets, [&](const auto& sceneTarget) { return sceneTarget.token == token; });
                 if (placed == m_scene.targets.end())
                     continue;
-                m_renderTargets.push_back(SRenderTarget{.workspaceID = row.workspace->m_id,
+                m_renderTargets.push_back(SRenderTarget{.workspaceID = workspaceID(row.workspace),
                                            .targetToken = token,
                                            .windowStableID = target.windowStableID,
                                            .box = sceneBox(placed->box, 0.0),
@@ -797,6 +797,17 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
     clearWithColor(applyTransitionOpacity(CHyprColor{0.06, 0.06, 0.06, 1.0}, transition));
     const auto focusColor = focusBorderColor();
     CRegion damageRegion{0, 0, INT16_MAX, INT16_MAX};
+    // Same corner rules as the workspace grid: tile_rounding and its variants, in logical pixels.
+    const auto scaledRound = [&](const char* name, int fallback) {
+        const auto value = CompatHyprlandAPI::intValue(name);
+        return value >= 0 ? std::max(0, static_cast<int>(std::lround(static_cast<double>(value) * MON->m_scale))) : fallback;
+    };
+    const int   baseRound    = scaledRound("plugin:hyprexpo:tile_rounding", 0);
+    const int   focusRound   = scaledRound("plugin:hyprexpo:tile_rounding_focus", baseRound);
+    const int   currentRound = scaledRound("plugin:hyprexpo:tile_rounding_current", baseRound);
+    const int   hoverRound   = scaledRound("plugin:hyprexpo:tile_rounding_hover", baseRound);
+    const float roundPower   = CompatHyprlandAPI::floatValue("plugin:hyprexpo:tile_rounding_power");
+    const auto  clampRound   = [](int round, const CBox& box) { return std::min(round, std::max(0, static_cast<int>(std::floor(std::min(box.w, box.h) / 2.0)))); };
 
     for (const auto& workspace : m_scene.workspaces) {
         CBox box = applyTransition(sceneBox(workspace.box, m_pan), {MON->m_size.x, MON->m_size.y}, transition);
@@ -804,15 +815,16 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
         if (box.y + box.h <= 0 || box.y >= MON->m_pixelSize.y)
             continue;
         const auto row = workspaceRow(workspace.workspaceID);
+        const int  rowRound = clampRound(workspace.workspaceID == workspaceID(m_startedOn) ? currentRound : baseRound, box);
         switch (workspace.kind) {
             case EWorkspaceKind::Mixed:
                 if (row && row->workspacePreview && row->workspacePreview->getTexture())
-                    Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, row->workspacePreview->getTexture(), box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity), .round = 12});
+                    Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, row->workspacePreview->getTexture(), box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity), .round = rowRound, .roundingPower = roundPower});
                 else
-                    Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.14, 0.14, 0.14, 1.0}, transition), {.round = 12});
+                    Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.14, 0.14, 0.14, 1.0}, transition), {.round = rowRound, .roundingPower = roundPower});
                 break;
-            case EWorkspaceKind::Empty: Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.10, 0.10, 0.10, 1.0}, transition), {.round = 12}); break;
-            case EWorkspaceKind::Terminal: Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.08, 0.12, 0.10, 1.0}, transition), {.round = 12}); break;
+            case EWorkspaceKind::Empty: Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.10, 0.10, 0.10, 1.0}, transition), {.round = rowRound, .roundingPower = roundPower}); break;
+            case EWorkspaceKind::Terminal: Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.08, 0.12, 0.10, 1.0}, transition), {.round = rowRound, .roundingPower = roundPower}); break;
             case EWorkspaceKind::Scrolling: break;
         }
     }
@@ -827,18 +839,20 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
         if (box.y + box.h <= 0 || box.y >= MON->m_pixelSize.y)
             continue;
         const auto entry = cacheEntry(target.workspaceID, target.targetToken);
-        if (entry && entry->texture)
-            Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, entry->texture, box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity), .round = target.fullscreen ? 0 : 8});
-        else
-            Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(target.pinned ? CHyprColor{0.18, 0.12, 0.12, 1.0} : CHyprColor{0.12, 0.12, 0.12, 1.0}, transition), {.round = 8});
         const bool hovered = m_inputState.hover.kind == EHitKind::Target && m_inputState.hover.workspaceID == target.workspaceID && m_inputState.hover.targetToken == target.targetToken;
         const bool dragging = m_inputState.mode == EInputMode::WindowDrag && m_inputState.pressed.workspaceID == target.workspaceID && m_inputState.pressed.targetToken == target.targetToken;
-        if (hovered || dragging)
-            Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(dragging ? CHyprColor{0.20, 0.48, 0.85, 0.20} : CHyprColor{0.85, 0.90, 1.0, 0.12}, transition), {.round = target.fullscreen ? 0 : 8});
         const bool focused = m_focus.kind == EHitKind::Target && m_focus.workspaceID == target.workspaceID && m_focus.targetToken == target.targetToken;
+        // Fullscreen previews fill their whole slot, like the screen they mirror.
+        const int  targetRound = target.fullscreen ? 0 : clampRound(focused ? focusRound : hovered ? hoverRound : baseRound, box);
+        if (entry && entry->texture)
+            Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, entry->texture, box, {.damage = &damageRegion, .a = static_cast<float>(transition.opacity), .round = targetRound, .roundingPower = roundPower});
+        else
+            Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(target.pinned ? CHyprColor{0.18, 0.12, 0.12, 1.0} : CHyprColor{0.12, 0.12, 0.12, 1.0}, transition), {.round = targetRound, .roundingPower = roundPower});
+        if (hovered || dragging)
+            Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(dragging ? CHyprColor{0.20, 0.48, 0.85, 0.20} : CHyprColor{0.85, 0.90, 1.0, 0.12}, transition), {.round = targetRound, .roundingPower = roundPower});
         if (focused)
             Render::GL::g_pHyprOpenGL->renderBorder(ctx, box, focusColor,
-                                                    {.round = target.fullscreen ? 0 : 8, .borderSize = static_cast<int>(std::max(2.0, std::round(3.0 * MON->m_scale))), .a = static_cast<float>(transition.opacity)});
+                                                    {.round = targetRound, .roundingPower = roundPower, .borderSize = static_cast<int>(std::max(2.0, std::round(3.0 * MON->m_scale))), .a = static_cast<float>(transition.opacity)});
     }
 
     if (!m_windowGrid)

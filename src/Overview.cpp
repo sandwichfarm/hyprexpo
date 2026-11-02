@@ -234,6 +234,15 @@ Config::INTEGER intValue(const std::string& name) {
     return ptr && *ptr ? **ptr : intDefault(name);
 }
 
+Config::FLOAT floatValue(const std::string& name) {
+    const auto VALUE = Config::mgr()->getConfigValue(name);
+    if (!VALUE.dataptr || !VALUE.type || *VALUE.type != typeid(Config::FLOAT))
+        return floatDefault(name);
+
+    auto* const* ptr = reinterpret_cast<Config::FLOAT* const*>(VALUE.dataptr);
+    return ptr && *ptr ? **ptr : floatDefault(name);
+}
+
 Config::STRING stringValue(const std::string& name) {
     const auto VALUE = Config::mgr()->getConfigValue(name);
     return Hyprexpo::decodeConfigString(VALUE.dataptr, VALUE.type && *VALUE.type == typeid(Config::STRING), stringDefault(name));

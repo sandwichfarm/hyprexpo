@@ -185,10 +185,10 @@ Bad values are rejected when the gesture is registered, not while the config is 
 
 | key | type | description | default |
 | --- | --- | --- | --- |
-| `plugin:hyprexpo:tile_rounding` | int | corner radius in pixels for workspace previews | `0` |
+| `plugin:hyprexpo:tile_rounding` | int | corner radius in pixels for workspace previews, scrolling rows and window previews (fullscreen previews stay square) | `0` |
 | `plugin:hyprexpo:tile_rounding_power` | float | rounding curve exponent | `2.0` |
 | `plugin:hyprexpo:tile_rounding_focus` | int | focused tile radius; `-1` inherits `tile_rounding` | `-1` |
-| `plugin:hyprexpo:tile_rounding_current` | int | current tile radius; `-1` inherits `tile_rounding` | `-1` |
+| `plugin:hyprexpo:tile_rounding_current` | int | current tile (or opening scrolling row) radius; `-1` inherits `tile_rounding` | `-1` |
 | `plugin:hyprexpo:tile_rounding_hover` | int | hovered tile radius; `-1` inherits `tile_rounding` | `-1` |
 | `plugin:hyprexpo:border_width` | int | border thickness in pixels | `2` |
 | `plugin:hyprexpo:border_color` | string | default border for non-highlighted tiles; solid color or gradient | empty |
