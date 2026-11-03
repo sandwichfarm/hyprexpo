@@ -1114,6 +1114,17 @@ int main() {
                    "the workspace grid resolves radii with the same shared rules");
     for (const auto& token : {".round = 8", ".round = 12"})
         expectAbsent(scrollingRounding, token, "scrolling previews do not hardcode a corner radius " + std::string{token});
+    expectAbsent(scrollingSource + scrollingHeader, "m_windowGrid", "the scrolling session branches on presentation traits, not a window-grid boolean");
+    expectContains(scrollingHeader, "Hyprexpo::Scrolling::SPresentationTraits", "the scrolling session caches its presentation traits");
+    expectContains(extractFunction(scrollingSource, "SInputContext CScrollingOverview::inputContext("), ".dragEnabled = m_traits.dragEnabled", "drag availability follows the presentation");
+    expectContains(scrollingRounding, "m_traits.numberBadges", "number badges render only for presentations that declare them");
+    expectAbsent(scrollingRounding, "numberedTargets()", "render does not rebuild the numbered target list every frame");
+    expectContains(extractFunction(scrollingSource, "bool CScrollingOverview::selectVisibleIndex("), "m_traits.indexSelectsTargets", "visible-index selection follows the presentation");
+    expectContains(extractFunction(scrollingSource, "bool CScrollingOverview::commitSelection("), "m_traits.floatingTargetsNavigable", "floating window selection follows the presentation");
+    const auto scrollingPlacement = extractFunction(scrollingSource, "void CScrollingOverview::placeRenderTargets(");
+    expect(!scrollingPlacement.empty(), "render target placement is one helper shared by every presentation");
+    expectContains(scrollingPlacement, "m_numberedTargets", "placement records the numbered target order once per refresh");
+    expectContains(extractFunction(scrollingSource, "bool CScrollingOverview::buildPresentationScene("), "m_traits.terminalRow", "the terminal row exists only for presentations that declare it");
     expectContains(sessionHeader, "virtual void beginCancelSwipe() = 0", "cancel gesture dispatches through the session interface");
     expectContains(sessionHeader, "virtual void onSwipeEnd(bool switchToSelection) = 0", "session interface retains action-specific swipe completion");
     const auto scrollingCancelBegin = extractFunction(scrollingSource, "void CScrollingOverview::beginCancelSwipe(");
@@ -1184,10 +1195,12 @@ int main() {
     expectContains(scrollingInstallInput, "event.device->m_boundOutput.empty()", "touch ownership requires an explicitly bound output");
     expectAbsent(scrollingInstallInput, ": m_monitor.lock()", "unbound touch devices are not guessed onto the overview monitor");
     const auto scrollingRefresh = extractFunction(scrollingSource, "bool CScrollingOverview::refreshScene(");
-    expectContains(scrollingRefresh, "nextUnusedOrdinaryWorkspaceID(workspaceIDs)", "terminal scene shares the transaction's first-unused allocation policy");
-    expectOrder(scrollingRefresh, "workspaceIDs.push_back(workspaceID(workspace))", "if (workspace->m_monitor != MON", "terminal allocation includes ordinary IDs on every monitor");
+    const auto scrollingSceneBuild = extractFunction(scrollingSource, "bool CScrollingOverview::buildPresentationScene(");
+    expectContains(scrollingSceneBuild, "nextUnusedOrdinaryWorkspaceID(allOrdinaryIDs)", "terminal scene shares the transaction's first-unused allocation policy");
+    expectOrder(extractFunction(scrollingSource, "std::vector<PHLWORKSPACE> CScrollingOverview::sceneWorkspaces("), "allOrdinaryIDs.push_back(workspaceID(workspace))", "if (workspace->m_monitor != MON",
+                "terminal allocation includes ordinary IDs on every monitor");
     const auto scrollingPreRender = extractFunction(scrollingSource, "void CScrollingOverview::onPreRender(");
-    expectOrder(scrollingRefresh, "const bool hadScene = m_scene.valid", "buildScene(specs, workspaceID(m_startedOn)", "scene refresh distinguishes an existing viewport from first open");
+    expectOrder(scrollingRefresh, "const bool hadScene = m_scene.valid", "buildPresentationScene(MON, specs, workspaceIDs)", "scene refresh distinguishes an existing viewport from first open");
     expectContains(scrollingRefresh, "hadScene ? clampPan(m_scene, m_pan, MON->m_size.y) : initialPan(", "content refresh retains pan while first open centers the active row");
     expectContains(scrollingRefresh, "focusAfterRefresh(m_scene, m_focus, workspaceID(m_startedOn))", "runtime refresh uses the tested surviving-focus policy");
     expectAbsent(scrollingRefresh, "m_focus = {.kind", "content refresh does not overwrite keyboard selection with the opening workspace");

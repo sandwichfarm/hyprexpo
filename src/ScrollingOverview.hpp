@@ -108,8 +108,10 @@ class CScrollingOverview final : public IOverviewSession {
     };
 
     bool refreshScene(const std::optional<Hyprexpo::Scrolling::SWorkspaceSnapshot>& initialSnapshot = std::nullopt);
+    std::vector<PHLWORKSPACE> sceneWorkspaces(const PHLMONITOR& monitor, std::vector<int64_t>& allOrdinaryIDs) const;
     std::vector<Hyprexpo::Scrolling::SWindowGridItem> windowGridItems() const;
-    std::vector<const SRenderTarget*> numberedTargets() const;
+    bool buildPresentationScene(const PHLMONITOR& monitor, const std::vector<Hyprexpo::Scrolling::SWorkspaceSpec>& specs, const std::vector<int64_t>& allOrdinaryIDs);
+    void placeRenderTargets(const PHLMONITOR& monitor);
     bool sceneTopologyCurrent() const;
     void refreshCache();
     void releaseCacheEntry(SCacheEntry& entry);
@@ -144,7 +146,8 @@ class CScrollingOverview final : public IOverviewSession {
     bool                                      m_showPinnedWindows = false;
     bool                                      m_submapActive = false;
     Hyprexpo::EOverviewSessionKind            m_kind = Hyprexpo::EOverviewSessionKind::ScrollingTape;
-    bool                                      m_windowGrid = false;
+    Hyprexpo::Scrolling::EScenePresentation   m_presentation = Hyprexpo::Scrolling::EScenePresentation::Tape;
+    Hyprexpo::Scrolling::SPresentationTraits  m_traits;
     struct SStyle {
         int64_t                                   tileRounding        = 0;
         int64_t                                   tileRoundingFocus   = -1;
@@ -166,6 +169,7 @@ class CScrollingOverview final : public IOverviewSession {
     Hyprexpo::Scrolling::SScene               m_scene;
     std::vector<SWorkspaceRow>                m_rows;
     std::vector<SRenderTarget>                m_renderTargets;
+    std::vector<size_t>                       m_numberedTargets; // indices into m_renderTargets in scene order
     std::vector<SCacheEntry>                  m_cache;
     std::vector<SP<Render::ITexture>>         m_numberLabels;
     double                                    m_numberLabelPixels = 0.0;

@@ -542,6 +542,21 @@ void checkOverviewSessionKinds() {
            "session kinds have stable diagnostic names");
 }
 
+void checkPresentationTraits() {
+    using namespace Hyprexpo::Scrolling;
+
+    const auto tape = presentationTraits(EScenePresentation::Tape);
+    expect(tape.siblingWorkspaceRows && tape.terminalRow && tape.dragEnabled && !tape.numberBadges && !tape.indexSelectsTargets && !tape.floatingTargetsNavigable,
+           "the tape shows every workspace row, offers positional drag and selects rows by index");
+    const auto grid = presentationTraits(EScenePresentation::WindowGrid);
+    expect(!grid.siblingWorkspaceRows && !grid.terminalRow && !grid.dragEnabled && grid.numberBadges && grid.indexSelectsTargets && grid.floatingTargetsNavigable,
+           "the window grid shows one workspace, never drags, numbers its windows and makes floating windows selectable");
+    expect(presentationForSessionKind(Hyprexpo::EOverviewSessionKind::ScrollingWindowGrid) == EScenePresentation::WindowGrid &&
+               presentationForSessionKind(Hyprexpo::EOverviewSessionKind::ScrollingTape) == EScenePresentation::Tape &&
+               presentationForSessionKind(Hyprexpo::EOverviewSessionKind::WorkspaceGrid) == EScenePresentation::Tape,
+           "only the window-grid session kind selects the window-grid presentation");
+}
+
 void checkTileRoundingRules() {
     using namespace Hyprexpo;
     const auto inherit = resolveTileRounding(8, -1, -1, -1, 2.5F, 1.5);
@@ -1492,6 +1507,7 @@ int main() {
     checkScrollingMutationTransactions();
     checkScrollingMutationFocusAndMembership();
     checkOverviewSessionKinds();
+    checkPresentationTraits();
 
     // --- global multi-monitor geometry ---
     {
