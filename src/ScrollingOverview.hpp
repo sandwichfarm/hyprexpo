@@ -20,7 +20,7 @@
 class CScrollingOverview final : public IOverviewSession {
   public:
     CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe, uint64_t sessionGeneration, const std::optional<Hyprexpo::Scrolling::SWorkspaceSnapshot>& initialSnapshot,
-                       bool windowGrid = false);
+                       Hyprexpo::EOverviewSessionKind kind);
     ~CScrollingOverview() override;
 
     bool valid() const;
@@ -64,7 +64,7 @@ class CScrollingOverview final : public IOverviewSession {
     bool ownsAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var) const override;
     bool ownsPointerInput() const override;
     bool ownsTouchInput(int32_t touchId) const override;
-    bool isWindowGrid() const override;
+    Hyprexpo::EOverviewSessionKind kind() const override;
 
   private:
     struct SCacheKey {
@@ -143,6 +143,7 @@ class CScrollingOverview final : public IOverviewSession {
     bool                                      m_damageDirty = false;
     bool                                      m_showPinnedWindows = false;
     bool                                      m_submapActive = false;
+    Hyprexpo::EOverviewSessionKind            m_kind = Hyprexpo::EOverviewSessionKind::ScrollingTape;
     bool                                      m_windowGrid = false;
     struct SStyle {
         int64_t                                   tileRounding        = 0;

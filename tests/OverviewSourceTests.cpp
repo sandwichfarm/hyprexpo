@@ -182,7 +182,7 @@ int main() {
     expect(dispatchersSource.find("g_pNumberKeyModeConfig.reset()") != std::string::npos,
            "number-key mode releases its retained V2 config value during teardown");
     const auto passthroughMode = rawNumberSelection.find("ENumberKeyMode::Passthrough");
-    const auto indexMode       = rawNumberSelection.find("ENumberKeyMode::Index", passthroughMode);
+    const auto indexMode       = rawNumberSelection.find("Hyprexpo::numberKeySelectsVisibleIndex(mode,", passthroughMode);
     const auto workspaceMode   = rawNumberSelection.find("return changeToSingleDigitWorkspace(arg).success;", indexMode);
     expect(passthroughMode != std::string::npos && indexMode != std::string::npos &&
                rawNumberSelection.substr(passthroughMode, indexMode - passthroughMode).find("return false;") != std::string::npos,
@@ -1062,7 +1062,17 @@ int main() {
                    "{\"plugin:hyprexpo:overview_mode\", HyprexpoConfig::OVERVIEW_MODE_DEFAULT}",
                    "missing overview mode config uses the shared auto default");
     expectContains(sessionSource, "overviewModePreferenceFromString", "session factory parses the overview mode configuration through the shared pure parser");
-    expectContains(sessionSource, "EOverviewModePreference::Grid", "session factory checks for the forced-grid overview mode preference");
+    expectContains(sessionFactory, "Hyprexpo::resolveOverviewSessionKind(", "session factory resolves the session kind through the shared pure policy");
+    expectOrder(sessionFactory, "resolveOverviewSessionKind(", "snapshotWorkspace(startedOn)", "layout detection feeds the kind before any native snapshot");
+    expectAbsent(sessionFactory, "EOverviewModePreference::", "session factory never re-implements the preference table inline");
+    expectContains(sessionHeader, "virtual Hyprexpo::EOverviewSessionKind kind() const = 0;", "every session reports its kind");
+    expectAbsent(sessionHeader + source + dispatchersSource + scrollingSource + scrollingHeader, "isWindowGrid", "session kind replaces the window-grid boolean");
+    expectContains(extractFunction(source, "Hyprexpo::EOverviewSessionKind COverview::kind("), "EOverviewSessionKind::WorkspaceGrid", "the classic grid reports the workspace-grid kind");
+    expectContains(expoDispatcher, "Hyprexpo::expoNextAction(", "expo next derives its action from the pure policy");
+    expectContains(expoDispatcher, "Hyprexpo::sessionKindEscalatesOnNext(overview.kind())", "expo next escalates only sessions whose kind escalates");
+    expectOrder(expoDispatcher, "case Hyprexpo::EExpoNextAction::EscalateWindowGrids", "createOverview(monitor, false, true)", "escalation replaces a window grid with a forced workspace grid");
+    const auto digitSelection = extractFunction(dispatchersSource, "bool shouldSelectWorkspaceFromKey(");
+    expectContains(digitSelection, "Hyprexpo::numberKeySelectsVisibleIndex(mode,", "raw digit handling asks the pure policy whether digits pick visible positions");
     expectOrder(sessionSource, "plugin:hyprexpo:overview_mode", "detectedScrolling", "overview mode is read before scrolling layout detection runs");
     expectOrder(sessionSource, "forcedGrid", "workspaceUsesScrollingLayout(startedOn)", "a forced-grid preference can short-circuit scrolling layout detection");
     expectContains(dispatchersSource, "createOverview(monitor)", "dispatcher creates sessions through the monitor registry");

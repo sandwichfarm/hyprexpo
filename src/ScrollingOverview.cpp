@@ -98,8 +98,9 @@ EOutputTransform outputTransform(wl_output_transform transform) {
 }
 
 CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe, uint64_t sessionGeneration, const std::optional<SWorkspaceSnapshot>& initialSnapshot,
-                                       bool windowGrid) :
-    m_startedOn(startedOn), m_monitor(monitor), m_sessionGeneration(sessionGeneration), m_isSwiping(swipe), m_windowGrid(windowGrid),
+                                       Hyprexpo::EOverviewSessionKind kind) :
+    m_startedOn(startedOn), m_monitor(monitor), m_sessionGeneration(sessionGeneration), m_isSwiping(swipe), m_kind(kind),
+    m_windowGrid(kind == Hyprexpo::EOverviewSessionKind::ScrollingWindowGrid),
     m_selectedWorkspaceID(startedOn ? workspaceID(startedOn) : 0) {
     Animation::mgr()->createAnimation(0.F, m_transitionProgress, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
     m_transitionProgress->setUpdateCallback([monitorKey = overviewMonitorKey(monitor), generation = m_sessionGeneration](auto) {
@@ -1235,8 +1236,8 @@ bool CScrollingOverview::ownsPointerInput() const {
     return !m_closeCommitted && m_inputState.owner == EInputOwner::Mouse;
 }
 
-bool CScrollingOverview::isWindowGrid() const {
-    return m_windowGrid;
+Hyprexpo::EOverviewSessionKind CScrollingOverview::kind() const {
+    return m_kind;
 }
 
 bool CScrollingOverview::ownsTouchInput(int32_t touchId) const {

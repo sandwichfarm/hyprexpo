@@ -59,8 +59,8 @@ class IOverviewSession {
     virtual bool ownsAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var) const = 0;
     virtual bool ownsPointerInput() const = 0;
     virtual bool ownsTouchInput(int32_t touchId) const { return false; }
-    // A window grid shows one workspace's windows; digits pick windows and expo next escalates it.
-    virtual bool isWindowGrid() const { return false; }
+    // Dispatchers reason about kinds (see Hyprexpo::resolveOverviewSessionKind), never about classes.
+    virtual Hyprexpo::EOverviewSessionKind kind() const = 0;
 
     virtual bool blocksOverviewRendering() const = 0;
     virtual bool blocksDamageReporting() const = 0;

@@ -756,6 +756,10 @@ bool COverview::ownsPointerInput() const {
     return g_overviewDrag.state.active && g_overviewDrag.state.sourceMonitorKey == overviewMonitorKey(monitor());
 }
 
+Hyprexpo::EOverviewSessionKind COverview::kind() const {
+    return Hyprexpo::EOverviewSessionKind::WorkspaceGrid;
+}
+
 IOverviewSession* createOverview(const PHLMONITOR& monitor, bool swipe, bool forceGrid) {
     if (!monitor || !monitor->m_activeWorkspace)
         return nullptr;
