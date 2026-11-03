@@ -481,6 +481,46 @@ EOverviewModePreference overviewModePreferenceFromString(const std::string& mode
     return EOverviewModePreference::Auto;
 }
 
+EOverviewSessionKind resolveOverviewSessionKind(EOverviewModePreference preference, EWorkspaceLayoutKind layout, bool forceWorkspaceGrid) {
+    if (forceWorkspaceGrid || preference == EOverviewModePreference::Grid)
+        return EOverviewSessionKind::WorkspaceGrid;
+    switch (layout) {
+        case EWorkspaceLayoutKind::Scrolling:
+            return preference == EOverviewModePreference::Windows ? EOverviewSessionKind::ScrollingWindowGrid : EOverviewSessionKind::ScrollingTape;
+        case EWorkspaceLayoutKind::Classic: break;
+    }
+    return EOverviewSessionKind::WorkspaceGrid;
+}
+
+bool sessionKindIsScrolling(EOverviewSessionKind kind) {
+    return kind == EOverviewSessionKind::ScrollingTape || kind == EOverviewSessionKind::ScrollingWindowGrid;
+}
+
+bool sessionKindEscalatesOnNext(EOverviewSessionKind kind) {
+    return kind == EOverviewSessionKind::ScrollingWindowGrid;
+}
+
+EExpoNextAction expoNextAction(bool overviewOpen, bool anyEscalatingSession) {
+    if (!overviewOpen)
+        return EExpoNextAction::OpenOverview;
+    return anyEscalatingSession ? EExpoNextAction::EscalateWindowGrids : EExpoNextAction::NoOp;
+}
+
+bool numberKeySelectsVisibleIndex(ENumberKeyMode mode, EOverviewSessionKind kind) {
+    if (mode == ENumberKeyMode::Passthrough)
+        return false;
+    return mode == ENumberKeyMode::Index || kind == EOverviewSessionKind::ScrollingWindowGrid;
+}
+
+std::string_view overviewSessionKindName(EOverviewSessionKind kind) {
+    switch (kind) {
+        case EOverviewSessionKind::WorkspaceGrid: return "workspace-grid";
+        case EOverviewSessionKind::ScrollingTape: return "scrolling-tape";
+        case EOverviewSessionKind::ScrollingWindowGrid: return "scrolling-window-grid";
+    }
+    return "workspace-grid";
+}
+
 SDropIntentGeometry computeDropIntentGeometry(const SDropIntentInput& input) {
     SDropIntentGeometry geometry;
 
