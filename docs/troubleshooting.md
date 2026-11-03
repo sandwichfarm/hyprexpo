@@ -1,5 +1,38 @@
 # Troubleshooting
 
+## Unknown Hyprexpo Config Keys After an Upgrade
+
+Errors such as `unknown config key 'plugin.hyprexpo.label_enable'` can mean that
+Hyprexpo did not load, so its options have not been registered. Check the loader
+and loaded plugins before removing existing settings:
+
+```bash
+command -v hyprpm
+hyprctl plugin list
+```
+
+On Arch Linux, hyprpm is now a separate package. If the command is missing after
+upgrading Hyprland, install it with `sudo pacman -S hyprpm`. Then follow the
+[post-upgrade rebuild and reload steps](/getting-started/installation#after-upgrading-hyprland)
+in the updated Hyprland session. Keep the existing plugin registration and valid
+config keys; a config reload alone does not rebuild an incompatible plugin.
+
+## hyprpm Cannot Check Out the Running Hyprland Commit
+
+If an update reports `Could not checkout the running Hyprland commit`, retry
+with the full repository history:
+
+```bash
+hyprpm --no-shallow update
+```
+
+Wait for any other updater to finish first. Run this as your normal user in a
+terminal so you can authenticate the header-installation prompt. Once the update
+succeeds, run `hyprpm reload` and `hyprctl reload`, then check `hyprctl plugin list`
+and `hyprctl configerrors` again. The `--no-shallow` retry is only needed for this
+checkout failure; it does not repair an unavailable saved plugin revision, which
+is covered below.
+
 ## hyprpm Cannot Check Out a Saved Revision
 
 If `hyprpm update` prints `Plugin has revision set, resetting` followed by

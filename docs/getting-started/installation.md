@@ -4,6 +4,13 @@
 
 hyprpm is the primary non-Nix installation path.
 
+On Arch Linux, `hyprpm` is a separate package. Upgrading `hyprland` alone may
+leave the manager command unavailable. Install it before registering the plugin:
+
+```bash
+sudo pacman -S hyprpm
+```
+
 ```bash
 hyprpm add https://github.com/sandwichfarm/hyprexpo
 hyprpm enable hyprexpo
@@ -23,6 +30,32 @@ Before invoking hyprpm, an explicit revision is checked in a fresh clone against
 maintained branch or release-tag history. A temporary PR branch or a PR-only
 commit is rejected. A locally available commit is not sufficient: squash merges
 can leave it unavailable to a future normal clone.
+
+### After Upgrading Hyprland
+
+Start the updated Hyprland session, then rebuild and reload the managed plugins
+against that running version:
+
+```bash
+hyprpm update &&
+hyprpm reload &&
+hyprctl reload
+```
+
+Run hyprpm as your normal user in a terminal and authenticate its sudo prompt
+when it installs headers. Run only one `hyprpm update` process at a time; updates
+share a staging directory. If a command fails, resolve the error before reloading.
+For a checkout failure, see [the full-history retry](/troubleshooting#hyprpm-cannot-check-out-the-running-hyprland-commit).
+
+Confirm that `hyprexpo` appears in the loaded-plugin list and check for errors:
+
+```bash
+hyprctl plugin list
+hyprctl configerrors
+```
+
+If the plugin is absent and existing options become unknown, follow
+[missing-plugin recovery](/troubleshooting#unknown-hyprexpo-config-keys-after-an-upgrade).
 
 ## Build From Source
 

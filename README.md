@@ -55,6 +55,10 @@ For Nix-managed Hyprland, use the [Nix installation path](#nix).
 
 ### 2. Install with hyprpm
 
+On Arch Linux, install the separate manager package with `sudo pacman -S hyprpm`
+first. After a Hyprland upgrade, follow the [rebuild and reload steps](docs/getting-started/installation.md#after-upgrading-hyprland).
+If existing plugin settings become unknown, see [missing-plugin recovery](docs/troubleshooting.md#unknown-hyprexpo-config-keys-after-an-upgrade).
+
 ```bash
 hyprpm add https://github.com/sandwichfarm/hyprexpo
 hyprpm enable hyprexpo
@@ -285,6 +289,8 @@ and was previously known as **HyprExpo+** (`hyprexpo-plus`). It continues
 maintenance after [the upstream plugin was retired](https://github.com/hyprwm/hyprland-plugins/pull/663).
 See the [original announcement](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
 for the early feature set.
+
+<img width="2089" height="1113" alt="screenshot_2026-11-02_18-01-40" src="https://github.com/user-attachments/assets/b670ed8e-26d7-4e78-9130-404dc20b5a4f" />
 
 ### Related
 
