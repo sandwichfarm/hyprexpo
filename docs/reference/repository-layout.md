@@ -6,7 +6,7 @@ and Nix installation commands retain their interfaces.
 
 | Location | Contents |
 | --- | --- |
-| `src/` | Production C++ sources and private headers. There is no separately installed public C++ header API. |
+| `src/` | Production C++ sources and private headers. There is no separately installed public C++ header API. Overview session selection (`resolveOverviewSessionKind`) and scrolling presentation traits live in the pure `HyprexpoLogic` and `ScrollingOverviewLogic` units so they are unit-tested without Hyprland. |
 | `scripts/` | Build, development, validation, release, and configuration-migration helpers; the compatibility target JSON used by CI scripts. |
 | `tests/` | C++ regression suites and Python CI contract tests. |
 | `.github/workflows/` | GitHub Actions workflow definitions. |

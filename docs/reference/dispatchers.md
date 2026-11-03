@@ -12,7 +12,7 @@ bind = SUPER, g, hyprexpo:expo, toggle
 | `on` or `enable` | show overview |
 | `off` or `disable` | hide overview |
 | `cancel` | hide overview without switching workspaces |
-| `next` | show overview if hidden; if a window grid (`overview_mode = windows`) is showing, replace it with the workspace grid; otherwise do nothing |
+| `next` | show overview if hidden; replace an open [window grid](../guides/window-grid) with the workspace grid; otherwise do nothing |
 | `select` | select the hovered workspace |
 | `bring` | move the top mapped window from the hovered workspace into the current workspace |
 | `1`..`9` | select that workspace by ID while overview is open; otherwise dispatch a normal workspace switch |

@@ -44,7 +44,32 @@ Content updates preserve the current overview pan and surviving keyboard focus.
 Scrolling rows show individual windows; a mixed non-scrolling row shows its
 whole workspace. `workspace_method` controls the classic grid only and does not
 change these rows. Use `overview_mode = grid` when you want workspace thumbnails
-in a grid on a scrolling workspace.
+in a grid on a scrolling workspace, or `overview_mode = windows` for the
+[window grid](./window-grid) of the current workspace only.
+
+## Session kinds
+
+Opening an overview resolves one *session kind* before anything is built:
+
+| detected layout | `overview_mode` | session kind |
+| --- | --- | --- |
+| classic (dwindle, master, ...) | any | workspace grid |
+| scrolling | `auto` | scrolling tape |
+| scrolling | `windows` | scrolling window grid |
+| scrolling | `grid` | workspace grid |
+| any | explicit grid override (`expo next` escalation) | workspace grid |
+
+The table is a pure function (`resolveOverviewSessionKind`) with its own tests;
+the factory only detects the layout, calls it and constructs the matching
+session. Every session reports its kind, and dispatchers decide from the kind
+whether digits pick windows or workspaces and whether `expo next` escalates.
+The tape and the window grid are one session with two *presentations*: a
+traits table declares which rows exist, whether presses can drag, whether
+previews carry badges, what index selection picks and whether floating windows
+are selectable. A future tiling layout that breaks the grid's assumptions adds a
+layout kind and a session kind; a new way of viewing a scrolling workspace adds
+a presentation and a traits row, and inherits capture, input, animation and
+lifecycle handling unchanged.
 
 One terminal row represents only the next empty ordinary workspace: the first
 unused positive ID across all monitors. Dropping there creates that workspace
