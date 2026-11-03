@@ -349,8 +349,9 @@ SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, 
             return result;
         }
 
-        // IFramebuffer::alloc keeps its storage when size and format are unchanged, so same-size
-        // windows across refreshes cost no GPU allocation.
+        // The framebuffer object outlives this call; IFramebuffer::alloc also keeps its texture
+        // when the requested size and format match the previous capture, so consecutive
+        // same-size windows and unchanged windows across refreshes skip GPU allocation.
         if (!scratchSource)
             scratchSource = g_pHyprRenderer->createFB("hyprexpo scrolling source preview");
         const auto& sourceFramebuffer = scratchSource;

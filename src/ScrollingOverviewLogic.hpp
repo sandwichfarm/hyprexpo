@@ -174,8 +174,8 @@ struct SCapturePlan {
 };
 
 // How a scrolling session presents its scene. A new presentation adds a value
-// here and a traits row below; the session reads traits, never the enum, so
-// every behavioral difference is declared in one place.
+// here, a traits row below and a scene builder case; every other behavioral
+// difference is read from the traits so it is declared in one place.
 enum class EScenePresentation {
     Tape,
     WindowGrid,
@@ -183,7 +183,7 @@ enum class EScenePresentation {
 
 struct SPresentationTraits {
     bool siblingWorkspaceRows     = true;  // other workspaces on the monitor become rows
-    bool terminalRow              = true;  // a "next empty workspace" row exists
+    bool terminalRow              = true;  // the tape builder allocates a "next empty workspace" row
     bool dragEnabled              = true;  // presses can become positional window drags
     bool numberBadges             = false; // targets carry 1-9/0 badges in scene order
     bool indexSelectsTargets      = false; // kb_selecti/digits pick targets (else workspace rows)

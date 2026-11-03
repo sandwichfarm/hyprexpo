@@ -46,7 +46,8 @@ plugin {
   floating windows. Each preview keeps the window's aspect ratio inside its cell
   and a partial last row is centered.
 - A `1`–`9` badge on the first nine previews and `0` on the tenth. Windows past
-  the tenth have no badge and are reached with the arrow keys or the pointer.
+  the tenth have no badge; reach them with the arrow keys, the pointer, or
+  `hyprexpo:kb_selecti N` with their position `N` in the same order.
 - The preview of the window that already had focus is focused when the grid
   opens, framed with the focus border.
 - An empty scrolling workspace opens an empty grid: no previews, nothing to
@@ -61,7 +62,7 @@ plugin {
 | `hyprexpo:kb_focus left/right/up/down` | spatial focus between previews |
 | `hyprexpo:kb_confirm` | selects the focused preview |
 | raw digit keys `1`–`9`, `0` | select the badged preview, unless `number_key_mode = passthrough` |
-| `hyprexpo:kb_selecti N` | selects badge `N` (`10` for `0`) |
+| `hyprexpo:kb_selecti N` | selects the `N`-th preview in badge order (`10` is the `0` badge; larger `N` reaches unbadged windows) |
 | `cancel_key`, `hyprexpo:expo cancel` | close without selecting |
 
 Selecting a window keeps its workspace active and gives that window keyboard
@@ -95,14 +96,19 @@ submap = hyprexpo
     bind = SUPER, Tab, hyprexpo:expo, next
     bind = , escape, hyprexpo:expo, cancel
     bind = , return, hyprexpo:kb_confirm
+    bind = , left,   hyprexpo:kb_focus, left
+    bind = , right,  hyprexpo:kb_focus, right
+    bind = , up,     hyprexpo:kb_focus, up
+    bind = , down,   hyprexpo:kb_focus, down
 submap = reset
 ```
 
-With `expo next all`, every monitor opens, and the second press escalates every
-window grid while monitors already showing a workspace grid stay as they are.
-Keyboard ownership stays on the monitor that had it. If the workspace grid
-cannot be created on an escalating monitor, every overview closes rather than
-leaving that monitor without one.
+With overviews open on several monitors, a second `expo next` (with or without
+`all`) escalates every open window grid at once; monitors already showing a
+workspace grid or the scrolling tape stay as they are. Keyboard ownership stays
+on the monitor that had it. If the workspace grid cannot be created on an
+escalating monitor, every overview closes rather than leaving that monitor
+without one.
 
 `hyprexpo:expo toggle` still opens whichever overview `overview_mode` selects
 and closes any open overview, so a plain toggle bind keeps working alongside

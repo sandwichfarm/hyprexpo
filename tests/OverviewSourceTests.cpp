@@ -947,8 +947,8 @@ int main() {
     expectContains(windowCapture, "fitWindowPreview(", "window capture fits the complete native window into its thumbnail");
     expectContains(windowCapture, "sourceFramebuffer", "window capture first renders every surface at native size");
     expectContains(captureHeader, "SP<Render::IFramebuffer>& scratchSource", "window capture borrows the caller's scratch framebuffer for the native pass");
-    expectContains(windowCapture, "if (!scratchSource)\n            scratchSource = g_pHyprRenderer->createFB(", "the native scratch framebuffer is created once and reused afterwards");
-    expect(countOccurrences(windowCapture, "createFB(") == 2, "window capture allocates at most the scratch and the stored preview framebuffers");
+    expectOrder(windowCapture, "if (!scratchSource)", "scratchSource = g_pHyprRenderer->createFB(", "the native scratch framebuffer is created once and reused afterwards");
+    expectAbsent(windowCapture, "sourceFramebuffer = g_pHyprRenderer->createFB(", "window capture never allocates a throwaway native framebuffer");
     expectContains(windowCapture, "sourceTexture->minFilter = GL_LINEAR;", "a reused scratch texture drops stale mipmap filtering when the shrink no longer needs it");
     expectAbsent(extractFunction(scrollingSource, "void CScrollingOverview::releaseAllCaptureState("), "m_scratchSource", "content refreshes keep the scratch framebuffer allocated");
     for (const auto& signature : {"CScrollingOverview::~CScrollingOverview(", "void CScrollingOverview::prepareForTeardown("})
@@ -1073,6 +1073,8 @@ int main() {
     expectContains(sessionFactory, "Hyprexpo::resolveOverviewSessionKind(", "session factory resolves the session kind through the shared pure policy");
     expectOrder(sessionFactory, "resolveOverviewSessionKind(", "snapshotWorkspace(startedOn)", "layout detection feeds the kind before any native snapshot");
     expectAbsent(sessionFactory, "EOverviewModePreference::", "session factory never re-implements the preference table inline");
+    expectContains(sessionFactory, "!forcedGrid && Hyprexpo::Scrolling::workspaceUsesScrollingLayout(startedOn)", "a forced workspace grid skips native layout detection entirely");
+    expectContains(sessionFactory, "Hyprexpo::overviewSessionKindName(kind)", "session creation logs the resolved kind for diagnostics");
     expectContains(sessionHeader, "virtual Hyprexpo::EOverviewSessionKind kind() const = 0;", "every session reports its kind");
     expectAbsent(sessionHeader + source + dispatchersSource + scrollingSource + scrollingHeader, "isWindowGrid", "session kind replaces the window-grid boolean");
     expectContains(extractFunction(source, "Hyprexpo::EOverviewSessionKind COverview::kind("), "EOverviewSessionKind::WorkspaceGrid", "the classic grid reports the workspace-grid kind");

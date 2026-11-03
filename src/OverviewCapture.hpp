@@ -32,7 +32,8 @@ bool isCapturingWorkspacePreview();
 bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render::IFramebuffer>& framebuffer);
 
 // scratchSource holds the native-size pass between captures; the caller owns it and
-// releases it at teardown so one allocation serves every refresh of a session.
+// releases it at teardown. Its texture is reused while consecutive captures share a size
+// and format, and it retains the most recent native-size texture until released.
 SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& target, const PHLWINDOWREF& window, const PHLMONITORREF& monitor, const Vector2D& pixelSize,
                                           SP<Render::IFramebuffer>& scratchSource);
 
