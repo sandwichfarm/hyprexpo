@@ -145,6 +145,7 @@ CScrollingOverview::~CScrollingOverview() {
     m_closeAnimationTimer.reset();
     resetInputState(EResetReason::Teardown);
     releaseAllCaptureState();
+    releaseScratchFramebuffer();
     m_numberLabels.clear();
 }
 
@@ -210,6 +211,7 @@ void CScrollingOverview::prepareForTeardown() {
         m_closeAnimationTimer->cancel();
     m_closeAnimationTimer.reset();
     resetInputState(EResetReason::Teardown);
+    releaseScratchFramebuffer();
 }
 
 void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const SInputState& previousState) {
@@ -451,6 +453,15 @@ void CScrollingOverview::releaseAllCaptureState() {
             row.workspacePreview->release();
         row.workspacePreview.reset();
     }
+}
+
+void CScrollingOverview::releaseScratchFramebuffer() {
+    if (!m_scratchSource)
+        return;
+    if (Render::GL::g_pHyprOpenGL)
+        Render::GL::g_pHyprOpenGL->makeEGLCurrent();
+    m_scratchSource->release();
+    m_scratchSource.reset();
 }
 
 CScrollingOverview::SCacheEntry* CScrollingOverview::cacheEntry(int64_t workspaceID, uint64_t targetTokenValue) {
@@ -777,7 +788,7 @@ void CScrollingOverview::refreshCache() {
             continue;
 
         const auto captured = Hyprexpo::Capture::captureWindowPreview(target->targetRef, target->windowRef, MON,
-                                                                       Vector2D{static_cast<double>(allocation.width), static_cast<double>(allocation.height)});
+                                                                       Vector2D{static_cast<double>(allocation.width), static_cast<double>(allocation.height)}, m_scratchSource);
         if (!captured.completed)
             continue;
         m_cache.push_back(SCacheEntry{.key = key,

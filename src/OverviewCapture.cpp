@@ -318,7 +318,8 @@ bool captureWorkspacePreview(const SWorkspaceCaptureRequest& original, SP<Render
     }
 }
 
-SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, const PHLWINDOWREF& windowRef, const PHLMONITORREF& monitorRef, const Vector2D& pixelSize) {
+SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, const PHLWINDOWREF& windowRef, const PHLMONITORREF& monitorRef, const Vector2D& pixelSize,
+                                          SP<Render::IFramebuffer>& scratchSource) {
     SWindowCaptureResult result;
     try {
         auto target  = targetRef.lock();
@@ -348,7 +349,11 @@ SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, 
             return result;
         }
 
-        const auto sourceFramebuffer = g_pHyprRenderer->createFB("hyprexpo scrolling source preview");
+        // IFramebuffer::alloc keeps its storage when size and format are unchanged, so same-size
+        // windows across refreshes cost no GPU allocation.
+        if (!scratchSource)
+            scratchSource = g_pHyprRenderer->createFB("hyprexpo scrolling source preview");
+        const auto& sourceFramebuffer = scratchSource;
         if (!preparePreviewFramebuffer(sourceFramebuffer, monitor, static_cast<int>(sourcePixels.x), static_cast<int>(sourcePixels.y))) {
             result.error = "source framebuffer allocation failed";
             return result;
@@ -399,11 +404,14 @@ SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& targetRef, 
         // Shrinking a native capture by more than 2x in one linear sample skips most source
         // pixels and garbles text. Mipmaps of the throwaway source give a filtered fit
         // once per capture; the stored preview and per-frame drawing stay the same size.
-        if (const auto sourceTexture = sourceFramebuffer->getTexture(); sourceTexture && (sourcePixels.x > fitted->w * 2.0 || sourcePixels.y > fitted->h * 2.0)) {
-            glBindTexture(GL_TEXTURE_2D, sourceTexture->m_texID);
-            glGenerateMipmap(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, 0);
-            sourceTexture->minFilter = GL_LINEAR_MIPMAP_LINEAR;
+        if (const auto sourceTexture = sourceFramebuffer->getTexture(); sourceTexture) {
+            if (sourcePixels.x > fitted->w * 2.0 || sourcePixels.y > fitted->h * 2.0) {
+                glBindTexture(GL_TEXTURE_2D, sourceTexture->m_texID);
+                glGenerateMipmap(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, 0);
+                sourceTexture->minFilter = GL_LINEAR_MIPMAP_LINEAR;
+            } else
+                sourceTexture->minFilter = GL_LINEAR;
         }
 
         CRegion targetDamage{0, 0, width, height};

@@ -946,6 +946,14 @@ int main() {
     expectOrder(windowCapture, "rendererState.finish()", "result.completed", "target capture publishes only after balanced completion");
     expectContains(windowCapture, "fitWindowPreview(", "window capture fits the complete native window into its thumbnail");
     expectContains(windowCapture, "sourceFramebuffer", "window capture first renders every surface at native size");
+    expectContains(captureHeader, "SP<Render::IFramebuffer>& scratchSource", "window capture borrows the caller's scratch framebuffer for the native pass");
+    expectContains(windowCapture, "if (!scratchSource)\n            scratchSource = g_pHyprRenderer->createFB(", "the native scratch framebuffer is created once and reused afterwards");
+    expect(countOccurrences(windowCapture, "createFB(") == 2, "window capture allocates at most the scratch and the stored preview framebuffers");
+    expectContains(windowCapture, "sourceTexture->minFilter = GL_LINEAR;", "a reused scratch texture drops stale mipmap filtering when the shrink no longer needs it");
+    expectAbsent(extractFunction(scrollingSource, "void CScrollingOverview::releaseAllCaptureState("), "m_scratchSource", "content refreshes keep the scratch framebuffer allocated");
+    for (const auto& signature : {"CScrollingOverview::~CScrollingOverview(", "void CScrollingOverview::prepareForTeardown("})
+        expectContains(extractFunction(scrollingSource, signature), "releaseScratchFramebuffer()", "scratch framebuffer is released at teardown: " + std::string{signature});
+    expectContains(extractFunction(scrollingSource, "void CScrollingOverview::refreshCache("), "m_scratchSource)", "window captures reuse the session scratch framebuffer");
     expectOrder(windowCapture, "rendererState.finish()", "renderTextureInternal(", "the completed native texture is fitted after surface damage and clipping");
     expectContains(windowCapture, "scratchBudget", "temporary native capture has a bounded pixel allocation");
     expectAbsent(windowCapture, "RMOD_TYPE_SCALE", "window capture does not scale geometry without scaling subsurface clips");

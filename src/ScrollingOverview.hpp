@@ -116,6 +116,7 @@ class CScrollingOverview final : public IOverviewSession {
     void refreshCache();
     void releaseCacheEntry(SCacheEntry& entry);
     void releaseAllCaptureState();
+    void releaseScratchFramebuffer();
     SCacheEntry* cacheEntry(int64_t workspaceID, uint64_t targetToken);
     const SWorkspaceRow* workspaceRow(int64_t workspaceID) const;
     void updateSelectionFromFocus();
@@ -171,6 +172,7 @@ class CScrollingOverview final : public IOverviewSession {
     std::vector<SRenderTarget>                m_renderTargets;
     std::vector<size_t>                       m_numberedTargets; // indices into m_renderTargets in scene order
     std::vector<SCacheEntry>                  m_cache;
+    SP<Render::IFramebuffer>                  m_scratchSource; // native-size capture pass, reused across refreshes
     std::vector<SP<Render::ITexture>>         m_numberLabels;
     double                                    m_numberLabelPixels = 0.0;
     Hyprexpo::Scrolling::SInputState          m_inputState;

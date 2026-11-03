@@ -31,7 +31,10 @@ bool isCapturingWorkspacePreview();
 
 bool captureWorkspacePreview(const SWorkspaceCaptureRequest& request, SP<Render::IFramebuffer>& framebuffer);
 
-SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& target, const PHLWINDOWREF& window, const PHLMONITORREF& monitor, const Vector2D& pixelSize);
+// scratchSource holds the native-size pass between captures; the caller owns it and
+// releases it at teardown so one allocation serves every refresh of a session.
+SWindowCaptureResult captureWindowPreview(const WP<Layout::ITarget>& target, const PHLWINDOWREF& window, const PHLMONITORREF& monitor, const Vector2D& pixelSize,
+                                          SP<Render::IFramebuffer>& scratchSource);
 
 int      scrollingThumbnailBudgetMultiplier();
 uint64_t scrollingThumbnailBudgetGeneration();
