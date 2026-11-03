@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Hyprexpo {
@@ -43,6 +44,27 @@ enum class EOverviewModePreference {
     Auto,
     Grid,
     Windows,
+};
+
+// What the triggering workspace's tiling layout is, as far as the overview cares.
+// A new layout that breaks the workspace grid's assumptions adds a value here.
+enum class EWorkspaceLayoutKind {
+    Classic,
+    Scrolling,
+};
+
+// Which session implementation the factory instantiates. Dispatchers reason
+// about kinds, never about concrete session classes.
+enum class EOverviewSessionKind {
+    WorkspaceGrid,
+    ScrollingTape,
+    ScrollingWindowGrid,
+};
+
+enum class EExpoNextAction {
+    OpenOverview,
+    EscalateWindowGrids,
+    NoOp,
 };
 
 struct SWorkspaceMethodSpec {
@@ -218,6 +240,14 @@ int                      tileIndexFromPoint(double x, double y, double width, do
 int                      numberKeyToVisibleIndex(int number);
 ENumberKeyMode           numberKeyModeFromString(const std::string& mode);
 EOverviewModePreference  overviewModePreferenceFromString(const std::string& mode);
+// Single policy for session selection: preference x detected layout x explicit grid override.
+EOverviewSessionKind     resolveOverviewSessionKind(EOverviewModePreference preference, EWorkspaceLayoutKind layout, bool forceWorkspaceGrid);
+bool                     sessionKindIsScrolling(EOverviewSessionKind kind);
+bool                     sessionKindEscalatesOnNext(EOverviewSessionKind kind);
+EExpoNextAction          expoNextAction(bool overviewOpen, bool anyEscalatingSession);
+// Raw digits pick visible positions in index mode, and in any non-passthrough mode on a window grid.
+bool                     numberKeySelectsVisibleIndex(ENumberKeyMode mode, EOverviewSessionKind kind);
+std::string_view         overviewSessionKindName(EOverviewSessionKind kind);
 bool                     shouldAbortOverviewCloseForWorkspaceMove(bool windowPinned, bool movedOnOverviewMonitor);
 SDropIntentGeometry      computeDropIntentGeometry(const SDropIntentInput& input);
 

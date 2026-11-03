@@ -173,6 +173,34 @@ struct SCapturePlan {
     std::vector<SCaptureAllocation> allocations;
 };
 
+// How a scrolling session presents its scene. A new presentation adds a value
+// here, a traits row below and a scene builder case; every other behavioral
+// difference is read from the traits so it is declared in one place.
+enum class EScenePresentation {
+    Tape,
+    WindowGrid,
+};
+
+struct SPresentationTraits {
+    bool siblingWorkspaceRows     = true;  // other workspaces on the monitor become rows
+    bool terminalRow              = true;  // the tape builder allocates a "next empty workspace" row
+    bool dragEnabled              = true;  // presses can become positional window drags
+    bool numberBadges             = false; // targets carry 1-9/0 badges in scene order
+    bool indexSelectsTargets      = false; // kb_selecti/digits pick targets (else workspace rows)
+    bool floatingTargetsNavigable = false; // floating windows are scene targets rather than overlays
+};
+
+constexpr SPresentationTraits presentationTraits(EScenePresentation presentation) {
+    switch (presentation) {
+        case EScenePresentation::WindowGrid:
+            return {.siblingWorkspaceRows = false, .terminalRow = false, .dragEnabled = false, .numberBadges = true, .indexSelectsTargets = true, .floatingTargetsNavigable = true};
+        case EScenePresentation::Tape: break;
+    }
+    return {};
+}
+
+EScenePresentation presentationForSessionKind(Hyprexpo::EOverviewSessionKind kind);
+
 struct SWindowGridItem {
     uint64_t token = 0;
     SSize    size;

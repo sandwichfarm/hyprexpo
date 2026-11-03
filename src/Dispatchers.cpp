@@ -284,7 +284,7 @@ bool shouldSelectWorkspaceFromKey(const IKeyboard::SKeyEvent& event) {
 
     // A window grid has no workspace tiles, so digits always pick its numbered windows.
     const auto* const ACTIVE = activeOverview();
-    if (mode == Hyprexpo::ENumberKeyMode::Index || (ACTIVE && ACTIVE->isWindowGrid())) {
+    if (Hyprexpo::numberKeySelectsVisibleIndex(mode, ACTIVE ? ACTIVE->kind() : Hyprexpo::EOverviewSessionKind::WorkspaceGrid)) {
         const int visibleIndex = Hyprexpo::numberKeyToVisibleIndex(arg[0] - '0');
         if (visibleIndex >= 0) {
             if (auto* const OV = activeOverview(); OV && OV->onKbSelectToken(visibleIndex))
@@ -504,13 +504,16 @@ static SDispatchResult onExpoDispatcher(std::string arg) {
 
     // next: open the overview, then escalate a window grid to the workspace grid; further presses do nothing.
     if (arg == "next") {
-        if (!overviewOpen())
-            return openOverviews(ALL_MONITORS);
         std::vector<PHLMONITOR> escalated;
         forEachOverview([&escalated](IOverviewSession& overview) {
-            if (overview.isWindowGrid() && !overview.closeCommitted())
+            if (Hyprexpo::sessionKindEscalatesOnNext(overview.kind()) && !overview.closeCommitted())
                 escalated.push_back(overview.monitor());
         });
+        switch (Hyprexpo::expoNextAction(overviewOpen(), !escalated.empty())) {
+            case Hyprexpo::EExpoNextAction::OpenOverview: return openOverviews(ALL_MONITORS);
+            case Hyprexpo::EExpoNextAction::NoOp: return {};
+            case Hyprexpo::EExpoNextAction::EscalateWindowGrids: break;
+        }
         for (const auto& monitor : escalated) {
             // destroyOverview drops keyboard ownership; the grid replacing it inherits it.
             const bool ownedKeyboard = g_keyboardOverviewMonitor.lock() == monitor;

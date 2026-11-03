@@ -14,6 +14,10 @@ Keyboard navigation is enabled by default. The overview can activate a `hyprexpo
 
 ## Binds
 
+In a [window grid](../guides/window-grid) raw digits select the badged
+windows (`1`–`9`, then `0`) in both `workspace` and `index` mode; only
+`passthrough` leaves them to your binds.
+
 Set `plugin:hyprexpo:number_key_mode = passthrough` when defining digit binds
 manually. This leaves those key events available to the active submap. Use
 `index` instead when you want the plugin to select visible tile positions

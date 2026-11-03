@@ -73,3 +73,6 @@ compile_commands.json
 
 # Local, disposable experiments
 /spikes/
+
+# Python bytecode caches from the tooling tests
+__pycache__/

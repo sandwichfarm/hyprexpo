@@ -504,6 +504,59 @@ void checkScrollingOverviewTransition() {
     expect(near(transitionForSwipe(false, 500.0, 100.0), 1.0) && near(transitionForSwipe(true, 500.0, 100.0), 0.0), "swipe transition progress clamps at both animation endpoints");
 }
 
+void checkOverviewSessionKinds() {
+    using namespace Hyprexpo;
+    using enum EOverviewModePreference;
+    constexpr auto Classic   = EWorkspaceLayoutKind::Classic;
+    constexpr auto ScrollingLayout = EWorkspaceLayoutKind::Scrolling;
+    using enum EOverviewSessionKind;
+
+    expect(resolveOverviewSessionKind(Auto, ScrollingLayout, false) == ScrollingTape, "auto on a scrolling workspace opens the scrolling tape");
+    expect(resolveOverviewSessionKind(Windows, ScrollingLayout, false) == ScrollingWindowGrid, "windows on a scrolling workspace opens the window grid");
+    expect(resolveOverviewSessionKind(Grid, ScrollingLayout, false) == WorkspaceGrid, "grid preference overrides scrolling detection");
+    expect(resolveOverviewSessionKind(Windows, Classic, false) == WorkspaceGrid, "windows on a classic workspace never opens a window grid");
+    expect(resolveOverviewSessionKind(Auto, Classic, false) == WorkspaceGrid, "auto on a classic workspace opens the workspace grid");
+    for (const auto preference : {Auto, Grid, Windows})
+        for (const auto layout : {Classic, ScrollingLayout})
+            expect(resolveOverviewSessionKind(preference, layout, true) == WorkspaceGrid, "a forced workspace grid wins over every preference and layout");
+
+    expect(sessionKindIsScrolling(ScrollingTape) && sessionKindIsScrolling(ScrollingWindowGrid) && !sessionKindIsScrolling(WorkspaceGrid),
+           "scrolling session kinds are the tape and the window grid");
+    expect(sessionKindEscalatesOnNext(ScrollingWindowGrid) && !sessionKindEscalatesOnNext(ScrollingTape) && !sessionKindEscalatesOnNext(WorkspaceGrid),
+           "only the window grid escalates on expo next");
+
+    expect(expoNextAction(false, false) == EExpoNextAction::OpenOverview && expoNextAction(false, true) == EExpoNextAction::OpenOverview,
+           "expo next opens the overview when none is open");
+    expect(expoNextAction(true, true) == EExpoNextAction::EscalateWindowGrids, "expo next escalates open window grids");
+    expect(expoNextAction(true, false) == EExpoNextAction::NoOp, "expo next does nothing once the workspace grid is showing");
+
+    expect(!numberKeySelectsVisibleIndex(ENumberKeyMode::Passthrough, ScrollingWindowGrid), "passthrough digits still pass through a window grid");
+    expect(numberKeySelectsVisibleIndex(ENumberKeyMode::Workspace, ScrollingWindowGrid), "workspace-mode digits pick numbered windows in a window grid");
+    expect(!numberKeySelectsVisibleIndex(ENumberKeyMode::Workspace, WorkspaceGrid) && !numberKeySelectsVisibleIndex(ENumberKeyMode::Workspace, ScrollingTape),
+           "workspace-mode digits keep selecting workspaces outside a window grid");
+    expect(numberKeySelectsVisibleIndex(ENumberKeyMode::Index, WorkspaceGrid) && numberKeySelectsVisibleIndex(ENumberKeyMode::Index, ScrollingTape),
+           "index mode selects visible positions in every session kind");
+
+    expect(overviewSessionKindName(WorkspaceGrid) == "workspace-grid" && overviewSessionKindName(ScrollingTape) == "scrolling-tape" &&
+               overviewSessionKindName(ScrollingWindowGrid) == "scrolling-window-grid",
+           "session kinds have stable diagnostic names");
+}
+
+void checkPresentationTraits() {
+    using namespace Hyprexpo::Scrolling;
+
+    const auto tape = presentationTraits(EScenePresentation::Tape);
+    expect(tape.siblingWorkspaceRows && tape.terminalRow && tape.dragEnabled && !tape.numberBadges && !tape.indexSelectsTargets && !tape.floatingTargetsNavigable,
+           "the tape shows every workspace row, offers positional drag and selects rows by index");
+    const auto grid = presentationTraits(EScenePresentation::WindowGrid);
+    expect(!grid.siblingWorkspaceRows && !grid.terminalRow && !grid.dragEnabled && grid.numberBadges && grid.indexSelectsTargets && grid.floatingTargetsNavigable,
+           "the window grid shows one workspace, never drags, numbers its windows and makes floating windows selectable");
+    expect(presentationForSessionKind(Hyprexpo::EOverviewSessionKind::ScrollingWindowGrid) == EScenePresentation::WindowGrid &&
+               presentationForSessionKind(Hyprexpo::EOverviewSessionKind::ScrollingTape) == EScenePresentation::Tape &&
+               presentationForSessionKind(Hyprexpo::EOverviewSessionKind::WorkspaceGrid) == EScenePresentation::Tape,
+           "only the window-grid session kind selects the window-grid presentation");
+}
+
 void checkTileRoundingRules() {
     using namespace Hyprexpo;
     const auto inherit = resolveTileRounding(8, -1, -1, -1, 2.5F, 1.5);
@@ -1453,6 +1506,8 @@ int main() {
     checkScrollingTouchAndResetState();
     checkScrollingMutationTransactions();
     checkScrollingMutationFocusAndMembership();
+    checkOverviewSessionKinds();
+    checkPresentationTraits();
 
     // --- global multi-monitor geometry ---
     {

@@ -182,7 +182,7 @@ int main() {
     expect(dispatchersSource.find("g_pNumberKeyModeConfig.reset()") != std::string::npos,
            "number-key mode releases its retained V2 config value during teardown");
     const auto passthroughMode = rawNumberSelection.find("ENumberKeyMode::Passthrough");
-    const auto indexMode       = rawNumberSelection.find("ENumberKeyMode::Index", passthroughMode);
+    const auto indexMode       = rawNumberSelection.find("Hyprexpo::numberKeySelectsVisibleIndex(mode,", passthroughMode);
     const auto workspaceMode   = rawNumberSelection.find("return changeToSingleDigitWorkspace(arg).success;", indexMode);
     expect(passthroughMode != std::string::npos && indexMode != std::string::npos &&
                rawNumberSelection.substr(passthroughMode, indexMode - passthroughMode).find("return false;") != std::string::npos,
@@ -946,6 +946,14 @@ int main() {
     expectOrder(windowCapture, "rendererState.finish()", "result.completed", "target capture publishes only after balanced completion");
     expectContains(windowCapture, "fitWindowPreview(", "window capture fits the complete native window into its thumbnail");
     expectContains(windowCapture, "sourceFramebuffer", "window capture first renders every surface at native size");
+    expectContains(captureHeader, "SP<Render::IFramebuffer>& scratchSource", "window capture borrows the caller's scratch framebuffer for the native pass");
+    expectOrder(windowCapture, "if (!scratchSource)", "scratchSource = g_pHyprRenderer->createFB(", "the native scratch framebuffer is created once and reused afterwards");
+    expectAbsent(windowCapture, "sourceFramebuffer = g_pHyprRenderer->createFB(", "window capture never allocates a throwaway native framebuffer");
+    expectContains(windowCapture, "sourceTexture->minFilter = GL_LINEAR;", "a reused scratch texture drops stale mipmap filtering when the shrink no longer needs it");
+    expectAbsent(extractFunction(scrollingSource, "void CScrollingOverview::releaseAllCaptureState("), "m_scratchSource", "content refreshes keep the scratch framebuffer allocated");
+    for (const auto& signature : {"CScrollingOverview::~CScrollingOverview(", "void CScrollingOverview::prepareForTeardown("})
+        expectContains(extractFunction(scrollingSource, signature), "releaseScratchFramebuffer()", "scratch framebuffer is released at teardown: " + std::string{signature});
+    expectContains(extractFunction(scrollingSource, "void CScrollingOverview::refreshCache("), "m_scratchSource)", "window captures reuse the session scratch framebuffer");
     expectOrder(windowCapture, "rendererState.finish()", "renderTextureInternal(", "the completed native texture is fitted after surface damage and clipping");
     expectContains(windowCapture, "scratchBudget", "temporary native capture has a bounded pixel allocation");
     expectAbsent(windowCapture, "RMOD_TYPE_SCALE", "window capture does not scale geometry without scaling subsurface clips");
@@ -1062,7 +1070,19 @@ int main() {
                    "{\"plugin:hyprexpo:overview_mode\", HyprexpoConfig::OVERVIEW_MODE_DEFAULT}",
                    "missing overview mode config uses the shared auto default");
     expectContains(sessionSource, "overviewModePreferenceFromString", "session factory parses the overview mode configuration through the shared pure parser");
-    expectContains(sessionSource, "EOverviewModePreference::Grid", "session factory checks for the forced-grid overview mode preference");
+    expectContains(sessionFactory, "Hyprexpo::resolveOverviewSessionKind(", "session factory resolves the session kind through the shared pure policy");
+    expectOrder(sessionFactory, "resolveOverviewSessionKind(", "snapshotWorkspace(startedOn)", "layout detection feeds the kind before any native snapshot");
+    expectAbsent(sessionFactory, "EOverviewModePreference::", "session factory never re-implements the preference table inline");
+    expectContains(sessionFactory, "!forcedGrid && Hyprexpo::Scrolling::workspaceUsesScrollingLayout(startedOn)", "a forced workspace grid skips native layout detection entirely");
+    expectContains(sessionFactory, "Hyprexpo::overviewSessionKindName(kind)", "session creation logs the resolved kind for diagnostics");
+    expectContains(sessionHeader, "virtual Hyprexpo::EOverviewSessionKind kind() const = 0;", "every session reports its kind");
+    expectAbsent(sessionHeader + source + dispatchersSource + scrollingSource + scrollingHeader, "isWindowGrid", "session kind replaces the window-grid boolean");
+    expectContains(extractFunction(source, "Hyprexpo::EOverviewSessionKind COverview::kind("), "EOverviewSessionKind::WorkspaceGrid", "the classic grid reports the workspace-grid kind");
+    expectContains(expoDispatcher, "Hyprexpo::expoNextAction(", "expo next derives its action from the pure policy");
+    expectContains(expoDispatcher, "Hyprexpo::sessionKindEscalatesOnNext(overview.kind())", "expo next escalates only sessions whose kind escalates");
+    expectOrder(expoDispatcher, "case Hyprexpo::EExpoNextAction::EscalateWindowGrids", "createOverview(monitor, false, true)", "escalation replaces a window grid with a forced workspace grid");
+    const auto digitSelection = extractFunction(dispatchersSource, "bool shouldSelectWorkspaceFromKey(");
+    expectContains(digitSelection, "Hyprexpo::numberKeySelectsVisibleIndex(mode,", "raw digit handling asks the pure policy whether digits pick visible positions");
     expectOrder(sessionSource, "plugin:hyprexpo:overview_mode", "detectedScrolling", "overview mode is read before scrolling layout detection runs");
     expectOrder(sessionSource, "forcedGrid", "workspaceUsesScrollingLayout(startedOn)", "a forced-grid preference can short-circuit scrolling layout detection");
     expectContains(dispatchersSource, "createOverview(monitor)", "dispatcher creates sessions through the monitor registry");
@@ -1104,6 +1124,17 @@ int main() {
                    "the workspace grid resolves radii with the same shared rules");
     for (const auto& token : {".round = 8", ".round = 12"})
         expectAbsent(scrollingRounding, token, "scrolling previews do not hardcode a corner radius " + std::string{token});
+    expectAbsent(scrollingSource + scrollingHeader, "m_windowGrid", "the scrolling session branches on presentation traits, not a window-grid boolean");
+    expectContains(scrollingHeader, "Hyprexpo::Scrolling::SPresentationTraits", "the scrolling session caches its presentation traits");
+    expectContains(extractFunction(scrollingSource, "SInputContext CScrollingOverview::inputContext("), ".dragEnabled = m_traits.dragEnabled", "drag availability follows the presentation");
+    expectContains(scrollingRounding, "m_traits.numberBadges", "number badges render only for presentations that declare them");
+    expectAbsent(scrollingRounding, "numberedTargets()", "render does not rebuild the numbered target list every frame");
+    expectContains(extractFunction(scrollingSource, "bool CScrollingOverview::selectVisibleIndex("), "m_traits.indexSelectsTargets", "visible-index selection follows the presentation");
+    expectContains(extractFunction(scrollingSource, "bool CScrollingOverview::commitSelection("), "m_traits.floatingTargetsNavigable", "floating window selection follows the presentation");
+    const auto scrollingPlacement = extractFunction(scrollingSource, "void CScrollingOverview::placeRenderTargets(");
+    expect(!scrollingPlacement.empty(), "render target placement is one helper shared by every presentation");
+    expectContains(scrollingPlacement, "m_numberedTargets", "placement records the numbered target order once per refresh");
+    expectContains(extractFunction(scrollingSource, "bool CScrollingOverview::buildPresentationScene("), "m_traits.terminalRow", "the terminal row exists only for presentations that declare it");
     expectContains(sessionHeader, "virtual void beginCancelSwipe() = 0", "cancel gesture dispatches through the session interface");
     expectContains(sessionHeader, "virtual void onSwipeEnd(bool switchToSelection) = 0", "session interface retains action-specific swipe completion");
     const auto scrollingCancelBegin = extractFunction(scrollingSource, "void CScrollingOverview::beginCancelSwipe(");
@@ -1174,10 +1205,12 @@ int main() {
     expectContains(scrollingInstallInput, "event.device->m_boundOutput.empty()", "touch ownership requires an explicitly bound output");
     expectAbsent(scrollingInstallInput, ": m_monitor.lock()", "unbound touch devices are not guessed onto the overview monitor");
     const auto scrollingRefresh = extractFunction(scrollingSource, "bool CScrollingOverview::refreshScene(");
-    expectContains(scrollingRefresh, "nextUnusedOrdinaryWorkspaceID(workspaceIDs)", "terminal scene shares the transaction's first-unused allocation policy");
-    expectOrder(scrollingRefresh, "workspaceIDs.push_back(workspaceID(workspace))", "if (workspace->m_monitor != MON", "terminal allocation includes ordinary IDs on every monitor");
+    const auto scrollingSceneBuild = extractFunction(scrollingSource, "bool CScrollingOverview::buildPresentationScene(");
+    expectContains(scrollingSceneBuild, "nextUnusedOrdinaryWorkspaceID(allOrdinaryIDs)", "terminal scene shares the transaction's first-unused allocation policy");
+    expectOrder(extractFunction(scrollingSource, "std::vector<PHLWORKSPACE> CScrollingOverview::sceneWorkspaces("), "allOrdinaryIDs.push_back(workspaceID(workspace))", "if (workspace->m_monitor != MON",
+                "terminal allocation includes ordinary IDs on every monitor");
     const auto scrollingPreRender = extractFunction(scrollingSource, "void CScrollingOverview::onPreRender(");
-    expectOrder(scrollingRefresh, "const bool hadScene = m_scene.valid", "buildScene(specs, workspaceID(m_startedOn)", "scene refresh distinguishes an existing viewport from first open");
+    expectOrder(scrollingRefresh, "const bool hadScene = m_scene.valid", "buildPresentationScene(MON, specs, workspaceIDs)", "scene refresh distinguishes an existing viewport from first open");
     expectContains(scrollingRefresh, "hadScene ? clampPan(m_scene, m_pan, MON->m_size.y) : initialPan(", "content refresh retains pan while first open centers the active row");
     expectContains(scrollingRefresh, "focusAfterRefresh(m_scene, m_focus, workspaceID(m_startedOn))", "runtime refresh uses the tested surviving-focus policy");
     expectAbsent(scrollingRefresh, "m_focus = {.kind", "content refresh does not overwrite keyboard selection with the opening workspace");

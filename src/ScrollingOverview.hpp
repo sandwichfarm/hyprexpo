@@ -20,7 +20,7 @@
 class CScrollingOverview final : public IOverviewSession {
   public:
     CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe, uint64_t sessionGeneration, const std::optional<Hyprexpo::Scrolling::SWorkspaceSnapshot>& initialSnapshot,
-                       bool windowGrid = false);
+                       Hyprexpo::EOverviewSessionKind kind);
     ~CScrollingOverview() override;
 
     bool valid() const;
@@ -64,7 +64,7 @@ class CScrollingOverview final : public IOverviewSession {
     bool ownsAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var) const override;
     bool ownsPointerInput() const override;
     bool ownsTouchInput(int32_t touchId) const override;
-    bool isWindowGrid() const override;
+    Hyprexpo::EOverviewSessionKind kind() const override;
 
   private:
     struct SCacheKey {
@@ -108,12 +108,15 @@ class CScrollingOverview final : public IOverviewSession {
     };
 
     bool refreshScene(const std::optional<Hyprexpo::Scrolling::SWorkspaceSnapshot>& initialSnapshot = std::nullopt);
+    std::vector<PHLWORKSPACE> sceneWorkspaces(const PHLMONITOR& monitor, std::vector<int64_t>& allOrdinaryIDs) const;
     std::vector<Hyprexpo::Scrolling::SWindowGridItem> windowGridItems() const;
-    std::vector<const SRenderTarget*> numberedTargets() const;
+    bool buildPresentationScene(const PHLMONITOR& monitor, const std::vector<Hyprexpo::Scrolling::SWorkspaceSpec>& specs, const std::vector<int64_t>& allOrdinaryIDs);
+    void placeRenderTargets(const PHLMONITOR& monitor);
     bool sceneTopologyCurrent() const;
     void refreshCache();
     void releaseCacheEntry(SCacheEntry& entry);
     void releaseAllCaptureState();
+    void releaseScratchFramebuffer();
     SCacheEntry* cacheEntry(int64_t workspaceID, uint64_t targetToken);
     const SWorkspaceRow* workspaceRow(int64_t workspaceID) const;
     void updateSelectionFromFocus();
@@ -143,7 +146,9 @@ class CScrollingOverview final : public IOverviewSession {
     bool                                      m_damageDirty = false;
     bool                                      m_showPinnedWindows = false;
     bool                                      m_submapActive = false;
-    bool                                      m_windowGrid = false;
+    Hyprexpo::EOverviewSessionKind            m_kind = Hyprexpo::EOverviewSessionKind::ScrollingTape;
+    Hyprexpo::Scrolling::EScenePresentation   m_presentation = Hyprexpo::Scrolling::EScenePresentation::Tape;
+    Hyprexpo::Scrolling::SPresentationTraits  m_traits;
     struct SStyle {
         int64_t                                   tileRounding        = 0;
         int64_t                                   tileRoundingFocus   = -1;
@@ -165,7 +170,9 @@ class CScrollingOverview final : public IOverviewSession {
     Hyprexpo::Scrolling::SScene               m_scene;
     std::vector<SWorkspaceRow>                m_rows;
     std::vector<SRenderTarget>                m_renderTargets;
+    std::vector<size_t>                       m_numberedTargets; // indices into m_renderTargets in scene order
     std::vector<SCacheEntry>                  m_cache;
+    SP<Render::IFramebuffer>                  m_scratchSource; // native-size capture pass, reused across refreshes
     std::vector<SP<Render::ITexture>>         m_numberLabels;
     double                                    m_numberLabelPixels = 0.0;
     Hyprexpo::Scrolling::SInputState          m_inputState;

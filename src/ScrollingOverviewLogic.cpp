@@ -213,6 +213,10 @@ SScene buildScene(const std::vector<SWorkspaceSpec>& workspaces, int64_t activeW
     return result;
 }
 
+EScenePresentation presentationForSessionKind(Hyprexpo::EOverviewSessionKind kind) {
+    return kind == Hyprexpo::EOverviewSessionKind::ScrollingWindowGrid ? EScenePresentation::WindowGrid : EScenePresentation::Tape;
+}
+
 int windowGridColumns(size_t count, int requestedColumns) {
     if (count == 0)
         return 1;

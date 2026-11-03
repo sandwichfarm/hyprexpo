@@ -82,6 +82,7 @@ class COverview final : public IOverviewSession {
     bool blocksDamageReporting() const override { return blockDamageReporting; }
     bool isSwiping() const override { return m_isSwiping; }
     bool ownsPointerInput() const override;
+    Hyprexpo::EOverviewSessionKind kind() const override;
     PHLMONITOR monitor() const override { return pMonitor.lock(); }
     uint64_t sessionGeneration() const override { return m_sessionGeneration; }
 

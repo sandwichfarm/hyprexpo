@@ -5,6 +5,7 @@
 #include "Overview.hpp"
 #include "ScrollingLayoutAdapter.hpp"
 #include "ScrollingOverview.hpp"
+#include "WorkspaceCompat.hpp"
 #include "globals.hpp"
 
 #include <hyprland/src/debug/log/Logger.hpp>
@@ -31,10 +32,14 @@ std::unique_ptr<IOverviewSession> createOverviewSession(const PHLWORKSPACE& star
 
     const std::string overviewMode = CompatHyprlandAPI::stringValue("plugin:hyprexpo:overview_mode");
     const auto modePreference = Hyprexpo::overviewModePreferenceFromString(overviewMode);
-    const bool forcedGrid = forceGrid || modePreference == Hyprexpo::EOverviewModePreference::Grid;
-    const bool windowGrid = modePreference == Hyprexpo::EOverviewModePreference::Windows;
+    // A workspace grid that would win even on a scrolling layout (configured grid, or the
+    // caller's explicit override during expo next escalation) never touches native layout state.
+    const bool forcedGrid = Hyprexpo::resolveOverviewSessionKind(modePreference, Hyprexpo::EWorkspaceLayoutKind::Scrolling, forceGrid) == Hyprexpo::EOverviewSessionKind::WorkspaceGrid;
+    const auto layout     = !forcedGrid && Hyprexpo::Scrolling::workspaceUsesScrollingLayout(startedOn) ? Hyprexpo::EWorkspaceLayoutKind::Scrolling : Hyprexpo::EWorkspaceLayoutKind::Classic;
+    const auto kind       = Hyprexpo::resolveOverviewSessionKind(modePreference, layout, forceGrid);
+    Log::logger->log(Log::DEBUG, Log::logFnName(), "[hyprexpo] overview session kind {} for workspace {}", Hyprexpo::overviewSessionKindName(kind), workspaceID(startedOn));
 
-    const bool detectedScrolling = !forcedGrid && Hyprexpo::Scrolling::workspaceUsesScrollingLayout(startedOn);
+    const bool detectedScrolling = Hyprexpo::sessionKindIsScrolling(kind);
     if (detectedScrolling) {
         const auto snapshot = Hyprexpo::Scrolling::snapshotWorkspace(startedOn);
         const bool emptyScrolling = startedOn && startedOn->getWindowCount() <= 0 && snapshot.failure == Hyprexpo::Scrolling::ESnapshotFailure::MissingScrollingData;
@@ -43,7 +48,7 @@ std::unique_ptr<IOverviewSession> createOverviewSession(const PHLWORKSPACE& star
             return nullptr;
         }
         try {
-            auto scrolling = std::make_unique<CScrollingOverview>(startedOn, monitor, swipe, generation, snapshot.snapshot, windowGrid);
+            auto scrolling = std::make_unique<CScrollingOverview>(startedOn, monitor, swipe, generation, snapshot.snapshot, kind);
             if (scrolling->valid())
                 return scrolling;
             notifyScrollingFailure("native scrolling session initialization failed");

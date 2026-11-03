@@ -98,8 +98,9 @@ EOutputTransform outputTransform(wl_output_transform transform) {
 }
 
 CScrollingOverview::CScrollingOverview(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe, uint64_t sessionGeneration, const std::optional<SWorkspaceSnapshot>& initialSnapshot,
-                                       bool windowGrid) :
-    m_startedOn(startedOn), m_monitor(monitor), m_sessionGeneration(sessionGeneration), m_isSwiping(swipe), m_windowGrid(windowGrid),
+                                       Hyprexpo::EOverviewSessionKind kind) :
+    m_startedOn(startedOn), m_monitor(monitor), m_sessionGeneration(sessionGeneration), m_isSwiping(swipe), m_kind(kind),
+    m_presentation(presentationForSessionKind(kind)), m_traits(presentationTraits(m_presentation)),
     m_selectedWorkspaceID(startedOn ? workspaceID(startedOn) : 0) {
     Animation::mgr()->createAnimation(0.F, m_transitionProgress, Config::animationTree()->getAnimationPropertyConfig("windowsMove"), AVARDAMAGE_NONE);
     m_transitionProgress->setUpdateCallback([monitorKey = overviewMonitorKey(monitor), generation = m_sessionGeneration](auto) {
@@ -144,6 +145,7 @@ CScrollingOverview::~CScrollingOverview() {
     m_closeAnimationTimer.reset();
     resetInputState(EResetReason::Teardown);
     releaseAllCaptureState();
+    releaseScratchFramebuffer();
     m_numberLabels.clear();
 }
 
@@ -167,8 +169,8 @@ SInputContext CScrollingOverview::inputContext() const {
         .pan = m_pan,
         .viewportHeight = MON->m_size.y,
         .dragThreshold = 12.0,
-        // The window grid only selects; its geometry has no native drop positions.
-        .dragEnabled = !m_windowGrid,
+        // A select-only presentation (window grid) has no native drop positions.
+        .dragEnabled = m_traits.dragEnabled,
     };
 }
 
@@ -209,6 +211,7 @@ void CScrollingOverview::prepareForTeardown() {
         m_closeAnimationTimer->cancel();
     m_closeAnimationTimer.reset();
     resetInputState(EResetReason::Teardown);
+    releaseScratchFramebuffer();
 }
 
 void CScrollingOverview::applyInputEffects(const SInputEffects& effects, const SInputState& previousState) {
@@ -452,6 +455,15 @@ void CScrollingOverview::releaseAllCaptureState() {
     }
 }
 
+void CScrollingOverview::releaseScratchFramebuffer() {
+    if (!m_scratchSource)
+        return;
+    if (Render::GL::g_pHyprOpenGL)
+        Render::GL::g_pHyprOpenGL->makeEGLCurrent();
+    m_scratchSource->release();
+    m_scratchSource.reset();
+}
+
 CScrollingOverview::SCacheEntry* CScrollingOverview::cacheEntry(int64_t workspaceID, uint64_t targetTokenValue) {
     const auto found = std::ranges::find_if(m_cache, [&](const auto& entry) { return entry.key.workspaceID == workspaceID && entry.key.targetToken == targetTokenValue; });
     return found == m_cache.end() ? nullptr : &*found;
@@ -532,6 +544,123 @@ std::vector<SWindowGridItem> CScrollingOverview::windowGridItems() const {
     return items;
 }
 
+std::vector<PHLWORKSPACE> CScrollingOverview::sceneWorkspaces(const PHLMONITOR& MON, std::vector<int64_t>& allOrdinaryIDs) const {
+    std::vector<PHLWORKSPACE> workspaces;
+    for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
+        if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL)
+            continue;
+        allOrdinaryIDs.push_back(workspaceID(workspace));
+        if (workspace->m_monitor != MON || (!m_traits.siblingWorkspaceRows && workspace != m_startedOn))
+            continue;
+        workspaces.push_back(workspace);
+    }
+    if (std::ranges::find(workspaces, m_startedOn) == workspaces.end()) {
+        workspaces.push_back(m_startedOn);
+        allOrdinaryIDs.push_back(workspaceID(m_startedOn));
+    }
+    std::ranges::sort(workspaces, {}, [](const auto& workspace) { return workspaceID(workspace); });
+    return workspaces;
+}
+
+bool CScrollingOverview::buildPresentationScene(const PHLMONITOR& MON, const std::vector<SWorkspaceSpec>& specs, const std::vector<int64_t>& allOrdinaryIDs) {
+    switch (m_presentation) {
+        case EScenePresentation::WindowGrid:
+            // One workspace's windows only: no tape rows and no terminal "new workspace" row.
+            m_scene = buildWindowGridScene(workspaceID(m_startedOn), windowGridItems(),
+                                           {
+                                               .viewportWidth  = MON->m_size.x,
+                                               .viewportHeight = MON->m_size.y,
+                                               .margin         = std::max(24.0, MON->m_size.y * 0.04),
+                                               .gap            = std::max(16.0, MON->m_size.x * 0.015),
+                                               .columns        = static_cast<int>(CompatHyprlandAPI::intValue("plugin:hyprexpo:windows_columns")),
+                                           });
+            break;
+        case EScenePresentation::Tape: {
+            const int64_t terminalWorkspaceID = m_traits.terminalRow ? nextUnusedOrdinaryWorkspaceID(allOrdinaryIDs) : 0;
+            if (m_traits.terminalRow && terminalWorkspaceID <= 0)
+                return false;
+            m_scene = buildScene(specs, workspaceID(m_startedOn),
+                                 {
+                                     .viewportWidth       = MON->m_size.x,
+                                     .viewportHeight      = MON->m_size.y,
+                                     .rowHeight           = std::max(64.0, MON->m_size.y * 0.68),
+                                     .rowGap              = std::max(12.0, MON->m_size.y * 0.025),
+                                     .columnGap           = std::max(8.0, MON->m_size.x * 0.008),
+                                     .terminalWorkspaceID = terminalWorkspaceID,
+                                 });
+            break;
+        }
+    }
+    return m_scene.valid;
+}
+
+void CScrollingOverview::placeRenderTargets(const PHLMONITOR& MON) {
+    m_renderTargets.clear();
+    m_numberedTargets.clear();
+    std::unordered_set<uint64_t> seenTargets;
+    const auto placedBox = [&](int64_t rowID, uint64_t token) -> std::optional<CBox> {
+        const auto placed = std::ranges::find_if(m_scene.targets, [&](const auto& sceneTarget) { return sceneTarget.workspaceID == rowID && sceneTarget.token == token; });
+        if (placed == m_scene.targets.end())
+            return std::nullopt;
+        return sceneBox(placed->box, 0.0);
+    };
+    const auto push = [&](const SWorkspaceRow& row, const STargetSnapshot& target, const CBox& box) {
+        m_renderTargets.push_back(SRenderTarget{.workspaceID = workspaceID(row.workspace),
+                                                .targetToken = targetToken(target),
+                                                .windowStableID = target.windowStableID,
+                                                .box = box,
+                                                .targetRef = target.targetRef,
+                                                .windowRef = target.windowRef,
+                                                .group = target.group,
+                                                .floating = target.floating,
+                                                .fullscreen = target.fullscreen,
+                                                .pinned = target.pinned});
+    };
+
+    for (const auto& row : m_rows) {
+        if (row.kind != EWorkspaceKind::Scrolling)
+            continue;
+        const auto rowID = workspaceID(row.workspace);
+        for (const auto& column : row.snapshot.columns) {
+            for (const auto& target : column.targets) {
+                const auto box = placedBox(rowID, targetToken(target));
+                if (!box || !seenTargets.insert(targetToken(target)).second)
+                    continue;
+                push(row, target, *box);
+            }
+        }
+
+        const auto placedRow = std::ranges::find_if(m_scene.workspaces, [&](const auto& sceneRow) { return sceneRow.workspaceID == rowID; });
+        if (placedRow == m_scene.workspaces.end())
+            continue;
+        for (const auto& target : row.snapshot.layoutTargets) {
+            if (!target.floating || !seenTargets.insert(targetToken(target)).second)
+                continue;
+            if (const auto box = placedBox(rowID, targetToken(target))) {
+                push(row, target, *box);
+                continue;
+            }
+            // A navigable presentation placed every floating window it shows; the rest are excluded.
+            if (m_traits.floatingTargetsNavigable)
+                continue;
+            // The tape draws floating windows as overlays at their on-screen position within the row.
+            const CBox& source = target.layoutBox;
+            const double localX = source.x - MON->m_position.x;
+            const double localY = source.y - MON->m_position.y;
+            push(row, target,
+                 CBox{placedRow->box.x + localX / std::max(1.0, MON->m_size.x) * placedRow->box.w, placedRow->box.y + localY / std::max(1.0, MON->m_size.y) * placedRow->box.h,
+                      source.w / std::max(1.0, MON->m_size.x) * placedRow->box.w, source.h / std::max(1.0, MON->m_size.y) * placedRow->box.h});
+        }
+    }
+
+    // Badge and digit order is scene order, resolved once here rather than per frame.
+    for (const auto& placed : m_scene.targets) {
+        const auto target = std::ranges::find_if(m_renderTargets, [&](const auto& item) { return item.workspaceID == placed.workspaceID && item.targetToken == placed.token; });
+        if (target != m_renderTargets.end())
+            m_numberedTargets.push_back(static_cast<size_t>(target - m_renderTargets.begin()));
+    }
+}
+
 bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& initialSnapshot) {
     const auto MON = m_monitor.lock();
     if (!MON || !m_startedOn)
@@ -542,22 +671,10 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
     releaseAllCaptureState();
     m_rows.clear();
     m_renderTargets.clear();
+    m_numberedTargets.clear();
 
-    std::vector<PHLWORKSPACE> workspaces;
     std::vector<int64_t> workspaceIDs;
-    for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-        if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL)
-            continue;
-        workspaceIDs.push_back(workspaceID(workspace));
-        if (workspace->m_monitor != MON || (m_windowGrid && workspace != m_startedOn))
-            continue;
-        workspaces.push_back(workspace);
-    }
-    if (std::ranges::find(workspaces, m_startedOn) == workspaces.end()) {
-        workspaces.push_back(m_startedOn);
-        workspaceIDs.push_back(workspaceID(m_startedOn));
-    }
-    std::ranges::sort(workspaces, {}, [](const auto& workspace) { return workspaceID(workspace); });
+    const auto workspaces = sceneWorkspaces(MON, workspaceIDs);
 
     std::vector<SWorkspaceSpec> specs;
     specs.reserve(workspaces.size());
@@ -588,101 +705,12 @@ bool CScrollingOverview::refreshScene(const std::optional<SWorkspaceSnapshot>& i
         m_rows.push_back({.workspace = workspace, .kind = kind, .snapshot = {}, .workspacePreview = {}});
     }
 
-    if (specs.empty())
-        return false;
-    if (m_windowGrid) {
-        // One workspace's windows only: no tape rows and no terminal "new workspace" row.
-        m_scene = buildWindowGridScene(workspaceID(m_startedOn), windowGridItems(), {
-                                           .viewportWidth = MON->m_size.x,
-                                           .viewportHeight = MON->m_size.y,
-                                           .margin = std::max(24.0, MON->m_size.y * 0.04),
-                                           .gap = std::max(16.0, MON->m_size.x * 0.015),
-                                           .columns = static_cast<int>(CompatHyprlandAPI::intValue("plugin:hyprexpo:windows_columns")),
-                                       });
-    } else {
-        const int64_t terminalWorkspaceID = nextUnusedOrdinaryWorkspaceID(workspaceIDs);
-        if (terminalWorkspaceID <= 0)
-            return false;
-        m_scene = buildScene(specs, workspaceID(m_startedOn),
-                             {
-                                 .viewportWidth = MON->m_size.x,
-                                 .viewportHeight = MON->m_size.y,
-                                 .rowHeight = std::max(64.0, MON->m_size.y * 0.68),
-                                 .rowGap = std::max(12.0, MON->m_size.y * 0.025),
-                                 .columnGap = std::max(8.0, MON->m_size.x * 0.008),
-                                 .terminalWorkspaceID = terminalWorkspaceID,
-                             });
-    }
-    if (!m_scene.valid)
+    if (specs.empty() || !buildPresentationScene(MON, specs, workspaceIDs))
         return false;
     // Client damage refreshes captures without reopening the overview's viewport.
     m_pan = hadScene ? clampPan(m_scene, m_pan, MON->m_size.y) : initialPan(m_scene, workspaceID(m_startedOn), MON->m_size.y);
 
-    std::unordered_set<uint64_t> seenTargets;
-    for (const auto& row : m_rows) {
-        if (row.kind != EWorkspaceKind::Scrolling)
-            continue;
-        for (const auto& column : row.snapshot.columns) {
-            for (const auto& target : column.targets) {
-                const auto token = targetToken(target);
-                const auto placed = std::ranges::find_if(m_scene.targets, [&](const auto& sceneTarget) { return sceneTarget.workspaceID == workspaceID(row.workspace) && sceneTarget.token == token; });
-                if (placed == m_scene.targets.end() || !seenTargets.insert(token).second)
-                    continue;
-                m_renderTargets.push_back(SRenderTarget{.workspaceID = workspaceID(row.workspace),
-                                           .targetToken = token,
-                                           .windowStableID = target.windowStableID,
-                                           .box = sceneBox(placed->box, 0.0),
-                                           .targetRef = target.targetRef,
-                                           .windowRef = target.windowRef,
-                                           .group = target.group,
-                                           .floating = target.floating,
-                                           .fullscreen = target.fullscreen,
-                                           .pinned = target.pinned});
-            }
-        }
-
-        const auto placedRow = std::ranges::find_if(m_scene.workspaces, [&](const auto& sceneRow) { return sceneRow.workspaceID == workspaceID(row.workspace); });
-        if (placedRow == m_scene.workspaces.end())
-            continue;
-        for (const auto& target : row.snapshot.layoutTargets) {
-            const auto token = targetToken(target);
-            if (!target.floating || !seenTargets.insert(token).second)
-                continue;
-            if (m_windowGrid) {
-                const auto placed = std::ranges::find_if(m_scene.targets, [&](const auto& sceneTarget) { return sceneTarget.token == token; });
-                if (placed == m_scene.targets.end())
-                    continue;
-                m_renderTargets.push_back(SRenderTarget{.workspaceID = workspaceID(row.workspace),
-                                           .targetToken = token,
-                                           .windowStableID = target.windowStableID,
-                                           .box = sceneBox(placed->box, 0.0),
-                                           .targetRef = target.targetRef,
-                                           .windowRef = target.windowRef,
-                                           .group = target.group,
-                                           .floating = target.floating,
-                                           .fullscreen = target.fullscreen,
-                                           .pinned = target.pinned});
-                continue;
-            }
-            const CBox& source = target.layoutBox;
-            const double localX = source.x - MON->m_position.x;
-            const double localY = source.y - MON->m_position.y;
-            const CBox overlay{placedRow->box.x + localX / std::max(1.0, MON->m_size.x) * placedRow->box.w,
-                               placedRow->box.y + localY / std::max(1.0, MON->m_size.y) * placedRow->box.h,
-                               source.w / std::max(1.0, MON->m_size.x) * placedRow->box.w,
-                               source.h / std::max(1.0, MON->m_size.y) * placedRow->box.h};
-            m_renderTargets.push_back(SRenderTarget{.workspaceID = workspaceID(row.workspace),
-                                       .targetToken = token,
-                                       .windowStableID = target.windowStableID,
-                                       .box = overlay,
-                                       .targetRef = target.targetRef,
-                                       .windowRef = target.windowRef,
-                                       .group = target.group,
-                                       .floating = target.floating,
-                                       .fullscreen = target.fullscreen,
-                                       .pinned = target.pinned});
-        }
-    }
+    placeRenderTargets(MON);
 
     m_blockOverviewRendering = true;
     m_blockDamageReporting   = true;
@@ -760,7 +788,7 @@ void CScrollingOverview::refreshCache() {
             continue;
 
         const auto captured = Hyprexpo::Capture::captureWindowPreview(target->targetRef, target->windowRef, MON,
-                                                                       Vector2D{static_cast<double>(allocation.width), static_cast<double>(allocation.height)});
+                                                                       Vector2D{static_cast<double>(allocation.width), static_cast<double>(allocation.height)}, m_scratchSource);
         if (!captured.completed)
             continue;
         m_cache.push_back(SCacheEntry{.key = key,
@@ -893,7 +921,7 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
                                                     {.round = targetRound, .roundingPower = roundPower, .borderSize = m_style.borderWidth, .a = static_cast<float>(transition.opacity)});
     }
 
-    if (!m_windowGrid)
+    if (!m_traits.numberBadges)
         return;
     // Digit badges: 1-9 then 0 for the tenth window, matching the number keys that select them.
     const double badgePixels = std::round(36.0 * MON->m_scale);
@@ -901,13 +929,12 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
         m_numberLabels.clear();
         m_numberLabelPixels = badgePixels;
     }
-    const auto numbered = numberedTargets();
-    for (size_t i = 0; i < numbered.size() && i < 10; ++i) {
+    for (size_t i = 0; i < m_numberedTargets.size() && i < 10; ++i) {
         if (m_numberLabels.size() <= i)
             m_numberLabels.resize(i + 1);
         if (!m_numberLabels[i])
             m_numberLabels[i] = renderNumberTexture(std::to_string((i + 1) % 10), CHyprColor{1.0, 1.0, 1.0, 1.0}, Vector2D{badgePixels, badgePixels}, MON->m_scale, 18);
-        CBox box = numbered[i]->box;
+        CBox box = m_renderTargets[m_numberedTargets[i]].box;
         box = applyTransition({box.x + 8.0, box.y + 8.0, 36.0, 36.0}, {MON->m_size.x, MON->m_size.y}, transition);
         box.scale(MON->m_scale).round();
         Render::GL::g_pHyprOpenGL->renderRect(ctx, box, applyTransitionOpacity(CHyprColor{0.0, 0.0, 0.0, 0.65}, transition), {.round = static_cast<int>(box.h / 2.0)});
@@ -997,9 +1024,9 @@ bool CScrollingOverview::commitSelection() {
             if (selectedWindow)
                 break;
         }
-        // Floating windows are not tape columns; only the window grid can select them.
+        // Floating windows are not tape columns; only a presentation that places them can select them.
         for (const auto& target : snapshot.snapshot->layoutTargets) {
-            if (selectedWindow || !m_windowGrid || !target.floating || target.windowStableID != m_selectedStableID)
+            if (selectedWindow || !m_traits.floatingTargetsNavigable || !target.floating || target.windowStableID != m_selectedStableID)
                 continue;
             selectedWindow = target.windowRef.lock();
         }
@@ -1156,16 +1183,6 @@ bool CScrollingOverview::onKbSelectToken(int visibleIndex) {
     return visibleIndex >= 0 && selectVisibleIndex(static_cast<size_t>(visibleIndex));
 }
 
-std::vector<const CScrollingOverview::SRenderTarget*> CScrollingOverview::numberedTargets() const {
-    std::vector<const SRenderTarget*> numbered;
-    for (const auto& placed : m_scene.targets) {
-        const auto target = std::ranges::find_if(m_renderTargets, [&](const auto& item) { return item.workspaceID == placed.workspaceID && item.targetToken == placed.token; });
-        if (target != m_renderTargets.end())
-            numbered.push_back(&*target);
-    }
-    return numbered;
-}
-
 bool CScrollingOverview::selectVisibleToken(const std::string& token) {
     if (m_closing || m_closeCommitted)
         return false;
@@ -1190,11 +1207,11 @@ bool CScrollingOverview::selectWorkspaceByID(int64_t workspaceID) {
 bool CScrollingOverview::selectVisibleIndex(size_t index) {
     if (m_closing || m_closeCommitted)
         return false;
-    if (m_windowGrid) {
-        const auto numbered = numberedTargets();
-        if (index >= numbered.size())
+    if (m_traits.indexSelectsTargets) {
+        if (index >= m_numberedTargets.size())
             return false;
-        m_focus = {.kind = EHitKind::Target, .workspaceID = numbered[index]->workspaceID, .targetToken = numbered[index]->targetToken};
+        const auto& target = m_renderTargets[m_numberedTargets[index]];
+        m_focus = {.kind = EHitKind::Target, .workspaceID = target.workspaceID, .targetToken = target.targetToken};
         updateSelectionFromFocus();
         return true;
     }
@@ -1235,8 +1252,8 @@ bool CScrollingOverview::ownsPointerInput() const {
     return !m_closeCommitted && m_inputState.owner == EInputOwner::Mouse;
 }
 
-bool CScrollingOverview::isWindowGrid() const {
-    return m_windowGrid;
+Hyprexpo::EOverviewSessionKind CScrollingOverview::kind() const {
+    return m_kind;
 }
 
 bool CScrollingOverview::ownsTouchInput(int32_t touchId) const {
