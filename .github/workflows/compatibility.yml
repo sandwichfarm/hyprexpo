@@ -89,6 +89,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Install build-system test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes meson ninja-build pkg-config
       - name: Verify tooling contracts and negative cases
         run: make test-tooling
       - name: Compile and run all standalone regression suites
