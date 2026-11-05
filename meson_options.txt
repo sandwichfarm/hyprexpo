@@ -1,0 +1,2 @@
+option('lua_pkg_config', type: 'string', value: '',
+  description: 'Lua 5.5 pkg-config module to use; leave empty to detect')

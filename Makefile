@@ -1,6 +1,6 @@
-# Else exist specifically for clang
+# GCC's flag is not supported by Clang.
 ifeq ($(CXX),g++)
-    EXTRA_FLAGS = --no-gnu-unique
+    EXTRA_FLAGS = -fno-gnu-unique
 else
     EXTRA_FLAGS =
 endif
@@ -16,11 +16,13 @@ VERSION_REGEX := ^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+)?$$
 VERSION_DEFINE := -DHYPREXPO_VERSION='"$(VERSION)"'
 
 CXXFLAGS = -shared -fPIC -g -std=c++2b -Wno-c++11-narrowing -Wno-narrowing
-LUA_PKG_CONFIG ?= $(shell if pkg-config --exists lua5.4; then printf 'lua5.4'; elif pkg-config --exists lua; then printf 'lua'; else printf 'lua5.4'; fi)
+PKG_CONFIG ?= pkg-config
+# Match Hyprland 0.57's Lua ABI, even when several Lua development packages exist.
+LUA_PKG_CONFIG ?= $(shell for pkg in lua lua5.5 lua55 lua-5.5 lua-55; do if $(PKG_CONFIG) --exists "$$pkg >= 5.5" "$$pkg < 5.6"; then printf '%s' "$$pkg"; break; fi; done)
 PKG_CONFIG_DEPS = pixman-1 libdrm hyprland pangocairo libinput libudev wayland-server xkbcommon $(LUA_PKG_CONFIG)
 LINK_DEPS = pangocairo xkbcommon $(LUA_PKG_CONFIG)
-INCLUDES = $(shell pkg-config --cflags $(PKG_CONFIG_DEPS))
-LIBS = $(shell pkg-config --libs $(LINK_DEPS))
+INCLUDES = $(shell $(PKG_CONFIG) --cflags $(PKG_CONFIG_DEPS))
+LIBS = $(shell $(PKG_CONFIG) --libs $(LINK_DEPS))
 
 SRC = src/main.cpp src/Dispatchers.cpp src/PluginConfig.cpp src/IOverviewSession.cpp src/Overview.cpp src/OverviewInteraction.cpp src/OverviewRender.cpp src/OverviewCapture.cpp src/ScrollingOverview.cpp src/ScrollingInputState.cpp src/ExpoGesture.cpp src/OverviewPassElement.cpp src/HyprexpoLogic.cpp src/ScrollingOverviewLogic.cpp src/ScrollingMutationTransaction.cpp src/ScrollingLayoutAdapter.cpp src/ScrollingDiagnostics.cpp
 HEADERS = src/globals.hpp src/Dispatchers.hpp src/PluginConfig.hpp src/HyprlandConfigCompat.hpp src/IOverviewSession.hpp src/Overview.hpp src/OverviewInternal.hpp src/OverviewCapture.hpp src/ScrollingOverview.hpp src/ScrollingInputState.hpp src/ScrollingRequestId.hpp src/ExpoGesture.hpp src/OverviewPassElement.hpp src/HyprexpoConfig.hpp src/HyprexpoLogic.hpp src/ScrollingOverviewLogic.hpp src/ScrollingMutationTransaction.hpp src/ScrollingLayoutAdapter.hpp src/ScrollingDiagnostics.hpp
@@ -41,11 +43,11 @@ COMPILE_PLUGIN = $(CXX) $(CXXFLAGS) $(EXTRA_FLAGS) $(VERSION_DEFINE) $(INCLUDES)
 
 all: $(TARGET)
 
-# Rebuild when the version changes so the baked-in value stays correct.
-$(TARGET): $(SRC) $(HEADERS) $(VERSION_FILE)
+# Rebuild when build settings or the baked-in version change.
+$(TARGET): $(SRC) $(HEADERS) $(VERSION_FILE) Makefile | check-lua
 	$(COMPILE_PLUGIN)
 
-$(DEV_TARGET): $(SRC) $(HEADERS) $(VERSION_FILE)
+$(DEV_TARGET): $(SRC) $(HEADERS) $(VERSION_FILE) Makefile | check-lua
 	@mkdir -p "$(dir $@)"
 	$(COMPILE_PLUGIN)
 
@@ -67,6 +69,12 @@ dev-nested:
 
 check-hyprpm-state:
 	@python3 scripts/check-hyprpm-state.py "$(INSTALL_DIR)/state.toml"
+
+check-lua:
+	@$(PKG_CONFIG) --exists '$(LUA_PKG_CONFIG) >= 5.5' '$(LUA_PKG_CONFIG) < 5.6' || { \
+		printf '%s\n' 'error: Lua 5.5 development files are required for Hyprland 0.57; set LUA_PKG_CONFIG to a compatible pkg-config module.' >&2; \
+		exit 1; \
+	}
 
 install: check-hyprpm-state $(TARGET)
 	@echo "Installing for $(INSTALL_USER) into $(INSTALL_DIR)/$(INSTALL_NAME)"
@@ -173,4 +181,4 @@ check-version:
 		|| { echo "::error::VERSION ($$file_ver) does not match tag ($$tag_ver)"; exit 1; }; \
 	echo "version aligned: $$file_ver"
 
-.PHONY: all clean install test test-tooling dev-build dev-load dev-reload dev-nested version tag publish check-pins check-version check-hyprpm-state
+.PHONY: all clean install test test-tooling dev-build dev-load dev-reload dev-nested version tag publish check-pins check-version check-hyprpm-state check-lua
