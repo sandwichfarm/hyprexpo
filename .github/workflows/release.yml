@@ -66,26 +66,53 @@ jobs:
         run: make test
 
       - name: Build plugin
-        run: make all
+        run: |
+          lua_pkg_config=
+          for module in lua lua5.5 lua55 lua-5.5 lua-55; do
+            if pkg-config --exists "$module >= 5.5" "$module < 5.6"; then
+              lua_pkg_config=$module
+              break
+            fi
+          done
+          test -n "$lua_pkg_config" || { echo 'Lua 5.5 development files are required' >&2; exit 1; }
+          make all LUA_PKG_CONFIG="$lua_pkg_config"
+          printf 'RELEASE_LUA_PKG_CONFIG=%s\n' "$lua_pkg_config" >> "$GITHUB_ENV"
 
       - name: Record build provenance
         run: |
+          set -eu
+          plugin_commit=$(git rev-parse HEAD)
+          plugin_version=$(cat VERSION)
           {
-            echo "hyprctl version:"
-            hyprctl version || true
+            printf 'release tag: %s\n' "$RELEASE_TAG"
+            printf 'plugin commit: %s\n' "$plugin_commit"
+            printf 'plugin VERSION: %s\n' "$plugin_version"
+            echo
+            echo "Hyprland binary version:"
+            Hyprland --version
+            echo
+            echo "Arch package versions:"
+            pacman -Q hyprland lua
             echo
             echo "pkg-config hyprland:"
-            pkg-config --modversion hyprland || true
+            pkg-config --modversion hyprland
             echo
-            echo "pkg-config lua5.4:"
-            pkg-config --modversion lua5.4 || true
+            printf 'pkg-config Lua module: %s\n' "$RELEASE_LUA_PKG_CONFIG"
+            pkg-config --modversion "$RELEASE_LUA_PKG_CONFIG"
             echo
             echo "compiler:"
             c++ --version | head -n 1
             echo
+            echo "ELF dynamic dependencies:"
+            readelf -d hyprexpo.so
+            echo
             echo "ldd -r hyprexpo.so:"
             ldd -r hyprexpo.so || true
-          } | tee release-provenance.txt
+            echo
+            echo "artifact SHA256:"
+            sha256sum hyprexpo.so
+          } > release-provenance.txt
+          cat release-provenance.txt
 
       - name: Create release
         uses: softprops/action-gh-release@v2

@@ -38,7 +38,7 @@ layer-shell/wallpaper composition, and arbitrary workspace insertion.
 
 ### 1. Check compatibility
 
-`master` supports tagged Hyprland **v0.57.0**. The plugin must be
+`master` supports tagged Hyprland **v0.57.0 and v0.57.1**. The plugin must be
 built against the **exact revision and dependency ABI** of your running
 compositor; a binary built for one release is not interchangeable with another.
 
@@ -46,8 +46,8 @@ compositor; a binary built for one release is not interchangeable with another.
 hyprctl version
 ```
 
-This checkout pins Hyprland v0.57.0, commit
-`0aa6745f705f2c4b0a5004eb019ef76e5bbdb426`. For Hyprland-git, use the separate [development installation guide](docs/guides/development-installation.md).
+This checkout pins Hyprland v0.57.1, commit
+`acc1aa0bfd4bd575dcb0f76c35ccf12b660a1ab9`. For Hyprland-git, use the separate [development installation guide](docs/guides/development-installation.md).
 For Nix-managed Hyprland, use the [Nix installation path](#nix).
 
 <a id="install"></a>
@@ -216,7 +216,7 @@ Use the repository's [`flake.nix`](flake.nix) or [`default.nix`](default.nix)
 through the Nix Hyprland plugin path. Keep the plugin and compositor on the same
 Hyprland input; do not mix a hyprpm artifact into a Nix-managed session.
 
-This checkout's flake pins Hyprland v0.57.0 at the upstream commit above, the
+This checkout's flake pins Hyprland v0.57.1 at the upstream commit above, the
 same commit as its compatibility target. Input overrides must select a revision supported by
 the plugin source; a release input cannot make development APIs compatible. See [Nix installation](docs/getting-started/installation.md#nix)
 and the [aligned-input examples](docs/guides/development-installation.md#nix-consumer).
@@ -225,7 +225,7 @@ and the [aligned-input examples](docs/guides/development-installation.md#nix-con
 
 | Track | Compatibility contract |
 | --- | --- |
-| `master` | Supported tagged Hyprland release: v0.57.0. Hyprland v0.56.1 and v0.56.2 keep their existing hyprpm pins and receive no further fixes unless a maintenance branch is created. |
+| `master` | Supported tagged Hyprland releases: v0.57.0 and v0.57.1. Hyprland v0.56.1 and v0.56.2 keep their existing hyprpm pins and receive no further fixes unless a maintenance branch is created. |
 | `hyprland-git` | Explicitly tested upstream development commits; check its current pin before installing. |
 
 Shared fixes flow from `master` into `hyprland-git`. Support for a new Hyprland
