@@ -38,7 +38,7 @@ layer-shell/wallpaper composition, and arbitrary workspace insertion.
 
 ### 1. Check compatibility
 
-`master` supports tagged Hyprland **v0.57.0**. The plugin must be
+`master` supports tagged Hyprland **v0.57.0 and v0.57.1**. The plugin must be
 built against the **exact revision and dependency ABI** of your running
 compositor; a binary built for one release is not interchangeable with another.
 
@@ -46,7 +46,7 @@ compositor; a binary built for one release is not interchangeable with another.
 hyprctl version
 ```
 
-This checkout pins Hyprland v0.57.0, commit
+This development checkout pins Hyprland v0.57.0, commit
 `0aa6745f705f2c4b0a5004eb019ef76e5bbdb426`. For Hyprland-git, use the separate [development installation guide](docs/guides/development-installation.md).
 For Nix-managed Hyprland, use the [Nix installation path](#nix).
 
@@ -54,6 +54,10 @@ For Nix-managed Hyprland, use the [Nix installation path](#nix).
 <a id="hyprpm"></a>
 
 ### 2. Install with hyprpm
+
+On Arch Linux, install the separate manager package with `sudo pacman -S hyprpm`
+first. After a Hyprland upgrade, follow the [rebuild and reload steps](docs/getting-started/installation.md#after-upgrading-hyprland).
+If existing plugin settings become unknown, see [missing-plugin recovery](docs/troubleshooting.md#unknown-hyprexpo-config-keys-after-an-upgrade).
 
 ```bash
 hyprpm add https://github.com/sandwichfarm/hyprexpo
@@ -181,11 +185,13 @@ Install a C++23 compiler, `pkg-config`, Hyprland development headers matching yo
 compositor, and these pkg-config packages:
 
 ```text
-hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua5.4
+hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua
 ```
 
-The build prefers `lua5.4` and falls back to `lua` on distributions that expose
-the generic module name.
+Hyprland 0.57 requires Lua 5.5. All build systems select a compatible generic
+or versioned pkg-config module and reject Lua 5.4 or 5.6; see the
+[installation guide](docs/getting-started/installation.md#build-from-source)
+for module names and explicit overrides.
 
 ```bash
 git clone https://github.com/sandwichfarm/hyprexpo
@@ -210,7 +216,7 @@ Use the repository's [`flake.nix`](flake.nix) or [`default.nix`](default.nix)
 through the Nix Hyprland plugin path. Keep the plugin and compositor on the same
 Hyprland input; do not mix a hyprpm artifact into a Nix-managed session.
 
-This checkout's flake pins Hyprland v0.57.0 at the upstream commit above, the
+This development checkout's flake pins Hyprland v0.57.0 at the upstream commit above, the
 same commit as its compatibility target. Input overrides must select a revision supported by
 the plugin source; a release input cannot make development APIs compatible. See [Nix installation](docs/getting-started/installation.md#nix)
 and the [aligned-input examples](docs/guides/development-installation.md#nix-consumer).
@@ -219,7 +225,7 @@ and the [aligned-input examples](docs/guides/development-installation.md#nix-con
 
 | Track | Compatibility contract |
 | --- | --- |
-| `master` | Supported tagged Hyprland release: v0.57.0. Hyprland v0.56.1 and v0.56.2 keep their existing hyprpm pins and receive no further fixes unless a maintenance branch is created. |
+| `master` | Supported tagged Hyprland releases: v0.57.0 and v0.57.1. Hyprland v0.56.1 and v0.56.2 keep their existing hyprpm pins and receive no further fixes unless a maintenance branch is created. |
 | `hyprland-git` | Explicitly tested upstream development commits; check its current pin before installing. |
 
 Shared fixes flow from `master` into `hyprland-git`. Support for a new Hyprland
@@ -285,6 +291,8 @@ and was previously known as **HyprExpo+** (`hyprexpo-plus`). It continues
 maintenance after [the upstream plugin was retired](https://github.com/hyprwm/hyprland-plugins/pull/663).
 See the [original announcement](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
 for the early feature set.
+
+<img width="2089" height="1113" alt="screenshot_2026-11-02_18-01-40" src="https://github.com/user-attachments/assets/b670ed8e-26d7-4e78-9130-404dc20b5a4f" />
 
 ### Related
 
