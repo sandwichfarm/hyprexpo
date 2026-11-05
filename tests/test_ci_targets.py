@@ -90,6 +90,7 @@ class TargetContractTests(unittest.TestCase):
         for changed in (
             {"src/Overview.cpp"},
             {"flake.lock"},
+            {"meson_options.txt"},
             {".github/workflows/compatibility.yml"},
             {"scripts/ci-build.sh"},
             {"scripts/hyprland-targets.json"},

@@ -185,11 +185,13 @@ Install a C++23 compiler, `pkg-config`, Hyprland development headers matching yo
 compositor, and these pkg-config packages:
 
 ```text
-hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua5.4
+hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua
 ```
 
-The build prefers `lua5.4` and falls back to `lua` on distributions that expose
-the generic module name.
+Hyprland 0.57 requires Lua 5.5. All build systems select a compatible generic
+or versioned pkg-config module and reject Lua 5.4 or 5.6; see the
+[installation guide](docs/getting-started/installation.md#build-from-source)
+for module names and explicit overrides.
 
 ```bash
 git clone https://github.com/sandwichfarm/hyprexpo

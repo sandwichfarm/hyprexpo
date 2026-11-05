@@ -94,7 +94,11 @@ binds again.
 
 ## Plugin Load Fails Because Dependencies Are Missing
 
-Install the build dependencies and rebuild. Current linked runtime dependencies include Lua (`lua5.4` or `lua` through pkg-config), `pangocairo`, and `xkbcommon`.
+Install the build dependencies and rebuild. Current linked runtime dependencies
+include Lua 5.5, `pangocairo`, and `xkbcommon`. The Lua ABI must match Hyprland:
+having Lua 5.4 development files installed is not sufficient for the current
+Hyprland 0.57 target. See [Lua module selection](./getting-started/installation.md#build-from-source)
+if your distribution uses a versioned pkg-config module.
 
 ## Invalid Config Values
 

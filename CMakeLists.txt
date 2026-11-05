@@ -39,14 +39,14 @@ target_compile_definitions(hyprexpo PRIVATE HYPREXPO_VERSION="${HYPREXPO_VERSION
 
 find_package(PkgConfig REQUIRED)
 
-set(HYPREXPO_LUA_PKG_CONFIG "" CACHE STRING "Lua pkg-config module to use; leave empty to try lua5.4 then lua")
-set(HYPREXPO_LUA_PKG_CONFIG_CANDIDATES lua5.4 lua)
+set(HYPREXPO_LUA_PKG_CONFIG "" CACHE STRING "Lua 5.5 pkg-config module to use; leave empty to detect")
+set(HYPREXPO_LUA_PKG_CONFIG_CANDIDATES lua lua5.5 lua55 lua-5.5 lua-55)
 if(HYPREXPO_LUA_PKG_CONFIG)
     set(HYPREXPO_LUA_PKG_CONFIG_CANDIDATES ${HYPREXPO_LUA_PKG_CONFIG})
 endif()
 
 foreach(lua_pkg IN LISTS HYPREXPO_LUA_PKG_CONFIG_CANDIDATES)
-    pkg_check_modules(HYPREXPO_LUA QUIET IMPORTED_TARGET ${lua_pkg})
+    pkg_check_modules(HYPREXPO_LUA QUIET IMPORTED_TARGET "${lua_pkg}>=5.5" "${lua_pkg}<5.6")
     if(HYPREXPO_LUA_FOUND)
         set(HYPREXPO_LUA_PKG_CONFIG_RESOLVED ${lua_pkg})
         break()
@@ -54,7 +54,7 @@ foreach(lua_pkg IN LISTS HYPREXPO_LUA_PKG_CONFIG_CANDIDATES)
 endforeach()
 
 if(NOT HYPREXPO_LUA_FOUND)
-    message(FATAL_ERROR "Could not find Lua through pkg-config; tried: ${HYPREXPO_LUA_PKG_CONFIG_CANDIDATES}")
+    message(FATAL_ERROR "Lua 5.5 development files are required for Hyprland 0.57; tried pkg-config modules: ${HYPREXPO_LUA_PKG_CONFIG_CANDIDATES}")
 endif()
 
 message(STATUS "Using Lua pkg-config module: ${HYPREXPO_LUA_PKG_CONFIG_RESOLVED}")

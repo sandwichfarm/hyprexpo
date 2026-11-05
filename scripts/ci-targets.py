@@ -19,6 +19,7 @@ BUILD_INPUT_FILES = {
     "flake.nix",
     "hyprpm.toml",
     "meson.build",
+    "meson_options.txt",
     "scripts/ci-build.sh",
     "scripts/ci-hyprland-cache.sh",
     "scripts/ci-targets.py",
