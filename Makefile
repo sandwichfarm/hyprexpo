@@ -43,11 +43,11 @@ COMPILE_PLUGIN = $(CXX) $(CXXFLAGS) $(EXTRA_FLAGS) $(VERSION_DEFINE) $(INCLUDES)
 
 all: $(TARGET)
 
-# Rebuild when the version changes so the baked-in value stays correct.
-$(TARGET): $(SRC) $(HEADERS) $(VERSION_FILE) | check-lua
+# Rebuild when build settings or the baked-in version change.
+$(TARGET): $(SRC) $(HEADERS) $(VERSION_FILE) Makefile | check-lua
 	$(COMPILE_PLUGIN)
 
-$(DEV_TARGET): $(SRC) $(HEADERS) $(VERSION_FILE) | check-lua
+$(DEV_TARGET): $(SRC) $(HEADERS) $(VERSION_FILE) Makefile | check-lua
 	@mkdir -p "$(dir $@)"
 	$(COMPILE_PLUGIN)
 

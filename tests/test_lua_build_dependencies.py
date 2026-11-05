@@ -152,6 +152,40 @@ class LuaBuildDependenciesTests(unittest.TestCase):
                     )
                     self.assertEqual(result.stdout.strip(), expected)
 
+    def test_make_relinks_existing_artifacts_after_build_configuration_changes(self):
+        with tempfile.TemporaryDirectory(prefix="hyprexpo-lua-rebuild-") as directory:
+            fixture = Path(directory)
+            shutil.copyfile(ROOT / "Makefile", fixture / "Makefile")
+            (fixture / "scripts").mkdir()
+            shutil.copyfile(ROOT / "scripts/version.sh", fixture / "scripts/version.sh")
+            (fixture / "VERSION").write_text("v1.2.3\n")
+            pcdir = fixture / "pkgconfig"
+            pcdir.mkdir()
+            (pcdir / "lua.pc").write_text(
+                "Name: lua\nDescription: Lua fixture\nVersion: 5.5.1\nLibs:\nCflags:\n"
+            )
+            env = os.environ.copy()
+            for key in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "MAKEFILES",
+                        "LUA_PKG_CONFIG", "PKG_CONFIG_SYSROOT_DIR"):
+                env.pop(key, None)
+            env.update(PKG_CONFIG_PATH="", PKG_CONFIG_LIBDIR=str(pcdir))
+            os.utime(fixture / "VERSION", (100, 100))
+            os.utime(fixture / "Makefile", (300, 300))
+            for goal, variable in (("all", "TARGET"), ("dev-build", "DEV_TARGET")):
+                with self.subTest(goal=goal):
+                    artifact = fixture / f"{goal}.so"
+                    artifact.write_text("old Lua ABI artifact\n")
+                    os.utime(artifact, (200, 200))
+                    result = subprocess.run(
+                        ["make", "--no-print-directory", goal, f"{variable}={artifact}",
+                         "SRC=", "HEADERS=", "INCLUDES=", "LIBS=",
+                         "PKG_CONFIG=pkg-config", "LUA_PKG_CONFIG=lua",
+                         "COMPILE_PLUGIN=printf 'relinked\\n' > $@"],
+                        cwd=fixture, env=env, text=True, capture_output=True, timeout=20,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(artifact.read_text(), "relinked\n")
+
 
 if __name__ == "__main__":
     unittest.main()
