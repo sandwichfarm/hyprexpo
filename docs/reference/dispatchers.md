@@ -12,9 +12,21 @@ bind = SUPER, g, hyprexpo:expo, toggle
 | `on` or `enable` | show overview |
 | `off` or `disable` | hide overview |
 | `cancel` | hide overview without switching workspaces |
+| `next` | show overview if hidden; if a window grid (`overview_mode = windows`) is showing, replace it with the workspace grid; otherwise do nothing |
 | `select` | select the hovered workspace |
 | `bring` | move the top mapped window from the hovered workspace into the current workspace |
 | `1`..`9` | select that workspace by ID while overview is open; otherwise dispatch a normal workspace switch |
+
+A two-step key, window grid first and workspaces second, needs the same bind in
+the `hyprexpo` submap too, because the overview activates that submap while it is
+open and your normal binds stop matching:
+
+```lua
+hl.bind("SUPER + Tab", function() hl.plugin.hyprexpo.expo("next") end)
+hl.define_submap("hyprexpo", function()
+    hl.bind("SUPER + Tab", function() hl.plugin.hyprexpo.expo("next") end)
+end)
+```
 
 Append `all` to open on every monitor at once instead of only the one under the
 cursor. Each monitor renders its own grid, honoring per-monitor
@@ -83,5 +95,7 @@ validator. `KIND` is one of `same-column`, `existing-column`,
 `new-column-before`, `new-column-after`, `cross-scrolling`, `mixed-workspace`,
 `terminal-workspace`, or `no-op-release`. Terminal requests use destination
 workspace `0`, which is resolved to the next empty workspace at release time.
-The sole accepted fault is `apply:add-target:after`; it is scoped to that one
-request and proves rollback after a real native mutation.
+Accepted faults are `apply:add-target:after` and `apply:re-resolve:after`.
+Each is scoped to one request. The latter also exercises rollback for a newly
+created workspace whose configured layout is not scrolling, where native
+column insertion is skipped.

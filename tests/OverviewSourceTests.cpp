@@ -126,6 +126,11 @@ int main() {
 
     const auto mainSource = readFile("src/main.cpp");
     expect(!mainSource.empty(), "src/main.cpp can be read from repo root");
+    const auto overviewPreChecks = extractFunction(mainSource, "m_events.render.preChecks.listen(");
+    expect(!overviewPreChecks.empty(), "overview rendering disables fullscreen fast paths before scanout checks");
+    expectContains(overviewPreChecks, "overviewForMonitor(pMonitor)", "fullscreen fast-path override requires an overview on the same monitor");
+    expectOrder(overviewPreChecks, "OV->shouldRenderOverviewForMonitor(pMonitor)", "pMonitor->m_solitaryClient.reset()",
+                "fullscreen fast-path override is scoped to a session rendering this monitor");
     expect(mainSource.find("const Time::steady_tp& now") != std::string::npos, "render hook uses the Hyprland 0.56 time-point ABI");
     expect(mainSource.find("_ZN7Monitor8CMonitor9addDamageERKN9Hyprutils4Math4CBoxE") != std::string::npos,
            "damage hook uses the Hyprland 0.56 namespaced monitor symbol");
@@ -799,12 +804,32 @@ int main() {
                      "native transaction forbids cursor/drag/camera operation " + std::string{token});
     expectContains(adapterSource, "controller->setDirection", "native transaction restores the exact pre-state direction after host structure changes");
     expectContains(adapterSource, "controller->setOffset(workspaceState.offset)", "native transaction restores the exact pre-state offset after host structure changes");
+    for (const auto& signature : {"SMutationWorkspace mutationWorkspace(", "void snapshotMixedAndRetain(", "SMutationWorkspace emptyNativeState("}) {
+        const auto snapshot = extractFunction(adapterSource, signature);
+        expectContains(snapshot, "canonicalizeMutationMembers(", "native membership snapshot has stable ordering: " + std::string{signature});
+    }
+    for (const auto& signature : {"void snapshotMixedAndRetain(", "SMutationWorkspace emptyNativeState("}) {
+        const auto snapshot = extractFunction(adapterSource, signature);
+        expectContains(snapshot, "Desktop::focusState()->window()", "empty and mixed snapshots observe real compositor focus: " + std::string{signature});
+        expectAbsent(snapshot, "expected->focused", "rollback never substitutes expected focus for observed focus");
+    }
+    const auto emptySnapshot = extractFunction(adapterSource, "void snapshotScrollingOrEmptyAndRetain(");
+    expectContains(emptySnapshot, "resolveNativeWorkspace(workspace)", "empty destination retains the actual native controller before mutation");
+    expectContains(emptySnapshot, "emptyNativeState(native)", "empty pre-state and readback share the actual controller snapshot");
+    const auto emptyReadback = extractFunction(adapterSource, "SMutationWorkspace emptyNativeState(");
+    for (const auto& token : {"fingerprint(native.data)", "controller->getDirection()", "controller->getOffset()", "controller->stripCount() != 0"})
+        expectContains(emptyReadback, token, "empty native readback verifies real controller state: " + std::string{token});
+    expectAbsent(emptyReadback, "expected", "empty rollback cannot synthesize expected controller state");
 
     for (const auto& token : {"Desktop::globalWindowController()->moveWindowToWorkspace", "controllerMove", "reverse", "reResolve", "nextUnusedOrdinaryWorkspaceID",
                               "createWorkspaceForMonitor", "m_monitor", "MixedFallback", "TerminalWorkspace"})
         expectContains(adapterSource + mutationSource, token, "cross/terminal transaction exposes " + std::string{token});
     expectOrder(adapterSource, "moveWindowToWorkspace", "reResolve", "cross move discards stale ownership before destination positioning");
     expectContains(adapterSource, "if (reverse)", "rollback controller path explicitly reverses ownership");
+    expectContains(adapterSource, "workspaceUsesScrollingLayout(m_destinationWorkspace)", "created terminal workspace follows its resolved native layout rules");
+    const auto nativeReResolve = extractFunction(adapterSource, "void reResolve(SMutationPlan& plan, bool rollback)");
+    expectContains(nativeReResolve, "!rollback && plan.createDestination && plan.request.kind == EDropKind::TerminalWorkspace && current.workspace == m_createdDestination",
+                   "only a newly created terminal destination may refine its layout kind");
     expectContains(adapterSource, "m_createdDestination", "terminal rollback tracks the workspace created by this transaction");
     for (const auto& token : {"proveCreatedDestinationRollback", "stripCount()", "workspacesCopy()", "m_native.erase", "m_createdDestination.reset()"})
         expectContains(adapterSource, token, "terminal rollback proves empty controller/workspace release via " + std::string{token});
@@ -919,6 +944,13 @@ int main() {
     expectOrder(windowCapture, "beginFullFakeRender(", "renderWindow(", "target capture begins fake rendering before the window draw");
     expectOrder(windowCapture, "renderWindow(", "rendererState.finish()", "target capture balances the renderer after drawing");
     expectOrder(windowCapture, "rendererState.finish()", "result.completed", "target capture publishes only after balanced completion");
+    expectContains(windowCapture, "fitWindowPreview(", "window capture fits the complete native window into its thumbnail");
+    expectContains(windowCapture, "sourceFramebuffer", "window capture first renders every surface at native size");
+    expectOrder(windowCapture, "rendererState.finish()", "renderTextureInternal(", "the completed native texture is fitted after surface damage and clipping");
+    expectContains(windowCapture, "scratchBudget", "temporary native capture has a bounded pixel allocation");
+    expectAbsent(windowCapture, "RMOD_TYPE_SCALE", "window capture does not scale geometry without scaling subsurface clips");
+    expectContains(windowCapture, "RPT_EXPORT", "window capture uses an unrotated framebuffer projection");
+    expectContains(windowCapture, "noSimplify = true", "capture does not cull subsurfaces using their unscaled bounds");
     for (const auto& token : {"glReadPixels(", "readPixels(", "std::ofstream", ".ppm", "sha256", "SHA256"})
         expectAbsent(captureSource, token, "production capture forbids plugin-side pixel evidence path " + std::string{token});
 
@@ -1034,7 +1066,7 @@ int main() {
     expectOrder(sessionSource, "plugin:hyprexpo:overview_mode", "detectedScrolling", "overview mode is read before scrolling layout detection runs");
     expectOrder(sessionSource, "forcedGrid", "workspaceUsesScrollingLayout(startedOn)", "a forced-grid preference can short-circuit scrolling layout detection");
     expectContains(dispatchersSource, "createOverview(monitor)", "dispatcher creates sessions through the monitor registry");
-    expectContains(source, "createOverviewSession(monitor->m_activeWorkspace, monitor, swipe)", "registry passes the explicit monitor to the sole session factory");
+    expectContains(source, "createOverviewSession(monitor->m_activeWorkspace, monitor, swipe, forceGrid)", "registry passes the explicit monitor to the sole session factory");
     expectContains(dispatchersSource, "failed to initialize native scrolling overview", "dispatcher reports fail-closed scrolling creation");
     expectContains(gestureSource, "createOverview(monitor, true)", "gesture creates sessions through the monitor registry and sole factory");
     expectAbsent(dispatchersSource + gestureSource, "std::make_unique<COverview>", "callers never instantiate the concrete grid implementation");
@@ -1054,6 +1086,24 @@ int main() {
     expectContains(scrollingSource, "CompatHyprlandAPI::intValue(\"plugin:hyprexpo:gesture_distance\")",
                    "scrolling swipe reads gesture distance through the Lua-compatible config boundary");
     expectAbsent(scrollingSource, "HyprlandAPI::getConfigValue", "scrolling session never uses the legacy config getter");
+    const auto scrollingPointerFocus = extractFunction(scrollingSource, "void CScrollingOverview::applyInputEffects(");
+    expectContains(scrollingPointerFocus, "const bool pointerMoved = previousState.lastGlobalPoint.x != m_inputState.lastGlobalPoint.x",
+                   "pointer motion inside one window can reclaim focus the keyboard moved away");
+    expectContains(scrollingPointerFocus, "(effects.hoverChanged || pointerMoved)", "a stationary pointer never overrides keyboard focus");
+    const auto scrollingRounding = extractFunction(scrollingSource, "void CScrollingOverview::fullRender(");
+    expectContains(scrollingRounding, "Hyprexpo::resolveTileRounding(", "scrolling previews resolve radii with the grid's shared rounding rules");
+    expectContains(scrollingRounding, "Hyprexpo::clampTileRound(", "scrolling previews clamp corners with the grid's shared rule");
+    expectAbsent(scrollingRounding, "CompatHyprlandAPI::", "scrolling render reads no config per frame");
+    expectContains(scrollingRounding, "m_style.borderWidth > 0", "border_width = 0 disables the scrolling focus frame like the grid border");
+    const auto scrollingStyle = extractFunction(scrollingSource, "void CScrollingOverview::loadStyle(");
+    expectContains(scrollingStyle, "plugin:hyprexpo:tile_rounding\"", "scrolling style caches tile_rounding");
+    expectContains(scrollingStyle, "plugin:hyprexpo:tile_rounding_power", "scrolling style caches the rounding curve");
+    expectContains(scrollingStyle, "resolveBorderSpec(", "scrolling focus border honors the deprecated border_grad_focus fallback");
+    expectContains(extractFunction(scrollingSource, "void CScrollingOverview::onConfigReload("), "loadStyle()", "config reload refreshes the cached scrolling style");
+    expectContains(extractFunction(readFile("src/OverviewRender.cpp"), "void COverview::fullRender("), "Hyprexpo::resolveTileRounding(",
+                   "the workspace grid resolves radii with the same shared rules");
+    for (const auto& token : {".round = 8", ".round = 12"})
+        expectAbsent(scrollingRounding, token, "scrolling previews do not hardcode a corner radius " + std::string{token});
     expectContains(sessionHeader, "virtual void beginCancelSwipe() = 0", "cancel gesture dispatches through the session interface");
     expectContains(sessionHeader, "virtual void onSwipeEnd(bool switchToSelection) = 0", "session interface retains action-specific swipe completion");
     const auto scrollingCancelBegin = extractFunction(scrollingSource, "void CScrollingOverview::beginCancelSwipe(");
@@ -1124,7 +1174,13 @@ int main() {
     expectContains(scrollingInstallInput, "event.device->m_boundOutput.empty()", "touch ownership requires an explicitly bound output");
     expectAbsent(scrollingInstallInput, ": m_monitor.lock()", "unbound touch devices are not guessed onto the overview monitor");
     const auto scrollingRefresh = extractFunction(scrollingSource, "bool CScrollingOverview::refreshScene(");
+    expectContains(scrollingRefresh, "nextUnusedOrdinaryWorkspaceID(workspaceIDs)", "terminal scene shares the transaction's first-unused allocation policy");
+    expectOrder(scrollingRefresh, "workspaceIDs.push_back(workspaceID(workspace))", "if (workspace->m_monitor != MON", "terminal allocation includes ordinary IDs on every monitor");
     const auto scrollingPreRender = extractFunction(scrollingSource, "void CScrollingOverview::onPreRender(");
+    expectOrder(scrollingRefresh, "const bool hadScene = m_scene.valid", "buildScene(specs, workspaceID(m_startedOn)", "scene refresh distinguishes an existing viewport from first open");
+    expectContains(scrollingRefresh, "hadScene ? clampPan(m_scene, m_pan, MON->m_size.y) : initialPan(", "content refresh retains pan while first open centers the active row");
+    expectContains(scrollingRefresh, "focusAfterRefresh(m_scene, m_focus, workspaceID(m_startedOn))", "runtime refresh uses the tested surviving-focus policy");
+    expectAbsent(scrollingRefresh, "m_focus = {.kind", "content refresh does not overwrite keyboard selection with the opening workspace");
     expectOrder(scrollingPreRender, "m_inputState.owner != EInputOwner::None", "m_damageDirty = false;",
                 "ordinary damage stays pending while a mouse or touch interaction owns the scene");
     const auto scrollingEffects = extractFunction(scrollingSource, "void CScrollingOverview::applyInputEffects(");

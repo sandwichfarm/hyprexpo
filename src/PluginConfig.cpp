@@ -49,8 +49,11 @@ void registerHyprexpoConfigValues() {
     addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:bg_col", "background color", HyprexpoConfig::BG_COL_DEFAULT));
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:workspace_method", "workspace method", HyprexpoConfig::WORKSPACE_METHOD_DEFAULT));
     // overview_mode: auto (default, use native scrolling detection) | grid (always force the classic grid overview)
+    // | windows (scrolling workspaces open a grid of their own windows; expo next escalates to the classic grid)
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:overview_mode", "overview mode", HyprexpoConfig::OVERVIEW_MODE_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:cross_monitor", "include foreign workspaces in fixed first grids", HyprexpoConfig::CROSS_MONITOR_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:windows_columns", "window grid columns (0 picks automatically)", HyprexpoConfig::WINDOWS_COLUMNS_DEFAULT,
+                                                         Config::Values::SIntValueOptions{.min = 0, .max = 16}));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:skip_empty", "skip empty workspaces", HyprexpoConfig::SKIP_EMPTY_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:max_workspace", "maximum sequential workspace", HyprexpoConfig::MAX_WORKSPACE_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:show_workspace_numbers", "force workspace ID labels", HyprexpoConfig::SHOW_WORKSPACE_NUMBERS_DEFAULT));

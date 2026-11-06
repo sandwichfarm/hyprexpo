@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -172,6 +173,19 @@ struct SCapturePlan {
     std::vector<SCaptureAllocation> allocations;
 };
 
+struct SWindowGridItem {
+    uint64_t token = 0;
+    SSize    size;
+};
+
+struct SWindowGridConfig {
+    double viewportWidth  = 0.0;
+    double viewportHeight = 0.0;
+    double margin         = 0.0;
+    double gap            = 0.0;
+    int    columns        = 0;
+};
+
 struct SOverviewTransition {
     double progress = 0.0;
     double opacity  = 0.0;
@@ -181,14 +195,19 @@ struct SOverviewTransition {
 
 STapeLayout layoutTape(const STapeSpec& tape, SPoint origin, double crossExtent, double gap);
 SScene      buildScene(const std::vector<SWorkspaceSpec>& workspaces, int64_t activeWorkspaceID, const SSceneConfig& config);
+// One workspace's windows as a fixed grid that fits the viewport; columns <= 0 picks ceil(sqrt(n)).
+int         windowGridColumns(size_t count, int requestedColumns);
+SScene      buildWindowGridScene(int64_t workspaceID, const std::vector<SWindowGridItem>& items, const SWindowGridConfig& config);
 double      initialPan(const SScene& scene, int64_t activeWorkspaceID, double viewportHeight);
 double      clampPan(const SScene& scene, double pan, double viewportHeight);
 double      panBy(const SScene& scene, double currentPan, double delta, double viewportHeight);
 SHitResult  hitTest(const SScene& scene, SPoint viewportPoint, double pan);
 SFocusRef   moveFocus(const SScene& scene, const SFocusRef& current, EFocusDirection direction);
+SFocusRef   focusAfterRefresh(const SScene& scene, const SFocusRef& current, int64_t activeWorkspaceID);
 size_t      adjustDestinationColumnIndex(size_t sourceColumn, size_t destinationColumn, bool sourceColumnRemoved);
 SDropIntent resolveDrop(const SScene& scene, const SDropSource& source, SPoint viewportPoint, double pan, double edgeFraction = 0.2);
 SCapturePlan planCaptureBudget(uint32_t monitorWidth, uint32_t monitorHeight, int multiplier, const std::vector<SCaptureRequest>& requests);
+std::optional<SRect> fitWindowPreview(SSize windowPixels, SSize capturePixels);
 SOverviewTransition overviewTransition(double progress, SSize viewport);
 SRect                applyOverviewTransition(SRect box, SSize viewport, const SOverviewTransition& transition);
 double               transitionForSwipe(bool closing, double swipeDelta, double distance);

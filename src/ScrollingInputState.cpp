@@ -6,13 +6,14 @@
 #include <charconv>
 #include <cmath>
 #include <format>
+#include <linux/input-event-codes.h>
 #include <string_view>
 
 namespace Hyprexpo::Scrolling {
 
 namespace {
 
-constexpr uint32_t PRIMARY_BUTTON = 0x111;
+constexpr uint32_t PRIMARY_BUTTON = BTN_LEFT;
 
 bool finitePoint(SPoint point) {
     return std::isfinite(point.x) && std::isfinite(point.y);
@@ -294,7 +295,7 @@ SInputTransition transitionInput(const SInputState& state, const SInputEvent& ev
         }
 
         const double distance = std::hypot(event.globalLogicalPoint.x - state.pressGlobalPoint.x, event.globalLogicalPoint.y - state.pressGlobalPoint.y);
-        if (state.mode == EInputMode::MousePressPending && distance >= context.dragThreshold) {
+        if (state.mode == EInputMode::MousePressPending && context.dragEnabled && distance >= context.dragThreshold) {
             result.state.mode = EInputMode::WindowDrag;
             result.state.dragSource = dropSourceFor(*context.scene, state.pressed);
             result.effects.beginDrag = true;
@@ -399,7 +400,7 @@ SInputTransition transitionInput(const SInputState& state, const SInputEvent& ev
             result.effects.panDelta = next - context.pan;
         } else {
             const double distance = std::hypot(event.globalLogicalPoint.x - state.pressGlobalPoint.x, event.globalLogicalPoint.y - state.pressGlobalPoint.y);
-            if (state.mode == EInputMode::TouchPressPending && distance >= context.dragThreshold) {
+            if (state.mode == EInputMode::TouchPressPending && context.dragEnabled && distance >= context.dragThreshold) {
                 result.state.mode = EInputMode::WindowDrag;
                 result.state.dragSource = dropSourceFor(*context.scene, state.pressed);
                 result.effects.beginDrag = true;

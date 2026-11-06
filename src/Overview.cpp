@@ -132,6 +132,7 @@ static Config::INTEGER intDefault(const std::string& name) {
         {"plugin:hyprexpo:columns", HyprexpoConfig::COLUMNS_DEFAULT},
         {"plugin:hyprexpo:rows", HyprexpoConfig::ROWS_DEFAULT},
         {"plugin:hyprexpo:cross_monitor", HyprexpoConfig::CROSS_MONITOR_DEFAULT},
+        {"plugin:hyprexpo:windows_columns", HyprexpoConfig::WINDOWS_COLUMNS_DEFAULT},
         {"plugin:hyprexpo:gaps_in", HyprexpoConfig::GAPS_IN_DEFAULT},
         {"plugin:hyprexpo:bg_col", HyprexpoConfig::BG_COL_DEFAULT},
         {"plugin:hyprexpo:gesture_distance", HyprexpoConfig::GESTURE_DISTANCE_DEFAULT},
@@ -233,6 +234,15 @@ Config::INTEGER intValue(const std::string& name) {
     return ptr && *ptr ? **ptr : intDefault(name);
 }
 
+Config::FLOAT floatValue(const std::string& name) {
+    const auto VALUE = Config::mgr()->getConfigValue(name);
+    if (!VALUE.dataptr || !VALUE.type || *VALUE.type != typeid(Config::FLOAT))
+        return floatDefault(name);
+
+    auto* const* ptr = reinterpret_cast<Config::FLOAT* const*>(VALUE.dataptr);
+    return ptr && *ptr ? **ptr : floatDefault(name);
+}
+
 Config::STRING stringValue(const std::string& name) {
     const auto VALUE = Config::mgr()->getConfigValue(name);
     return Hyprexpo::decodeConfigString(VALUE.dataptr, VALUE.type && *VALUE.type == typeid(Config::STRING), stringDefault(name));
@@ -292,6 +302,27 @@ SHyprGradientSpec parseGradientSpec(const std::string& inRaw) {
 // Helper to detect if a border config string is a gradient or solid color
 bool isGradientBorderSpec(const std::string& borderSpec) {
     return Hyprexpo::isGradientBorderSpec(borderSpec);
+}
+
+std::optional<Config::CGradientValueData> borderGradientFromSpec(const std::string& borderSpec) {
+    if (borderSpec.empty())
+        return std::nullopt;
+    if (isGradientBorderSpec(borderSpec)) {
+        const auto spec = parseGradientSpec(borderSpec);
+        if (!spec.valid)
+            return std::nullopt;
+        Config::CGradientValueData grad;
+        grad.m_colors = {spec.c1, spec.c2};
+        grad.m_angle  = spec.angleDeg * (float)M_PI / 180.f;
+        grad.updateColorsOk();
+        return grad;
+    }
+    Hyprexpo::SColorRGBA parsed;
+    if (!Hyprexpo::parseSolidColorSpec(borderSpec, parsed))
+        return std::nullopt;
+    Config::CGradientValueData grad{CHyprColor{parsed.r, parsed.g, parsed.b, parsed.a}};
+    grad.updateColorsOk();
+    return grad;
 }
 
 SP<Render::ITexture> renderNumberTexture(const std::string& text, const CHyprColor& color, const Vector2D& bufferSize, const float scale, const int fontSize) {
@@ -725,14 +756,14 @@ bool COverview::ownsPointerInput() const {
     return g_overviewDrag.state.active && g_overviewDrag.state.sourceMonitorKey == overviewMonitorKey(monitor());
 }
 
-IOverviewSession* createOverview(const PHLMONITOR& monitor, bool swipe) {
+IOverviewSession* createOverview(const PHLMONITOR& monitor, bool swipe, bool forceGrid) {
     if (!monitor || !monitor->m_activeWorkspace)
         return nullptr;
 
     if (overviewForMonitor(monitor))
         return nullptr;
 
-    auto session = createOverviewSession(monitor->m_activeWorkspace, monitor, swipe);
+    auto session = createOverviewSession(monitor->m_activeWorkspace, monitor, swipe, forceGrid);
     if (!session)
         return nullptr;
     g_overviews.push_back(std::move(session));
@@ -953,7 +984,7 @@ static bool shouldShowCursorDuringOverview() {
     return **PSHOWCURSOR;
 }
 
-static void ensureOverviewCursorVisible(bool forceOverviewShape = false, bool refreshPosition = false) {
+void ensureOverviewCursorVisible(bool forceOverviewShape, bool refreshPosition) {
     if (!shouldShowCursorDuringOverview())
         return;
 

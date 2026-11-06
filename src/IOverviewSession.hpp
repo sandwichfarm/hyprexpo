@@ -59,6 +59,8 @@ class IOverviewSession {
     virtual bool ownsAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var) const = 0;
     virtual bool ownsPointerInput() const = 0;
     virtual bool ownsTouchInput(int32_t touchId) const { return false; }
+    // A window grid shows one workspace's windows; digits pick windows and expo next escalates it.
+    virtual bool isWindowGrid() const { return false; }
 
     virtual bool blocksOverviewRendering() const = 0;
     virtual bool blocksDamageReporting() const = 0;
@@ -71,7 +73,7 @@ class IOverviewSession {
 inline std::vector<std::unique_ptr<IOverviewSession>> g_overviews;
 inline PHLMONITORREF g_keyboardOverviewMonitor;
 
-std::unique_ptr<IOverviewSession> createOverviewSession(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe = false);
+std::unique_ptr<IOverviewSession> createOverviewSession(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe = false, bool forceGrid = false);
 IOverviewSession* activeOverview();
 IOverviewSession* pointerOverview();
 IOverviewSession* overviewForMonitor(const PHLMONITOR& monitor);
@@ -79,7 +81,10 @@ IOverviewSession* overviewForMonitorKey(uint64_t key);
 IOverviewSession* overviewForSession(uint64_t monitorKey, uint64_t generation);
 IOverviewSession* overviewForGlobalPoint(const Vector2D& point);
 IOverviewSession* overviewForAnimVar(const WP<Hyprutils::Animation::CBaseAnimatedVariable>& var);
-IOverviewSession* createOverview(const PHLMONITOR& monitor, bool swipe = false);
+IOverviewSession* createOverview(const PHLMONITOR& monitor, bool swipe = false, bool forceGrid = false);
+// Overviews own pointer motion, so clients never update the cursor; keep it visible (show_cursor)
+// and optionally force the overview's arrow shape or resend the pointer position.
+void ensureOverviewCursorVisible(bool forceOverviewShape = false, bool refreshPosition = false);
 uint64_t overviewMonitorKey(const PHLMONITOR& monitor);
 bool overviewRegistered(const IOverviewSession* overview);
 bool overviewOpen();

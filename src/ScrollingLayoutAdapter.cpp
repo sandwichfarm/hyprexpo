@@ -7,7 +7,10 @@
 #include <hyprland/src/desktop/view/window/Window.hpp>
 #include <hyprland/src/desktop/view/window/WindowMetadata.hpp>
 #include <hyprland/src/layout/algorithm/Algorithm.hpp>
+// Empty workspaces still own a native controller, but have no target to resolve it through.
+#define private public
 #include <hyprland/src/layout/algorithm/tiled/scrolling/ScrollingAlgorithm.hpp>
+#undef private
 #include <hyprland/src/layout/supplementary/WorkspaceAlgoMatcher.hpp>
 #include <hyprland/src/managers/fullscreen/FullscreenController.hpp>
 #include <hyprland/src/output/Monitor.hpp>
@@ -268,8 +271,12 @@ SResolvedNativeWorkspace resolveNativeWorkspace(const PHLWORKSPACE& workspace, c
             candidate.reset();
         }
     }
-    if (!candidate)
-        throw std::runtime_error("native scrolling seed target expired");
+    if (!candidate) {
+        const auto data = scrolling->m_scrollingData;
+        if (!data || !data->controller || !data->columns.empty() || data->controller->stripCount() != 0)
+            throw std::runtime_error("native scrolling seed target expired");
+        return {.workspace = workspace, .algorithm = scrolling, .data = data};
+    }
     const auto targetData = scrolling->dataFor(candidate);
     const auto column = targetData ? targetData->column.lock() : SP<Layout::Tiled::SColumnData>{};
     const auto data = column ? column->scrollingData.lock() : SP<Layout::Tiled::SScrollingData>{};
@@ -298,7 +305,7 @@ SMutationWorkspace mutationWorkspace(const SWorkspaceSnapshot& snapshot) {
             const auto identity = mutationTargetIdentity(target);
             copied.targets.push_back({.identity = identity, .windowIdentity = target.windowFingerprint, .size = target.proportion,
                                       .group = target.group, .fullscreen = target.fullscreen});
-            if (target.windowFingerprint == snapshot.focusedWindowFingerprint)
+            if (snapshot.focusedWindowFingerprint != 0 && target.windowFingerprint == snapshot.focusedWindowFingerprint)
                 result.focusedTargetIdentity = identity;
         }
         result.columns.push_back(std::move(copied));
@@ -306,6 +313,7 @@ SMutationWorkspace mutationWorkspace(const SWorkspaceSnapshot& snapshot) {
     result.members.reserve(snapshot.layoutTargets.size());
     for (const auto& target : snapshot.layoutTargets)
         result.members.push_back(mutationTargetIdentity(target));
+    canonicalizeMutationMembers(result);
     return result;
 }
 
@@ -363,7 +371,9 @@ class CNativeMutationOperations final : public IMutationOperations {
             if (!m_destinationWorkspace)
                 throw std::runtime_error("terminal destination creation failed");
             m_createdDestination = m_destinationWorkspace;
-            m_native[plan.request.destinationWorkspaceID] = {.workspace = m_destinationWorkspace, .kind = EMutationWorkspaceKind::Scrolling, .data = {}};
+            m_native[plan.request.destinationWorkspaceID] = {.workspace = m_destinationWorkspace,
+                                                              .kind = workspaceUsesScrollingLayout(m_destinationWorkspace) ? EMutationWorkspaceKind::Scrolling : EMutationWorkspaceKind::Mixed,
+                                                              .data = {}};
         }
 
         const auto target = targetFor(plan.request.targetIdentity);
@@ -381,9 +391,11 @@ class CNativeMutationOperations final : public IMutationOperations {
             throw std::runtime_error("controller move did not establish destination ownership");
     }
 
-    void reResolve(const SMutationPlan& plan, bool rollback) override {
+    void reResolve(SMutationPlan& plan, bool rollback) override {
         const auto target = targetFor(plan.request.targetIdentity);
         auto& current = nativeFor(rollback ? plan.request.sourceWorkspaceID : plan.request.destinationWorkspaceID);
+        if (!rollback && plan.createDestination && plan.request.kind == EDropKind::TerminalWorkspace && current.workspace == m_createdDestination)
+            plan.mixedFallback = current.kind == EMutationWorkspaceKind::Mixed;
         if (current.kind == EMutationWorkspaceKind::Mixed) {
             const auto window = target->window();
             if (!window || window->m_workspace != current.workspace)
@@ -576,7 +588,7 @@ class CNativeMutationOperations final : public IMutationOperations {
             if (snapshot.success())
                 converted = mutationWorkspace(*snapshot.snapshot);
             else if (native.data && native.data->controller && native.data->columns.empty())
-                converted = emptyNativeState(native, rollback);
+                converted = emptyNativeState(native);
             else
                 throw std::runtime_error("native readback failed: " + snapshot.error);
             for (size_t index = 0; index < native.data->columns.size() && index < converted.columns.size(); ++index) {
@@ -693,15 +705,17 @@ class CNativeMutationOperations final : public IMutationOperations {
         }
         if (workspace->getWindowCount(true) != 0)
             throw std::runtime_error("non-empty scrolling destination has no complete pre-state");
-        m_native[workspaceID(workspace)] = {.workspace = workspace, .kind = EMutationWorkspaceKind::Scrolling, .data = {}};
-        state.workspaces.push_back({.workspaceID = workspaceID(workspace), .modelIdentity = 0, .kind = EMutationWorkspaceKind::Scrolling, .direction = {}, .offset = 0.0,
-                                    .focusedTargetIdentity = 0, .focusedWindowIdentity = 0, .columns = {}, .members = {}});
+        const auto resolved = resolveNativeWorkspace(workspace);
+        auto& native = m_native[workspaceID(workspace)];
+        native = {.workspace = workspace, .kind = EMutationWorkspaceKind::Scrolling, .data = resolved.data};
+        state.workspaces.push_back(emptyNativeState(native));
         std::ranges::sort(state.workspaces, {}, &SMutationWorkspace::workspaceID);
     }
 
     void snapshotMixedAndRetain(const PHLWORKSPACE& workspace, SMutationState& state, bool retain) {
         SMutationWorkspace mixed{.workspaceID = workspaceID(workspace), .modelIdentity = 0, .kind = EMutationWorkspaceKind::Mixed,
-                                 .direction = {}, .offset = 0.0, .focusedTargetIdentity = 0, .focusedWindowIdentity = 0, .columns = {}, .members = {}};
+                                 .direction = {}, .offset = 0.0, .focusedTargetIdentity = 0,
+                                 .focusedWindowIdentity = fingerprint(Desktop::focusState() ? Desktop::focusState()->window() : PHLWINDOW{}), .columns = {}, .members = {}};
         if (!workspace || !workspace->space())
             throw std::runtime_error("mixed workspace expired during transaction readback");
         for (const auto& weak : workspace->space()->targets()) {
@@ -715,23 +729,20 @@ class CNativeMutationOperations final : public IMutationOperations {
         }
         if (retain)
             m_native[workspaceID(workspace)] = {.workspace = workspace, .kind = EMutationWorkspaceKind::Mixed, .data = {}};
+        canonicalizeMutationMembers(mixed);
         state.workspaces.push_back(std::move(mixed));
     }
 
-    SMutationWorkspace emptyNativeState(const SNativeWorkspace& native, bool rollback) const {
-        const SMutationWorkspace* expected = nullptr;
-        if (m_preState) {
-            const auto found = std::ranges::find(m_preState->workspaces, workspaceID(native.workspace), &SMutationWorkspace::workspaceID);
-            if (found != m_preState->workspaces.end())
-                expected = &*found;
-        }
+    SMutationWorkspace emptyNativeState(const SNativeWorkspace& native) const {
+        if (!native.data || !native.data->controller || !native.data->columns.empty() || native.data->controller->stripCount() != 0)
+            throw std::runtime_error("empty native controller readback is not empty");
         SMutationWorkspace result{.workspaceID = workspaceID(native.workspace),
-                                  .modelIdentity = rollback && expected ? expected->modelIdentity : fingerprint(native.data),
+                                  .modelIdentity = fingerprint(native.data),
                                   .kind = EMutationWorkspaceKind::Scrolling,
-                                  .direction = rollback && expected ? expected->direction : directionName(native.data->controller->getDirection()),
-                                  .offset = rollback && expected ? expected->offset : native.data->controller->getOffset(),
-                                  .focusedTargetIdentity = rollback && expected ? expected->focusedTargetIdentity : 0,
-                                  .focusedWindowIdentity = rollback && expected ? expected->focusedWindowIdentity : 0,
+                                  .direction = directionName(native.data->controller->getDirection()),
+                                  .offset = native.data->controller->getOffset(),
+                                  .focusedTargetIdentity = 0,
+                                  .focusedWindowIdentity = fingerprint(Desktop::focusState() ? Desktop::focusState()->window() : PHLWINDOW{}),
                                   .columns = {}, .members = {}};
         for (const auto& weak : native.workspace->space()->targets()) {
             const auto target = weak.lock();
@@ -739,6 +750,7 @@ class CNativeMutationOperations final : public IMutationOperations {
                 throw std::runtime_error("empty native workspace retained an expired target");
             result.members.push_back(mutationIdentity(target));
         }
+        canonicalizeMutationMembers(result);
         return result;
     }
 

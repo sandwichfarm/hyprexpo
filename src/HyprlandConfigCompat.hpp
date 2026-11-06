@@ -24,5 +24,6 @@ SConfigValueCompat* getConfigValue(HANDLE handle, const std::string& name);
 bool                configValueSetByUser(const std::string& name);
 
 Config::INTEGER intValue(const std::string& name);
+Config::FLOAT   floatValue(const std::string& name);
 Config::STRING  stringValue(const std::string& name);
 }

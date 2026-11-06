@@ -23,14 +23,16 @@ void notifyScrollingFailure(const std::string& message) {
 
 }
 
-std::unique_ptr<IOverviewSession> createOverviewSession(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe) {
+std::unique_ptr<IOverviewSession> createOverviewSession(const PHLWORKSPACE& startedOn, const PHLMONITOR& monitor, bool swipe, bool forceGrid) {
     if (!startedOn || !monitor || startedOn->m_monitor != monitor)
         return nullptr;
     static std::atomic<uint64_t> nextGeneration = 1;
     const uint64_t generation = nextGeneration.fetch_add(1, std::memory_order_relaxed);
 
     const std::string overviewMode = CompatHyprlandAPI::stringValue("plugin:hyprexpo:overview_mode");
-    const bool forcedGrid = Hyprexpo::overviewModePreferenceFromString(overviewMode) == Hyprexpo::EOverviewModePreference::Grid;
+    const auto modePreference = Hyprexpo::overviewModePreferenceFromString(overviewMode);
+    const bool forcedGrid = forceGrid || modePreference == Hyprexpo::EOverviewModePreference::Grid;
+    const bool windowGrid = modePreference == Hyprexpo::EOverviewModePreference::Windows;
 
     const bool detectedScrolling = !forcedGrid && Hyprexpo::Scrolling::workspaceUsesScrollingLayout(startedOn);
     if (detectedScrolling) {
@@ -41,7 +43,7 @@ std::unique_ptr<IOverviewSession> createOverviewSession(const PHLWORKSPACE& star
             return nullptr;
         }
         try {
-            auto scrolling = std::make_unique<CScrollingOverview>(startedOn, monitor, swipe, generation, snapshot.snapshot);
+            auto scrolling = std::make_unique<CScrollingOverview>(startedOn, monitor, swipe, generation, snapshot.snapshot, windowGrid);
             if (scrolling->valid())
                 return scrolling;
             notifyScrollingFailure("native scrolling session initialization failed");

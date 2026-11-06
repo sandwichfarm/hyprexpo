@@ -213,6 +213,64 @@ SScene buildScene(const std::vector<SWorkspaceSpec>& workspaces, int64_t activeW
     return result;
 }
 
+int windowGridColumns(size_t count, int requestedColumns) {
+    if (count == 0)
+        return 1;
+    const int automatic = static_cast<int>(std::ceil(std::sqrt(static_cast<double>(count))));
+    return std::clamp(requestedColumns > 0 ? requestedColumns : automatic, 1, static_cast<int>(count));
+}
+
+SScene buildWindowGridScene(int64_t workspaceID, const std::vector<SWindowGridItem>& items, const SWindowGridConfig& config) {
+    SScene result;
+    if (!finitePositive(config.viewportWidth) || !finitePositive(config.viewportHeight) || !finiteNonNegative(config.margin) || !finiteNonNegative(config.gap)) {
+        result.error = "invalid window grid geometry";
+        return result;
+    }
+
+    const SRect viewport{0.0, 0.0, config.viewportWidth, config.viewportHeight};
+    result.workspaces.push_back({.workspaceID = workspaceID, .kind = items.empty() ? EWorkspaceKind::Empty : EWorkspaceKind::Scrolling, .direction = EDirection::Right, .box = viewport});
+    result.contentHeight = config.viewportHeight;
+    result.valid         = true;
+    if (items.empty())
+        return result;
+
+    const int    columns = windowGridColumns(items.size(), config.columns);
+    const int    rows    = static_cast<int>((items.size() + columns - 1) / columns);
+    const double cellW   = (config.viewportWidth - 2.0 * config.margin - (columns - 1) * config.gap) / columns;
+    const double cellH   = (config.viewportHeight - 2.0 * config.margin - (rows - 1) * config.gap) / rows;
+    if (!finitePositive(cellW) || !finitePositive(cellH)) {
+        result = {};
+        result.error = "window grid cells do not fit the viewport";
+        return result;
+    }
+
+    for (size_t i = 0; i < items.size(); ++i) {
+        const int row = static_cast<int>(i) / columns;
+        const int col = static_cast<int>(i) % columns;
+        // A partial last row is centered rather than left-aligned.
+        const int    inRow  = row == rows - 1 ? static_cast<int>(items.size()) - row * columns : columns;
+        const double rowW   = inRow * cellW + (inRow - 1) * config.gap;
+        const double cellX  = (config.viewportWidth - rowW) / 2.0 + col * (cellW + config.gap);
+        const double cellY  = config.margin + row * (cellH + config.gap);
+        const auto&  size   = items[i].size;
+        double       w      = cellW;
+        double       h      = cellH;
+        if (finitePositive(size.w) && finitePositive(size.h)) {
+            const double scale = std::min(cellW / size.w, cellH / size.h);
+            w                  = size.w * scale;
+            h                  = size.h * scale;
+        }
+
+        SSceneTarget target;
+        target.token             = items[i].token;
+        target.nativeColumnIndex = i;
+        target.box               = {cellX + (cellW - w) / 2.0, cellY + (cellH - h) / 2.0, w, h};
+        target.workspaceID       = workspaceID;
+        result.targets.push_back(target);
+    }
+    return result;
+}
+
 double clampPan(const SScene& scene, double pan, double viewportHeight) {
     if (!scene.valid || !std::isfinite(pan) || !finitePositive(viewportHeight))
         return 0.0;
@@ -230,6 +288,17 @@ double panBy(const SScene& scene, double currentPan, double delta, double viewpo
     if (!std::isfinite(delta))
         return clampPan(scene, currentPan, viewportHeight);
     return clampPan(scene, currentPan + delta, viewportHeight);
+}
+
+std::optional<SRect> fitWindowPreview(SSize windowPixels, SSize capturePixels) {
+    if (!finitePositive(windowPixels.w) || !finitePositive(windowPixels.h) || !finitePositive(capturePixels.w) || !finitePositive(capturePixels.h))
+        return std::nullopt;
+    const double scale = std::min(capturePixels.w / windowPixels.w, capturePixels.h / windowPixels.h);
+    if (!finitePositive(scale))
+        return std::nullopt;
+    const double width = std::min(capturePixels.w, windowPixels.w * scale);
+    const double height = std::min(capturePixels.h, windowPixels.h * scale);
+    return SRect{(capturePixels.w - width) / 2.0, (capturePixels.h - height) / 2.0, width, height};
 }
 
 SHitResult hitTest(const SScene& scene, SPoint viewportPoint, double pan) {
@@ -312,6 +381,25 @@ SFocusRef moveFocus(const SScene& scene, const SFocusRef& current, EFocusDirecti
         return a.candidate->stableOrder < b.candidate->stableOrder;
     });
     return best->candidate->ref;
+}
+
+SFocusRef focusAfterRefresh(const SScene& scene, const SFocusRef& current, int64_t activeWorkspaceID) {
+    if (!scene.valid)
+        return {};
+    const auto candidates = focusCandidates(scene);
+    const auto retained = std::find_if(candidates.begin(), candidates.end(), [&current](const auto& candidate) {
+        return candidate.ref.kind == current.kind && candidate.ref.workspaceID == current.workspaceID && candidate.ref.targetToken == current.targetToken;
+    });
+    if (retained != candidates.end())
+        return retained->ref;
+
+    // A removed target should not pull navigation out of its surviving workspace.
+    for (const auto workspaceID : {current.workspaceID, activeWorkspaceID}) {
+        const auto fallback = std::find_if(candidates.begin(), candidates.end(), [workspaceID](const auto& candidate) { return candidate.ref.workspaceID == workspaceID; });
+        if (fallback != candidates.end())
+            return fallback->ref;
+    }
+    return candidates.empty() ? SFocusRef{} : candidates.front().ref;
 }
 
 size_t adjustDestinationColumnIndex(size_t sourceColumn, size_t destinationColumn, bool sourceColumnRemoved) {
