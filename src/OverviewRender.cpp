@@ -785,9 +785,12 @@ void COverview::renderWindowIcons(Render::CRenderContext& ctx, int id, const CBo
     if (!HyprlandAPI::intValue("plugin:hyprexpo:window_icon_enable"))
         return;
 
+    // Window positions map through the workspace's own output, since captureWorkspacePreview() renders a
+    // foreign workspace on its owner; sizes use this overview's scale, since tileBox is in its pixels.
+    const auto MON       = pMonitor.lock();
     const auto WORKSPACE = workspaceForTile(id);
-    const auto MON       = WORKSPACE && WORKSPACE->m_monitor ? WORKSPACE->m_monitor.lock() : pMonitor.lock();
-    if (!WORKSPACE || !MON || MON->m_size.x <= 0 || MON->m_size.y <= 0)
+    const auto SOURCE    = WORKSPACE && WORKSPACE->m_monitor ? WORKSPACE->m_monitor.lock() : MON;
+    if (!MON || !WORKSPACE || !SOURCE || SOURCE->m_size.x <= 0 || SOURCE->m_size.y <= 0)
         return;
 
     const auto   POSITION = HyprlandAPI::stringValue("plugin:hyprexpo:window_icon_position");
@@ -797,33 +800,41 @@ void COverview::renderWindowIcons(Render::CRenderContext& ctx, int id, const CBo
     const double OFFX     = HyprlandAPI::intValue("plugin:hyprexpo:window_icon_offset_x") * SCALE;
     const double OFFY     = HyprlandAPI::intValue("plugin:hyprexpo:window_icon_offset_y") * SCALE;
     const bool   BG       = HyprlandAPI::intValue("plugin:hyprexpo:window_icon_bg_enable");
-    const double PAD      = HyprlandAPI::intValue("plugin:hyprexpo:window_icon_padding") * SCALE;
+    const double PAD      = BG ? HyprlandAPI::intValue("plugin:hyprexpo:window_icon_padding") * SCALE : 0.0;
     const int    ROUND    = (int)std::lround(HyprlandAPI::intValue("plugin:hyprexpo:window_icon_bg_rounding") * SCALE);
     CHyprColor   bgColor{(uint64_t)HyprlandAPI::intValue("plugin:hyprexpo:window_icon_bg_color")};
     bgColor.a *= alpha;
 
-    const double SX = tileBox.w / MON->m_size.x;
-    const double SY = tileBox.h / MON->m_size.y;
+    const Hyprexpo::SRect TILE{tileBox.x, tileBox.y, tileBox.w, tileBox.h};
+    const double          SX = tileBox.w / SOURCE->m_size.x;
+    const double          SY = tileBox.h / SOURCE->m_size.y;
     for (const auto& window : Desktop::windowState()->windows()) {
         if (!windowVisibleOnWorkspace(window, WORKSPACE))
+            continue;
+
+        // Only the part of the window shown in this tile counts; off-screen columns and floats hanging off the
+        // output edge must not paint over the neighbouring tile.
+        const auto            WIN = window->getWindowMainSurfaceBox();
+        const Hyprexpo::SRect preview{tileBox.x + (WIN.x - SOURCE->m_position.x) * SX, tileBox.y + (WIN.y - SOURCE->m_position.y) * SY, WIN.w * SX, WIN.h * SY};
+        const auto            VISIBLE = Hyprexpo::intersectRects(preview, TILE);
+        if (!VISIBLE)
+            continue;
+
+        const auto            BOX = Hyprexpo::windowIconBox(*VISIBLE, POSITION, MAXPX, **PRATIO, OFFX, OFFY);
+        const Hyprexpo::SRect BGBOX{BOX.x - PAD, BOX.y - PAD, BOX.w + 2 * PAD, BOX.h + 2 * PAD};
+        if (BOX.w < 1 || !Hyprexpo::rectContains(TILE, BGBOX))
             continue;
 
         const auto TEX = windowIconTexture(window, MAXPX);
         if (!TEX)
             continue;
 
-        const auto            WIN = window->getWindowMainSurfaceBox();
-        const Hyprexpo::SRect preview{tileBox.x + (WIN.x - MON->m_position.x) * SX, tileBox.y + (WIN.y - MON->m_position.y) * SY, WIN.w * SX, WIN.h * SY};
-        const auto            BOX = Hyprexpo::windowIconBox(preview, POSITION, MAXPX, **PRATIO, OFFX, OFFY);
-        if (BOX.w < 1)
-            continue;
-
-        CBox icon{BOX.x, BOX.y, BOX.w, BOX.h};
         if (BG) {
-            CBox bg = icon;
-            bg.expand(PAD).round();
+            CBox bg{BGBOX.x, BGBOX.y, BGBOX.w, BGBOX.h};
+            bg.round();
             Render::GL::g_pHyprOpenGL->renderRect(ctx, bg, bgColor, {.round = std::min(ROUND, (int)(bg.w / 2))});
         }
+        CBox icon{BOX.x, BOX.y, BOX.w, BOX.h};
         Render::GL::g_pHyprOpenGL->renderTexture(ctx, TEX, icon.round(), {.a = alpha});
     }
 }

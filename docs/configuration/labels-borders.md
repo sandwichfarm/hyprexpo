@@ -85,7 +85,7 @@ Selection labels are optional overlays used by `hyprexpo:kb_select`. They let no
 
 ## Window Icons
 
-Draws each window's app icon over its spot in the workspace tile. The icon comes from the window's `.desktop` entry (file name or `StartupWMClass` matching the window class; Chromium `--app` windows match by the URL in `Exec`), falling back to the entry of the process that owns the window. Icons are looked up in the GTK icon theme, `hicolor`, then `pixmaps`.
+Draws each window's app icon over its spot in the workspace tile. The icon comes from the window's `.desktop` entry (file name or `StartupWMClass` matching the window class; Chromium `--app` windows match by the URL in `Exec`), falling back to the entry of the process that owns the window. Icons are looked up in the GTK icon theme, `hicolor`, then `pixmaps`. The lookup index is built on first use and rebuilt on config reload, so a newly installed app or icon shows up after `hyprctl reload`. Windows that only partly fit in a tile get their icon in the visible part; windows outside the tile get none.
 
 | key | type | description | default |
 | --- | --- | --- | --- |

@@ -21,6 +21,7 @@ set(HYPREXPO_SRC
     src/ExpoGesture.cpp
     src/OverviewPassElement.cpp
     src/WindowIcons.cpp
+    src/IconIndex.cpp
     src/HyprexpoLogic.cpp
     src/ScrollingOverviewLogic.cpp
     src/ScrollingMutationTransaction.cpp
@@ -76,6 +77,7 @@ target_link_libraries(hyprexpo PRIVATE rt PkgConfig::deps PkgConfig::HYPREXPO_LU
 enable_testing()
 add_executable(HyprexpoLogicTests
     src/HyprexpoLogic.cpp
+    src/IconIndex.cpp
     src/ScrollingOverviewLogic.cpp
     src/ScrollingInputState.cpp
     src/ScrollingMutationTransaction.cpp

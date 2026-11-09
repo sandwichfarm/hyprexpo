@@ -1,4 +1,5 @@
 #include "../src/HyprexpoLogic.hpp"
+#include "../src/IconIndex.hpp"
 #include "../src/HyprexpoConfig.hpp"
 #include "../src/ScrollingOverviewLogic.hpp"
 #include "../src/ScrollingInputState.hpp"
@@ -9,6 +10,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
+#include <unistd.h>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -1363,6 +1367,62 @@ int main() {
 
         const auto TL = Hyprexpo::windowIconBox(WINDOW, "top-left", 128, 0.3, 6, 8);
         expect(TL.x == 106 && TL.y == 58, "top-left icon is offset from the window origin");
+    }
+
+    // --- clipping icons to the tile ---
+    {
+        const Hyprexpo::SRect TILE{0, 0, 100, 100};
+        const auto            HALF = Hyprexpo::intersectRects({50, 50, 100, 100}, TILE);
+        expect(HALF && HALF->x == 50 && HALF->w == 50 && HALF->h == 50, "a window hanging off the tile keeps only its visible part");
+        expect(!Hyprexpo::intersectRects({120, 0, 50, 50}, TILE), "an off-screen window has no visible part");
+        expect(!Hyprexpo::intersectRects({100, 0, 50, 50}, TILE), "touching edges do not overlap");
+        expect(Hyprexpo::rectContains(TILE, {10, 10, 80, 80}), "an inner rect is contained");
+        expect(!Hyprexpo::rectContains(TILE, {-1, 10, 20, 20}), "a rect crossing the edge is not contained");
+    }
+
+    // --- app icon index ---
+    {
+        namespace fs   = std::filesystem;
+        const auto ROOT = fs::temp_directory_path() / ("hyprexpo-icon-index-" + std::to_string(::getpid()));
+        auto       write = [&](const fs::path& rel, const std::string& text = "") {
+            fs::create_directories((ROOT / rel).parent_path());
+            std::ofstream(ROOT / rel) << text;
+        };
+
+        write("user/applications/zen.desktop", "[Desktop Entry]\nIcon=zen-browser\n");
+        write("user/applications/teams.desktop", "[Desktop Entry]\nExec=launch-webapp \"https://teams.cloud.microsoft/\"\nIcon=teams\n");
+        write("user/applications/vm.desktop", "[Desktop Entry]\nStartupWMClass=Windows-VM\nIcon=" + (ROOT / "art/vm.png").string() + "\n");
+        write("user/applications/broken.desktop", "[Desktop Entry]\nStartupWMClass=broken\nIcon=" + (ROOT / "missing.png").string() + "\n");
+        write("user/applications/other.desktop", "[Other Group]\nIcon=wrong-group\n");
+        write("sys/applications/zen.desktop", "[Desktop Entry]\nIcon=system-zen\n");
+        write("art/vm.png");
+        write("theme-home/MyTheme/16x16/apps/zen-browser.png");
+        write("sys/icons/hicolor/256x256/apps/zen-browser.png");
+        write("sys/icons/hicolor/48x48/apps/foot.png");
+        write("sys/icons/hicolor/256x256/apps/foot.png");
+        write("sys/icons/hicolor/512x512/apps/teams.png");
+        write("sys/icons/hicolor/scalable/apps/teams.svg");
+        write("sys/pixmaps/vscode.png");
+
+        const Hyprexpo::CIconIndex INDEX({
+            .dataDirs = {ROOT / "user", ROOT / "sys"},
+            .iconDirs = {ROOT / "theme-home"},
+            .themes   = {"MyTheme", "hicolor"},
+        });
+        auto icon = [&](const std::string& name) { return INDEX.iconFor(name).value_or(fs::path{}).lexically_relative(ROOT).string(); };
+
+        expect(icon("zen") == "theme-home/MyTheme/16x16/apps/zen-browser.png", "user .desktop entry wins and the GTK theme beats hicolor");
+        expect(icon("ZEN") == icon("zen"), "class lookup ignores case");
+        expect(icon("chrome-teams.cloud.microsoft__-Default") == "sys/icons/hicolor/scalable/apps/teams.svg", "web app found by host in Exec; svg beats a bigger png");
+        expect(icon("Windows-VM") == "art/vm.png", "StartupWMClass match with an absolute Icon path");
+        expect(icon("foot") == "sys/icons/hicolor/256x256/apps/foot.png", "a name without an entry is used as the icon name; largest bitmap wins");
+        expect(icon("vscode") == "sys/pixmaps/vscode.png", "pixmaps is the last resort");
+        expect(!INDEX.iconFor("broken"), "entries pointing at a missing file are skipped");
+        expect(!INDEX.iconFor("other"), "only the [Desktop Entry] group is read");
+        expect(!INDEX.iconFor(""), "an empty class has no icon");
+        expect(!INDEX.iconFor("unknown-app"), "unknown names have no icon");
+
+        fs::remove_all(ROOT);
     }
 
     // --- chromium web app classes ---

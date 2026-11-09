@@ -156,6 +156,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 
     static auto PCFG = Event::bus()->m_events.config.reloaded.listen([]() {
         Hyprexpo::Capture::notifyOverviewCaptureConfigReload();
+        clearWindowIconCache(); // picks up newly installed apps and icon theme changes
         forEachOverview([](IOverviewSession& overview) { overview.onConfigReload(); });
         syncExpoGestureFromConfig();
     });

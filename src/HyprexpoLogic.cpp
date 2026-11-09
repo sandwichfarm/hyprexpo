@@ -827,6 +827,20 @@ SRect windowIconBox(const SRect& window, const std::string& position, double max
     return box;
 }
 
+std::optional<SRect> intersectRects(const SRect& a, const SRect& b) {
+    const double X1 = std::max(a.x, b.x);
+    const double Y1 = std::max(a.y, b.y);
+    const double X2 = std::min(a.x + a.w, b.x + b.w);
+    const double Y2 = std::min(a.y + a.h, b.y + b.h);
+    if (X2 <= X1 || Y2 <= Y1)
+        return std::nullopt;
+    return SRect{X1, Y1, X2 - X1, Y2 - Y1};
+}
+
+bool rectContains(const SRect& outer, const SRect& inner) {
+    return inner.x >= outer.x && inner.y >= outer.y && inner.x + inner.w <= outer.x + outer.w && inner.y + inner.h <= outer.y + outer.h;
+}
+
 std::string chromiumAppHost(const std::string& windowClass) {
     const std::string PREFIX = "chrome-";
     const auto        END    = windowClass.find("__");
