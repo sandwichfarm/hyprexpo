@@ -19,13 +19,13 @@ CXXFLAGS = -shared -fPIC -g -std=c++2b -Wno-c++11-narrowing -Wno-narrowing
 PKG_CONFIG ?= pkg-config
 # Match Hyprland 0.57's Lua ABI, even when several Lua development packages exist.
 LUA_PKG_CONFIG ?= $(shell for pkg in lua lua5.5 lua55 lua-5.5 lua-55; do if $(PKG_CONFIG) --exists "$$pkg >= 5.5" "$$pkg < 5.6"; then printf '%s' "$$pkg"; break; fi; done)
-PKG_CONFIG_DEPS = pixman-1 libdrm hyprland pangocairo libinput libudev wayland-server xkbcommon $(LUA_PKG_CONFIG)
-LINK_DEPS = pangocairo xkbcommon $(LUA_PKG_CONFIG)
+PKG_CONFIG_DEPS = pixman-1 libdrm hyprland pangocairo hyprgraphics libinput libudev wayland-server xkbcommon $(LUA_PKG_CONFIG)
+LINK_DEPS = pangocairo hyprgraphics xkbcommon $(LUA_PKG_CONFIG)
 INCLUDES = $(shell $(PKG_CONFIG) --cflags $(PKG_CONFIG_DEPS))
 LIBS = $(shell $(PKG_CONFIG) --libs $(LINK_DEPS))
 
-SRC = src/main.cpp src/Dispatchers.cpp src/PluginConfig.cpp src/IOverviewSession.cpp src/Overview.cpp src/OverviewInteraction.cpp src/OverviewRender.cpp src/OverviewCapture.cpp src/ScrollingOverview.cpp src/ScrollingInputState.cpp src/ExpoGesture.cpp src/OverviewPassElement.cpp src/HyprexpoLogic.cpp src/ScrollingOverviewLogic.cpp src/ScrollingMutationTransaction.cpp src/ScrollingLayoutAdapter.cpp src/ScrollingDiagnostics.cpp
-HEADERS = src/globals.hpp src/Dispatchers.hpp src/PluginConfig.hpp src/HyprlandConfigCompat.hpp src/IOverviewSession.hpp src/Overview.hpp src/OverviewInternal.hpp src/OverviewCapture.hpp src/ScrollingOverview.hpp src/ScrollingInputState.hpp src/ScrollingRequestId.hpp src/ExpoGesture.hpp src/OverviewPassElement.hpp src/HyprexpoConfig.hpp src/HyprexpoLogic.hpp src/ScrollingOverviewLogic.hpp src/ScrollingMutationTransaction.hpp src/ScrollingLayoutAdapter.hpp src/ScrollingDiagnostics.hpp
+SRC = src/main.cpp src/Dispatchers.cpp src/PluginConfig.cpp src/IOverviewSession.cpp src/Overview.cpp src/OverviewInteraction.cpp src/OverviewRender.cpp src/OverviewCapture.cpp src/ScrollingOverview.cpp src/ScrollingInputState.cpp src/ExpoGesture.cpp src/OverviewPassElement.cpp src/WindowIcons.cpp src/HyprexpoLogic.cpp src/ScrollingOverviewLogic.cpp src/ScrollingMutationTransaction.cpp src/ScrollingLayoutAdapter.cpp src/ScrollingDiagnostics.cpp
+HEADERS = src/globals.hpp src/Dispatchers.hpp src/PluginConfig.hpp src/HyprlandConfigCompat.hpp src/IOverviewSession.hpp src/Overview.hpp src/OverviewInternal.hpp src/OverviewCapture.hpp src/ScrollingOverview.hpp src/ScrollingInputState.hpp src/ScrollingRequestId.hpp src/ExpoGesture.hpp src/OverviewPassElement.hpp src/WindowIcons.hpp src/HyprexpoConfig.hpp src/HyprexpoLogic.hpp src/ScrollingOverviewLogic.hpp src/ScrollingMutationTransaction.hpp src/ScrollingLayoutAdapter.hpp src/ScrollingDiagnostics.hpp
 HEADERS += src/PreviewFramebuffer.hpp src/PreviewMonitorGeometry.hpp
 TARGET = hyprexpo.so
 TEST_TARGET = HyprexpoLogicTests

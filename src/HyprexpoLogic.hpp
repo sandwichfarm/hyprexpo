@@ -239,4 +239,10 @@ int                      resolveLabelFontSize(int modernValue, bool modernSetByU
 SWorkspaceMethodSpec     parseWorkspaceMethodSpec(const std::string& method);
 SWorkspaceMethodSpec     resolveWorkspaceMethodForMonitor(const std::string& config, const std::string& monitorName);
 
+// Icon box inside a window preview: a square of min(maxSize, sizeRatio * shorter side), anchored at
+// `position` (center, top-left, top-right, bottom-left, bottom-right; '_' works as '-') and moved inward by the offsets.
+SRect                    windowIconBox(const SRect& window, const std::string& position, double maxSize, double sizeRatio, double offsetX, double offsetY);
+// Host part of a Chromium --app window class ("chrome-teams.cloud.microsoft__-Default" -> "teams.cloud.microsoft"), or "".
+std::string              chromiumAppHost(const std::string& windowClass);
+
 }

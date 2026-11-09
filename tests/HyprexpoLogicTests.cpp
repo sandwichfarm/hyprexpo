@@ -1347,6 +1347,32 @@ int main() {
         expect(SUBSTRING.command == "install", "non-qualifier command is unchanged");
     }
 
+    // --- window icon placement ---
+    {
+        const Hyprexpo::SRect WINDOW{100, 50, 400, 200};
+
+        const auto CENTER = Hyprexpo::windowIconBox(WINDOW, "center", 128, 0.3, 0, 0);
+        expect(CENTER.w == 60 && CENTER.h == 60, "icon side is the ratio of the shorter window side");
+        expect(CENTER.x == 270 && CENTER.y == 120, "center icon sits in the middle of the window");
+
+        const auto CAPPED = Hyprexpo::windowIconBox(WINDOW, "center", 40, 0.3, 0, 0);
+        expect(CAPPED.w == 40, "icon side never exceeds the max size");
+
+        const auto BR = Hyprexpo::windowIconBox(WINDOW, "bottom_right", 128, 0.3, 6, 8);
+        expect(BR.x == 434 && BR.y == 182, "corner icons move inward by the offsets; '_' is accepted");
+
+        const auto TL = Hyprexpo::windowIconBox(WINDOW, "top-left", 128, 0.3, 6, 8);
+        expect(TL.x == 106 && TL.y == 58, "top-left icon is offset from the window origin");
+    }
+
+    // --- chromium web app classes ---
+    {
+        expect(Hyprexpo::chromiumAppHost("chrome-teams.cloud.microsoft__-Default") == "teams.cloud.microsoft", "web app class yields its host");
+        expect(Hyprexpo::chromiumAppHost("chrome-app.example.com__path-Profile_1") == "app.example.com", "path and profile are dropped");
+        expect(Hyprexpo::chromiumAppHost("chromium").empty(), "browser class is not a web app");
+        expect(Hyprexpo::chromiumAppHost("chrome-__x").empty(), "empty host is rejected");
+    }
+
     if (failures != 0)
         return 1;
 

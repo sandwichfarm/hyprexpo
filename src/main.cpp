@@ -11,6 +11,7 @@
 #include "globals.hpp"
 #include "IOverviewSession.hpp"
 #include "OverviewCapture.hpp"
+#include "WindowIcons.hpp"
 #include "PluginConfig.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -178,6 +179,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     ctx.m_pass.removeAllOfType("COverviewPassElement");
     if (ctx.m_currentPass && ctx.m_currentPass != &ctx.m_pass)
         ctx.m_currentPass->removeAllOfType("COverviewPassElement");
+    clearWindowIconCache();
 
     Config::mgr()->reload();
     resetDispatcherRuntime();

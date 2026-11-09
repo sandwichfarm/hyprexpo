@@ -20,6 +20,7 @@ set(HYPREXPO_SRC
     src/ScrollingInputState.cpp
     src/ExpoGesture.cpp
     src/OverviewPassElement.cpp
+    src/WindowIcons.cpp
     src/HyprexpoLogic.cpp
     src/ScrollingOverviewLogic.cpp
     src/ScrollingMutationTransaction.cpp
@@ -65,6 +66,7 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
     libinput
     libudev
     pangocairo
+    hyprgraphics
     pixman-1
     wayland-server
     xkbcommon

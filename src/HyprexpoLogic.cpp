@@ -809,4 +809,30 @@ SWorkspaceMethodSpec resolveWorkspaceMethodForMonitor(const std::string& config,
     return invalid;
 }
 
+SRect windowIconBox(const SRect& window, const std::string& position, double maxSize, double sizeRatio, double offsetX, double offsetY) {
+    const double SIDE = std::max(0.0, std::min(maxSize, sizeRatio * std::min(window.w, window.h)));
+
+    auto anchor = lowerString(trimString(position));
+    std::replace(anchor.begin(), anchor.end(), '_', '-');
+
+    SRect box{window.x + (window.w - SIDE) / 2.0 + offsetX, window.y + (window.h - SIDE) / 2.0 + offsetY, SIDE, SIDE};
+    if (anchor.starts_with("top"))
+        box.y = window.y + offsetY;
+    else if (anchor.starts_with("bottom"))
+        box.y = window.y + window.h - SIDE - offsetY;
+    if (anchor.ends_with("left"))
+        box.x = window.x + offsetX;
+    else if (anchor.ends_with("right"))
+        box.x = window.x + window.w - SIDE - offsetX;
+    return box;
+}
+
+std::string chromiumAppHost(const std::string& windowClass) {
+    const std::string PREFIX = "chrome-";
+    const auto        END    = windowClass.find("__");
+    if (!windowClass.starts_with(PREFIX) || END == std::string::npos || END <= PREFIX.size())
+        return "";
+    return windowClass.substr(PREFIX.size(), END - PREFIX.size());
+}
+
 }
