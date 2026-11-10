@@ -11,6 +11,7 @@
 #include "globals.hpp"
 #include "IOverviewSession.hpp"
 #include "OverviewCapture.hpp"
+#include "WindowIcons.hpp"
 #include "OverviewBackground.hpp"
 #include "PluginConfig.hpp"
 #include <algorithm>
@@ -157,6 +158,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     static auto PCFG = Event::bus()->m_events.config.reloaded.listen([]() {
         clearOverviewBackgroundCache();
         Hyprexpo::Capture::notifyOverviewCaptureConfigReload();
+        clearWindowIconCache(); // picks up newly installed apps and icon theme changes
         forEachOverview([](IOverviewSession& overview) { overview.onConfigReload(); });
         syncExpoGestureFromConfig();
     });
@@ -181,6 +183,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     ctx.m_pass.removeAllOfType("COverviewPassElement");
     if (ctx.m_currentPass && ctx.m_currentPass != &ctx.m_pass)
         ctx.m_currentPass->removeAllOfType("COverviewPassElement");
+    clearWindowIconCache();
 
     Config::mgr()->reload();
     resetDispatcherRuntime();
