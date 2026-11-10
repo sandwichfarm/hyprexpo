@@ -21,7 +21,7 @@
   ],
   "tracker": {
     "repository": "sandwichfarm/hyprexpo",
-    "number": 123,
+    "number": 191,
     "base": "master",
     "head": "hyprland-git"
   }
