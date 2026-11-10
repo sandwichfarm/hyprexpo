@@ -21,6 +21,8 @@ set(HYPREXPO_SRC
     src/ScrollingInputState.cpp
     src/ExpoGesture.cpp
     src/OverviewPassElement.cpp
+    src/WindowIcons.cpp
+    src/IconIndex.cpp
     src/HyprexpoLogic.cpp
     src/ScrollingOverviewLogic.cpp
     src/ScrollingMutationTransaction.cpp
@@ -82,6 +84,7 @@ add_executable(BackgroundImageTests tests/BackgroundImageTests.cpp)
 add_test(NAME BackgroundImageTests COMMAND BackgroundImageTests)
 add_executable(HyprexpoLogicTests
     src/HyprexpoLogic.cpp
+    src/IconIndex.cpp
     src/ScrollingOverviewLogic.cpp
     src/ScrollingInputState.cpp
     src/ScrollingMutationTransaction.cpp

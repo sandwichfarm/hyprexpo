@@ -82,3 +82,20 @@ Selection labels are optional overlays used by `hyprexpo:kb_select`. They let no
 | `plugin:hyprexpo:selection_label_token_map` | string | comma-separated tokens by visible tile order; empty entries skip | `a,s,d,f,g,q,w,e,r,t,z,x,c,v,b` |
 | `plugin:hyprexpo:selection_label_position` | string | label anchor | `top-right` |
 | `plugin:hyprexpo:selection_label_color` | color | selection-token text color | `rgb(ffcc66)` |
+
+## Window Icons
+
+Draws each window's app icon over its spot in the workspace tile. The icon comes from the window's `.desktop` entry (file name or `StartupWMClass` matching the window class; Chromium `--app` windows match by the URL in `Exec`), falling back to the entry of the process that owns the window. Icons are looked up in the GTK icon theme, `hicolor`, then `pixmaps`. The lookup index is built on first use and rebuilt on config reload, so a newly installed app or icon shows up after `hyprctl reload`. Windows that only partly fit in a tile get their icon in the visible part; windows outside the tile get none.
+
+| key | type | description | default |
+| --- | --- | --- | --- |
+| `plugin:hyprexpo:window_icon_enable` | bool int | draw app icons on window previews | `0` |
+| `plugin:hyprexpo:window_icon_position` | string | `center`, `top-left`, `top-right`, `bottom-left`, or `bottom-right` | `center` |
+| `plugin:hyprexpo:window_icon_size` | int | maximum icon size in logical px | `128` |
+| `plugin:hyprexpo:window_icon_size_ratio` | float | icon size as a share of the preview's shorter side, capped by `window_icon_size` | `0.3` |
+| `plugin:hyprexpo:window_icon_offset_x` | int | inward offset from the anchor | `0` |
+| `plugin:hyprexpo:window_icon_offset_y` | int | inward offset from the anchor | `0` |
+| `plugin:hyprexpo:window_icon_bg_enable` | bool int | draw a background behind icons | `1` |
+| `plugin:hyprexpo:window_icon_bg_color` | color | icon background color | `rgba(00000099)` |
+| `plugin:hyprexpo:window_icon_bg_rounding` | int | icon background corner radius | `16` |
+| `plugin:hyprexpo:window_icon_padding` | int | padding between icon and background edge | `8` |

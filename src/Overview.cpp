@@ -77,6 +77,7 @@ static bool isStringConfig(const std::string& name) {
         {"plugin:hyprexpo:border_grad_current", true},
         {"plugin:hyprexpo:border_grad_focus", true},
         {"plugin:hyprexpo:border_grad_hover", true},
+        {"plugin:hyprexpo:window_icon_position", true},
     };
 
     return STRING_CONFIGS.contains(name);
@@ -85,7 +86,8 @@ static bool isStringConfig(const std::string& name) {
 static bool isFloatConfig(const std::string& name) {
     return name == "plugin:hyprexpo:tile_rounding_power" ||
            name == "plugin:hyprexpo:label_scale_hover" ||
-           name == "plugin:hyprexpo:label_scale_focus";
+           name == "plugin:hyprexpo:label_scale_focus" ||
+           name == "plugin:hyprexpo:window_icon_size_ratio";
 }
 
 static Config::STRING stringDefault(const std::string& name) {
@@ -114,6 +116,7 @@ static Config::STRING stringDefault(const std::string& name) {
         {"plugin:hyprexpo:border_grad_current", HyprexpoConfig::BORDER_GRAD_CURRENT_DEFAULT},
         {"plugin:hyprexpo:border_grad_focus", HyprexpoConfig::BORDER_GRAD_FOCUS_DEFAULT},
         {"plugin:hyprexpo:border_grad_hover", HyprexpoConfig::BORDER_GRAD_HOVER_DEFAULT},
+        {"plugin:hyprexpo:window_icon_position", HyprexpoConfig::WINDOW_ICON_POSITION_DEFAULT},
     };
 
     if (const auto it = DEFAULTS.find(name); it != DEFAULTS.end())
@@ -128,6 +131,8 @@ static Config::FLOAT floatDefault(const std::string& name) {
         return HyprexpoConfig::LABEL_SCALE_HOVER_DEFAULT;
     if (name == "plugin:hyprexpo:label_scale_focus")
         return HyprexpoConfig::LABEL_SCALE_FOCUS_DEFAULT;
+    if (name == "plugin:hyprexpo:window_icon_size_ratio")
+        return HyprexpoConfig::WINDOW_ICON_SIZE_RATIO_DEFAULT;
     return 0.0F;
 }
 
@@ -186,6 +191,14 @@ static Config::INTEGER intDefault(const std::string& name) {
         {"plugin:hyprexpo:label_text_strikethrough", HyprexpoConfig::LABEL_TEXT_STRIKETHROUGH_DEFAULT},
         {"plugin:hyprexpo:label_center_adjust_x", HyprexpoConfig::LABEL_CENTER_ADJUST_X_DEFAULT},
         {"plugin:hyprexpo:label_center_adjust_y", HyprexpoConfig::LABEL_CENTER_ADJUST_Y_DEFAULT},
+        {"plugin:hyprexpo:window_icon_enable", HyprexpoConfig::WINDOW_ICON_ENABLE_DEFAULT},
+        {"plugin:hyprexpo:window_icon_size", HyprexpoConfig::WINDOW_ICON_SIZE_DEFAULT},
+        {"plugin:hyprexpo:window_icon_offset_x", HyprexpoConfig::WINDOW_ICON_OFFSET_X_DEFAULT},
+        {"plugin:hyprexpo:window_icon_offset_y", HyprexpoConfig::WINDOW_ICON_OFFSET_Y_DEFAULT},
+        {"plugin:hyprexpo:window_icon_bg_enable", HyprexpoConfig::WINDOW_ICON_BG_ENABLE_DEFAULT},
+        {"plugin:hyprexpo:window_icon_bg_color", HyprexpoConfig::WINDOW_ICON_BG_COLOR_DEFAULT},
+        {"plugin:hyprexpo:window_icon_bg_rounding", HyprexpoConfig::WINDOW_ICON_BG_ROUNDING_DEFAULT},
+        {"plugin:hyprexpo:window_icon_padding", HyprexpoConfig::WINDOW_ICON_PADDING_DEFAULT},
     };
 
     if (const auto it = DEFAULTS.find(name); it != DEFAULTS.end())

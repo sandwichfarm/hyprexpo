@@ -239,4 +239,14 @@ int                      resolveLabelFontSize(int modernValue, bool modernSetByU
 SWorkspaceMethodSpec     parseWorkspaceMethodSpec(const std::string& method);
 SWorkspaceMethodSpec     resolveWorkspaceMethodForMonitor(const std::string& config, const std::string& monitorName);
 
+// Icon box inside a window preview: a square of min(maxSize, sizeRatio * shorter side), anchored at
+// `position` (center, top-left, top-right, bottom-left, bottom-right; '_' works as '-') and moved inward by the offsets.
+// Reserve padding inside the window for the background, shrinking the icon only when necessary to fit.
+SRect                    windowIconBox(const SRect& window, const std::string& position, double maxSize, double sizeRatio, double offsetX, double offsetY, double padding = 0.0);
+// Overlap of two rects, or nothing when they don't overlap.
+std::optional<SRect>     intersectRects(const SRect& a, const SRect& b);
+bool                     rectContains(const SRect& outer, const SRect& inner);
+// Host part of a Chromium --app window class ("chrome-teams.cloud.microsoft__-Default" -> "teams.cloud.microsoft"), or "".
+std::string              chromiumAppHost(const std::string& windowClass);
+
 }
