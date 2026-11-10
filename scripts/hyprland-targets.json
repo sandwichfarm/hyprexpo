@@ -7,6 +7,10 @@
     {
       "name": "v0.57.1",
       "rev": "acc1aa0bfd4bd575dcb0f76c35ccf12b660a1ab9"
+    },
+    {
+      "name": "v0.57.2",
+      "rev": "11cbc6c577b84ffb1edf4df3fc5b6128c3ae6947"
     }
   ],
   "development": [
