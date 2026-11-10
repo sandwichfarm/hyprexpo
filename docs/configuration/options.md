@@ -91,6 +91,66 @@ plugin {
 
 ## Layout and Behavior
 
+### Background Image
+
+The following options draw a custom image behind the entire overview in both
+grid and native scrolling sessions. They do not change workspace thumbnails.
+
+```ini
+plugin {
+    hyprexpo {
+        bg_image = ~/Pictures/wallpaper.jpg
+        bg_image_fit = cover
+        bg_image_blur = 8
+    }
+}
+```
+
+In `hyprland.lua`:
+
+```lua
+hl.config({
+    plugin = {
+        hyprexpo = {
+            bg_image = "~/Pictures/wallpaper.jpg",
+            bg_image_fit = "cover",
+            bg_image_blur = 8,
+        },
+    },
+})
+```
+
+- `bg_image`: image file path; default empty (disabled). Absolute paths and
+  `~/` paths are supported. Formats are provided by the installed Hyprgraphics
+  image loaders, including PNG, JPEG, and WebP where available.
+- `bg_image_fit`: `cover` (default) fills the monitor while preserving aspect
+  ratio and cropping centrally; `contain` shows the whole image with the existing
+  solid background visible in unused space; `stretch` fills without preserving
+  aspect ratio. Unknown values fall back to `cover` at runtime.
+- `bg_image_blur`: integer blur radius in output pixels, `0..64`, default `0`.
+  Three box-filter passes approximate Gaussian blur. Only the image is blurred;
+  windows, labels, and borders stay sharp.
+
+Each monitor fits the image independently. Up to four fitted, blurred textures
+are cached across overview sessions; loading and filtering do not run on every
+frame or when reopening a cached background.
+On a cache miss, image decoding, fitting, and blur run synchronously and can
+briefly pause compositor rendering. As a reference, blur alone at radius `8`
+took about `0.06` seconds at 1080p and `0.27` seconds at 4K in an optimized
+build on the review machine; decoding and upload add to that cost. Larger
+images and slower machines can take longer. Default plugin builds are
+optimized; use an explicit CMake `Debug` configuration or override Make's
+`CXXFLAGS` when an unoptimized build is needed.
+Reload the Hyprland configuration to apply changes, including replacement of
+the image at the same path. A monitor resolution change also rebuilds the texture.
+
+A custom image takes precedence over `wallpaper_bg` in the grid. Empty or
+unreadable paths retain the existing background: the grid uses `bg_col` and,
+when enabled and available, `wallpaper_bg`; scrolling retains its solid color.
+Image loading errors are reported in the compositor log.
+
+### General options
+
 | key | type | description | default |
 | --- | --- | --- | --- |
 | `plugin:hyprexpo:columns` | int | desktops per row, clamped to `1..7` | `3` |

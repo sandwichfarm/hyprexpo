@@ -21,6 +21,7 @@ Release builds attach `release-provenance.txt` next to `hyprexpo.so`. That file 
 | --- | --- |
 | v0.57.0 | `0aa6745f705f2c4b0a5004eb019ef76e5bbdb426` |
 | v0.57.1 | `acc1aa0bfd4bd575dcb0f76c35ccf12b660a1ab9` |
+| v0.57.2 | `11cbc6c577b84ffb1edf4df3fc5b6128c3ae6947` |
 
 Hyprland v0.56.1 (`5c9377c15f85c50648f35ca5a213754f95b93ca0`) and v0.56.2
 (`efb50993780079460b0cbed1363e2166a2de1d9f`) left the build matrix with the
@@ -79,7 +80,7 @@ untested.
 See [feature integration](./feature-integration.md) for the historical integration
 checkpoints, release revalidation and remaining test boundaries.
 
-The master flake pins Hyprland v0.57.1 (`acc1aa0bfd4bd575dcb0f76c35ccf12b660a1ab9`), one
+The master flake pins Hyprland v0.57.2 (`11cbc6c577b84ffb1edf4df3fc5b6128c3ae6947`), one
 of the compatibility targets above. The development branch retains its separately
 recorded input. Nix users should keep the plugin's
 Hyprland input aligned with their system input through `default.nix` and the
@@ -121,6 +122,6 @@ Port each API boundary with its existing behavior and tests preserved. Check
 window mapping, pinned-window save/restore, alpha animations, keybind modifiers,
 and exact-submap restoration when adopting the newer window/keybind APIs.
 Before merging any shared compatibility code, require the declared release
-build matrix (currently v0.57.0 and v0.57.1) to stay green and run a separate build/load test for the pinned
+build matrix (currently v0.57.0, v0.57.1 and v0.57.2) to stay green and run a separate build/load test for the pinned
 git revision. A future tagged release can become a supported default after
 those checks and matching nested interaction tests pass.
