@@ -177,6 +177,28 @@ In Lua, put these options inside the `plugin.hyprexpo` table passed to
 [labels and borders](docs/configuration/labels-borders.md), and
 [Lua gestures](docs/guides/lua-gestures.md) for complete examples.
 
+### Custom overview background
+
+Set an image behind the overview in your normal plugin configuration. This
+works with both grid and scrolling overviews:
+
+```ini
+plugin {
+    hyprexpo {
+        bg_image = ~/Pictures/wallpaper.jpg
+        bg_image_fit = cover
+        bg_image_blur = 8
+    }
+}
+```
+
+`bg_image_fit` accepts `cover` (fill and crop), `contain` (show the whole image),
+or `stretch`. `bg_image_blur` is a radius from `0` to `64` output pixels; `0`
+disables blur. Reload the Hyprland configuration after changing the path or
+settings. Remove `bg_image` or leave it empty to restore the existing background.
+See the [background options](docs/configuration/options.md#background-image)
+for Lua configuration and fallback behavior.
+
 ## Other Installation Methods
 
 ### Build From Source
@@ -185,7 +207,7 @@ Install a C++23 compiler, `pkg-config`, Hyprland development headers matching yo
 compositor, and these pkg-config packages:
 
 ```text
-hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua
+hyprland hyprgraphics pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua
 ```
 
 Hyprland 0.57 requires Lua 5.5. All build systems select a compatible generic

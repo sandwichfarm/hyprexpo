@@ -90,7 +90,7 @@ int main() {
 #include <memory>
 #include <string>
 #include <vector>
-static bool disabled = false, destroyed = false, reloaded = false;
+static bool disabled = false, destroyed = false, reloaded = false, backgroundsCleared = false;
 struct Pass {
     std::vector<std::string> elements = {"COverviewPassElement", "native", "COverviewPassElement"};
     int removals = 0;
@@ -105,8 +105,9 @@ struct Renderer { Context ctx; Context& context() { return ctx; } };
 static auto g_pHyprRenderer = std::make_unique<Renderer>();
 static void disableExpoGestureRegistration() { disabled = true; }
 static void destroyAllOverviews() { assert(disabled); destroyed = true; }
+static void clearOverviewBackgroundCache() { assert(destroyed); backgroundsCleared = true; }
 namespace Config {
-    struct Manager { void reload() { reloaded = true; } };
+    struct Manager { void reload() { assert(backgroundsCleared); reloaded = true; } };
     static Manager* mgr() { static Manager instance; return &instance; }
 }
 static void resetDispatcherRuntime() { assert(reloaded); }

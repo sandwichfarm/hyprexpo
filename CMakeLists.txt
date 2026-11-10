@@ -14,6 +14,7 @@ set(HYPREXPO_SRC
     src/IOverviewSession.cpp
     src/Overview.cpp
     src/OverviewInteraction.cpp
+    src/OverviewBackground.cpp
     src/OverviewRender.cpp
     src/OverviewCapture.cpp
     src/ScrollingOverview.cpp
@@ -61,6 +62,7 @@ message(STATUS "Using Lua pkg-config module: ${HYPREXPO_LUA_PKG_CONFIG_RESOLVED}
 
 pkg_check_modules(deps REQUIRED IMPORTED_TARGET
     hyprland
+    hyprgraphics
     libdrm
     libinput
     libudev
@@ -72,6 +74,8 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
 target_link_libraries(hyprexpo PRIVATE rt PkgConfig::deps PkgConfig::HYPREXPO_LUA)
 
 enable_testing()
+add_executable(BackgroundImageTests tests/BackgroundImageTests.cpp)
+add_test(NAME BackgroundImageTests COMMAND BackgroundImageTests)
 add_executable(HyprexpoLogicTests
     src/HyprexpoLogic.cpp
     src/ScrollingOverviewLogic.cpp

@@ -11,6 +11,7 @@
 #include "globals.hpp"
 #include "IOverviewSession.hpp"
 #include "OverviewCapture.hpp"
+#include "OverviewBackground.hpp"
 #include "PluginConfig.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -154,6 +155,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
     });
 
     static auto PCFG = Event::bus()->m_events.config.reloaded.listen([]() {
+        clearOverviewBackgroundCache();
         Hyprexpo::Capture::notifyOverviewCaptureConfigReload();
         forEachOverview([](IOverviewSession& overview) { overview.onConfigReload(); });
         syncExpoGestureFromConfig();
@@ -174,6 +176,7 @@ APICALL EXPORT void PLUGIN_EXIT() {
     disableExpoGestureRegistration();
 
     destroyAllOverviews();
+    clearOverviewBackgroundCache();
     auto& ctx = g_pHyprRenderer->context();
     ctx.m_pass.removeAllOfType("COverviewPassElement");
     if (ctx.m_currentPass && ctx.m_currentPass != &ctx.m_pass)
