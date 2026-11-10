@@ -66,10 +66,14 @@ class TargetContractTests(unittest.TestCase):
     def test_flake_input_and_lock_name_a_declared_exact_target(self):
         flake = re.search(r'rev = "([0-9a-f]{40})"', (ROOT / "flake.nix").read_text()).group(1)
         lock = json.loads((ROOT / "flake.lock").read_text())
-        hyprland = lock["nodes"][lock["nodes"][lock["root"]]["inputs"]["hyprland"]]["locked"]
+        hyprland_node = lock["nodes"][lock["nodes"][lock["root"]]["inputs"]["hyprland"]]
+        hyprland = hyprland_node["locked"]
         declared = ci.targets()
         revisions = {row["rev"] for track in ("release", "development") for row in declared[track]}
         self.assertEqual(flake, hyprland["rev"])
+        # An override can resolve the new source while retaining the old input
+        # identity, forcing Nix to rewrite the lock on a frozen evaluation.
+        self.assertEqual(flake, hyprland_node["original"]["rev"])
         self.assertIn(hyprland["rev"], revisions)
         self.assertTrue(hyprland.get("narHash"))
 

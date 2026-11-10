@@ -121,7 +121,7 @@ animation ends, then removes it behind a generation fence.
 ## Exact ABI and runtime procedure
 
 Scrolling access uses Hyprland internals. The release-first source target
-covers tagged Hyprland `v0.57.0` and `v0.57.1`; each artifact must be rebuilt
+covers tagged Hyprland `v0.57.0`, `v0.57.1` and `v0.57.2`; each artifact must be rebuilt
 against its exact compositor revision and dependencies.
 
 The retained runtime acceptance harness and isolated API probe are pinned to
