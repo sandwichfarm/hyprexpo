@@ -1,4 +1,5 @@
 #include "../src/HyprexpoLogic.hpp"
+#include "../src/IconIndex.hpp"
 #include "../src/HyprexpoConfig.hpp"
 #include "../src/ScrollingOverviewLogic.hpp"
 #include "../src/ScrollingInputState.hpp"
@@ -9,6 +10,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
+#include <unistd.h>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -1345,6 +1349,114 @@ int main() {
         const auto SUBSTRING = Hyprexpo::parseExpoCommand("install");
         expect(!SUBSTRING.allMonitors, "a command merely ending in the letters all is not a qualifier");
         expect(SUBSTRING.command == "install", "non-qualifier command is unchanged");
+    }
+
+    // --- window icon placement ---
+    {
+        const Hyprexpo::SRect WINDOW{100, 50, 400, 200};
+
+        const auto CENTER = Hyprexpo::windowIconBox(WINDOW, "center", 128, 0.3, 0, 0);
+        expect(CENTER.w == 60 && CENTER.h == 60, "icon side is the ratio of the shorter window side");
+        expect(CENTER.x == 270 && CENTER.y == 120, "center icon sits in the middle of the window");
+
+        const auto CAPPED = Hyprexpo::windowIconBox(WINDOW, "center", 40, 0.3, 0, 0);
+        expect(CAPPED.w == 40, "icon side never exceeds the max size");
+
+        const auto BR = Hyprexpo::windowIconBox(WINDOW, "bottom_right", 128, 0.3, 6, 8);
+        expect(BR.x == 434 && BR.y == 182, "corner icons move inward by the offsets; '_' is accepted");
+
+        const auto TL = Hyprexpo::windowIconBox(WINDOW, "top-left", 128, 0.3, 6, 8);
+        expect(TL.x == 106 && TL.y == 58, "top-left icon is offset from the window origin");
+    }
+
+    // --- clipping icons to the tile ---
+    {
+        const Hyprexpo::SRect TILE{0, 0, 100, 100};
+        const auto            HALF = Hyprexpo::intersectRects({50, 50, 100, 100}, TILE);
+        expect(HALF && HALF->x == 50 && HALF->w == 50 && HALF->h == 50, "a window hanging off the tile keeps only its visible part");
+        expect(!Hyprexpo::intersectRects({120, 0, 50, 50}, TILE), "an off-screen window has no visible part");
+        expect(!Hyprexpo::intersectRects({100, 0, 50, 50}, TILE), "touching edges do not overlap");
+        expect(Hyprexpo::rectContains(TILE, {10, 10, 80, 80}), "an inner rect is contained");
+        expect(!Hyprexpo::rectContains(TILE, {-1, 10, 20, 20}), "a rect crossing the edge is not contained");
+
+        for (const auto* anchor : {"center", "top-left", "top-right", "bottom-left", "bottom-right"}) {
+            const auto ICON = Hyprexpo::windowIconBox(TILE, anchor, 128, 0.3, 0, 0, 8);
+            expect(ICON.w == 30, "padding preserves the icon's requested ratio when it fits");
+            expect(Hyprexpo::rectContains(TILE, {ICON.x - 8, ICON.y - 8, ICON.w + 16, ICON.h + 16}), "all anchors keep the padded icon inside a tile-edge window");
+        }
+        const auto TINY = Hyprexpo::windowIconBox({0, 0, 10, 10}, "top-left", 128, 0.3, 0, 0, 8);
+        expect(TINY.w == 0, "a window smaller than its padding cannot show an icon");
+    }
+
+    // --- app icon index ---
+    {
+        namespace fs   = std::filesystem;
+        const auto ROOT = fs::temp_directory_path() / ("hyprexpo-icon-index-" + std::to_string(::getpid()));
+        auto       write = [&](const fs::path& rel, const std::string& text = "") {
+            fs::create_directories((ROOT / rel).parent_path());
+            std::ofstream(ROOT / rel) << text;
+        };
+
+        write("user/applications/zen.desktop", "[Desktop Entry]\nIcon=zen-browser\n");
+        write("user/applications/teams.desktop", "[Desktop Entry]\nExec=launch-webapp \"https://teams.cloud.microsoft/\"\nIcon=teams\n");
+        write("user/applications/vm.desktop", "[Desktop Entry]\nStartupWMClass=Windows-VM\nIcon=" + (ROOT / "art/vm.png").string() + "\n");
+        write("user/applications/broken.desktop", "[Desktop Entry]\nStartupWMClass=broken\nIcon=" + (ROOT / "missing.png").string() + "\n");
+        write("user/applications/other.desktop", "[Other Group]\nIcon=wrong-group\n");
+        write("sys/applications/zen.desktop", "[Desktop Entry]\nIcon=system-zen\n");
+        write("art/vm.png");
+        write("theme-home/MyTheme/16x16/apps/zen-browser.png");
+        write("sys/icons/hicolor/256x256/apps/zen-browser.png");
+        write("sys/icons/hicolor/48x48/apps/foot.png");
+        write("sys/icons/hicolor/256x256/apps/foot.png");
+        write("sys/icons/hicolor/512x512/apps/teams.png");
+        write("sys/icons/hicolor/scalable/apps/teams.svg");
+        write("sys/pixmaps/vscode.png");
+
+        const Hyprexpo::CIconIndex INDEX({
+            .dataDirs = {ROOT / "user", ROOT / "sys"},
+            .iconDirs = {ROOT / "theme-home"},
+            .themes   = {"MyTheme", "hicolor"},
+        });
+        auto icon = [&](const std::string& name) { return INDEX.iconFor(name).value_or(fs::path{}).lexically_relative(ROOT).string(); };
+
+        expect(icon("zen") == "theme-home/MyTheme/16x16/apps/zen-browser.png", "user .desktop entry wins and the GTK theme beats hicolor");
+        expect(icon("ZEN") == icon("zen"), "class lookup ignores case");
+        expect(icon("chrome-teams.cloud.microsoft__-Default") == "sys/icons/hicolor/scalable/apps/teams.svg", "web app found by host in Exec; svg beats a bigger png");
+        expect(icon("Windows-VM") == "art/vm.png", "StartupWMClass match with an absolute Icon path");
+        expect(icon("foot") == "sys/icons/hicolor/256x256/apps/foot.png", "a name without an entry is used as the icon name; largest bitmap wins");
+        expect(icon("vscode") == "sys/pixmaps/vscode.png", "pixmaps is the last resort");
+        expect(!INDEX.iconFor("broken"), "entries pointing at a missing file are skipped");
+        expect(!INDEX.iconFor("other"), "only the [Desktop Entry] group is read");
+        expect(!INDEX.iconFor(""), "an empty class has no icon");
+        expect(!INDEX.iconFor("unknown-app"), "unknown names have no icon");
+        expect(!INDEX.iconFor((ROOT / "art/vm.png").string()), "raw absolute app IDs cannot bypass the icon index");
+        expect(!INDEX.iconFor((ROOT / "missing.png").string()), "raw missing absolute paths are not icons");
+
+        fs::create_symlink("loop.png", ROOT / "art/loop.png");
+        write("user/applications/loop.desktop", "[Desktop Entry]\nIcon=" + (ROOT / "art/loop.png").string() + "\n");
+        write("user/applications/directory.desktop", "[Desktop Entry]\nIcon=" + (ROOT / "art").string() + "\n");
+        try {
+            const Hyprexpo::CIconIndex MALFORMED({
+                .dataDirs = {ROOT / "user", ROOT / "sys"},
+                .iconDirs = {ROOT / "theme-home"},
+                .themes   = {"MyTheme", "hicolor"},
+            });
+            expect(!MALFORMED.iconFor("loop"), "symlink-loop icon entries are skipped");
+            expect(!MALFORMED.iconFor("directory"), "absolute directory icons are skipped");
+            expect(MALFORMED.iconFor("zen").has_value(), "malformed entries do not hide valid icons");
+        } catch (const fs::filesystem_error&) {
+            expect(false, "malformed icon paths must not throw into the renderer");
+        }
+
+        fs::remove_all(ROOT);
+    }
+
+    // --- chromium web app classes ---
+    {
+        expect(Hyprexpo::chromiumAppHost("chrome-teams.cloud.microsoft__-Default") == "teams.cloud.microsoft", "web app class yields its host");
+        expect(Hyprexpo::chromiumAppHost("chrome-app.example.com__path-Profile_1") == "app.example.com", "path and profile are dropped");
+        expect(Hyprexpo::chromiumAppHost("chromium").empty(), "browser class is not a web app");
+        expect(Hyprexpo::chromiumAppHost("chrome-__x").empty(), "empty host is rejected");
     }
 
     if (failures != 0)

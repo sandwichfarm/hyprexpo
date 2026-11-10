@@ -144,6 +144,17 @@ void registerHyprexpoConfigValues() {
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_bg_rounding", "label background rounding", HyprexpoConfig::LABEL_BG_ROUNDING_DEFAULT));
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:label_bg_shape", "label background shape", HyprexpoConfig::LABEL_BG_SHAPE_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_padding", "label padding", HyprexpoConfig::LABEL_PADDING_DEFAULT));
+    // app icons on window previews
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:window_icon_enable", "window icon enable", HyprexpoConfig::WINDOW_ICON_ENABLE_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:window_icon_position", "window icon position", HyprexpoConfig::WINDOW_ICON_POSITION_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:window_icon_size", "window icon max size", HyprexpoConfig::WINDOW_ICON_SIZE_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CFloatValue>("plugin:hyprexpo:window_icon_size_ratio", "window icon size as a share of the window's shorter side", HyprexpoConfig::WINDOW_ICON_SIZE_RATIO_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:window_icon_offset_x", "window icon x offset", HyprexpoConfig::WINDOW_ICON_OFFSET_X_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:window_icon_offset_y", "window icon y offset", HyprexpoConfig::WINDOW_ICON_OFFSET_Y_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:window_icon_bg_enable", "window icon background enable", HyprexpoConfig::WINDOW_ICON_BG_ENABLE_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:window_icon_bg_color", "window icon background color", HyprexpoConfig::WINDOW_ICON_BG_COLOR_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:window_icon_bg_rounding", "window icon background rounding", HyprexpoConfig::WINDOW_ICON_BG_ROUNDING_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:window_icon_padding", "window icon background padding", HyprexpoConfig::WINDOW_ICON_PADDING_DEFAULT));
     // label font styling and pixel snapping
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:label_font_family", "label font family", HyprexpoConfig::LABEL_FONT_FAMILY_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:label_font_bold", "label font bold", HyprexpoConfig::LABEL_FONT_BOLD_DEFAULT));

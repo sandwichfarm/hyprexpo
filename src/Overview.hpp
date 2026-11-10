@@ -139,6 +139,8 @@ class COverview final : public IOverviewSession {
     void       queueRedrawID(int id);
     void       flushQueuedRedraws(bool scheduleFrame = true);
     PHLWINDOW  windowAtTilePoint(int id, const Vector2D& localPoint) const;
+    PHLWORKSPACE workspaceForTile(int id) const;
+    void       renderWindowIcons(Render::CRenderContext& ctx, int id, const CBox& tileBox, float alpha);
     Vector2D   tilePointToWorkspacePoint(int id, const Vector2D& localPoint) const;
     PHLWORKSPACE ensureWorkspaceForTile(int id);
     void       enterSubmapIfEnabled();

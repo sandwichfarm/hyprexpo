@@ -110,6 +110,8 @@ namespace Config {
     struct Manager { void reload() { assert(backgroundsCleared); reloaded = true; } };
     static Manager* mgr() { static Manager instance; return &instance; }
 }
+static int iconCacheClears = 0;
+static void clearWindowIconCache() { assert(destroyed); ++iconCacheClears; }
 static void resetDispatcherRuntime() { assert(reloaded); }
 '''
         checks = r'''
@@ -128,6 +130,7 @@ int main() {
     g_pHyprRenderer->ctx.m_currentPass = nullptr;
     PLUGIN_EXIT();
     assert(g_pHyprRenderer->ctx.m_pass.removals == 3);
+    assert(iconCacheClears == 3);
 }
 '''
         self.compile_and_run(fixture + "void PLUGIN_EXIT()" + source + checks)

@@ -4,12 +4,14 @@
 #include "OverviewCapture.hpp"
 #include "HyprexpoLogic.hpp"
 #include "OverviewPassElement.hpp"
+#include "WindowIcons.hpp"
 #define private   public
 #define protected public
 #include <hyprland/src/Compositor.hpp>
 #include <hyprland/src/config/ConfigValue.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/desktop/state/FocusState.hpp>
+#include <hyprland/src/desktop/state/GlobalWindowController.hpp>
 #include <hyprland/src/config/shared/complex/ComplexDataTypes.hpp>
 #include <hyprland/src/animation/WorkspaceAnimationController.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
@@ -403,6 +405,8 @@ void COverview::fullRender(Render::CRenderContext& ctx) {
             CRegion damage{0, 0, INT16_MAX, INT16_MAX};
             if (const auto texture = images[id].fb ? images[id].fb->getTexture() : nullptr; texture)
                 Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, texture, texbox, {.damage = &damage, .a = alpha, .round = tileRound, .roundingPower = ROUND_PWR});
+
+            renderWindowIcons(ctx, id, texbox, alpha);
         }
     }
 
@@ -775,4 +779,63 @@ void COverview::fullRender(Render::CRenderContext& ctx) {
 
     if (entryAnimationPending)
         damage();
+}
+
+// App icon drawn over each window's spot in a workspace tile (tileBox is in render pixels).
+void COverview::renderWindowIcons(Render::CRenderContext& ctx, int id, const CBox& tileBox, float alpha) {
+    if (!HyprlandAPI::intValue("plugin:hyprexpo:window_icon_enable"))
+        return;
+
+    // Window positions map through the workspace's own output, since captureWorkspacePreview() renders a
+    // foreign workspace on its owner; sizes use this overview's scale, since tileBox is in its pixels.
+    const auto MON       = pMonitor.lock();
+    const auto WORKSPACE = workspaceForTile(id);
+    const auto SOURCE    = WORKSPACE && WORKSPACE->m_monitor ? WORKSPACE->m_monitor.lock() : MON;
+    if (!MON || !WORKSPACE || !SOURCE || SOURCE->m_size.x <= 0 || SOURCE->m_size.y <= 0)
+        return;
+
+    const auto   POSITION = HyprlandAPI::stringValue("plugin:hyprexpo:window_icon_position");
+    auto* const* PRATIO   = (Hyprlang::FLOAT* const*)HyprlandAPI::getConfigValue(PHANDLE, "plugin:hyprexpo:window_icon_size_ratio")->getDataStaticPtr();
+    const double SCALE    = MON->m_scale;
+    const int    MAXPX    = std::max(1, (int)std::lround(HyprlandAPI::intValue("plugin:hyprexpo:window_icon_size") * SCALE));
+    const double OFFX     = HyprlandAPI::intValue("plugin:hyprexpo:window_icon_offset_x") * SCALE;
+    const double OFFY     = HyprlandAPI::intValue("plugin:hyprexpo:window_icon_offset_y") * SCALE;
+    const bool   BG       = HyprlandAPI::intValue("plugin:hyprexpo:window_icon_bg_enable");
+    const double PAD      = BG ? std::max(0.0, HyprlandAPI::intValue("plugin:hyprexpo:window_icon_padding") * SCALE) : 0.0;
+    const int    ROUND    = (int)std::lround(HyprlandAPI::intValue("plugin:hyprexpo:window_icon_bg_rounding") * SCALE);
+    CHyprColor   bgColor{(uint64_t)HyprlandAPI::intValue("plugin:hyprexpo:window_icon_bg_color")};
+    bgColor.a *= alpha;
+
+    const Hyprexpo::SRect TILE{tileBox.x, tileBox.y, tileBox.w, tileBox.h};
+    const double          SX = tileBox.w / SOURCE->m_size.x;
+    const double          SY = tileBox.h / SOURCE->m_size.y;
+    for (const auto& window : Desktop::windowState()->windows()) {
+        if (!windowVisibleOnWorkspace(window, WORKSPACE))
+            continue;
+
+        // Only the part of the window shown in this tile counts; off-screen columns and floats hanging off the
+        // output edge must not paint over the neighbouring tile.
+        const auto            WIN = window->getWindowMainSurfaceBox();
+        const Hyprexpo::SRect preview{tileBox.x + (WIN.x - SOURCE->m_position.x) * SX, tileBox.y + (WIN.y - SOURCE->m_position.y) * SY, WIN.w * SX, WIN.h * SY};
+        const auto            VISIBLE = Hyprexpo::intersectRects(preview, TILE);
+        if (!VISIBLE)
+            continue;
+
+        const auto            BOX = Hyprexpo::windowIconBox(*VISIBLE, POSITION, MAXPX, **PRATIO, OFFX, OFFY, PAD);
+        const Hyprexpo::SRect BGBOX{BOX.x - PAD, BOX.y - PAD, BOX.w + 2 * PAD, BOX.h + 2 * PAD};
+        if (BOX.w < 1 || !Hyprexpo::rectContains(TILE, BGBOX))
+            continue;
+
+        const auto TEX = windowIconTexture(window, MAXPX);
+        if (!TEX)
+            continue;
+
+        if (BG) {
+            CBox bg{BGBOX.x, BGBOX.y, BGBOX.w, BGBOX.h};
+            bg.round();
+            Render::GL::g_pHyprOpenGL->renderRect(ctx, bg, bgColor, {.round = std::min(ROUND, (int)(bg.w / 2))});
+        }
+        CBox icon{BOX.x, BOX.y, BOX.w, BOX.h};
+        Render::GL::g_pHyprOpenGL->renderTexture(ctx, TEX, icon.round(), {.a = alpha});
+    }
 }

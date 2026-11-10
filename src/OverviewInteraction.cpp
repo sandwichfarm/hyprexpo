@@ -146,24 +146,26 @@ Vector2D COverview::tilePointToWorkspacePoint(int id, const Vector2D& localPoint
     };
 }
 
-PHLWINDOW COverview::windowAtTilePoint(int id, const Vector2D& localPoint) const {
-    // shortcut: cross-monitor grids are selection-only until drag coordinates use each tile owner.
-    if (crossMonitor || !isTileValid(id))
+PHLWORKSPACE COverview::workspaceForTile(int id) const {
+    if (!isTileValid(id))
         return nullptr;
 
-    PHLWORKSPACE WORKSPACE;
-    if (images[id].pWorkspace) {
-        WORKSPACE = images[id].pWorkspace;
-    }
-    else {
-        for (const auto& w : State::workspaceState()->workspacesCopy()) {
-            if (workspaceHasID(w, images[id].workspaceID)) {
-                WORKSPACE = w;
-                break;
-            }
-        }
-    }
+    if (images[id].pWorkspace)
+        return images[id].pWorkspace;
 
+    for (const auto& w : State::workspaceState()->workspacesCopy()) {
+        if (workspaceHasID(w, images[id].workspaceID))
+            return w;
+    }
+    return nullptr;
+}
+
+PHLWINDOW COverview::windowAtTilePoint(int id, const Vector2D& localPoint) const {
+    // shortcut: cross-monitor grids are selection-only until drag coordinates use each tile owner.
+    if (crossMonitor)
+        return nullptr;
+
+    const auto WORKSPACE = workspaceForTile(id);
     if (!WORKSPACE)
         return nullptr;
 
