@@ -679,6 +679,7 @@ void CScrollingOverview::onDamageReported() {
 }
 
 void CScrollingOverview::onPreRender() {
+    m_background.update(m_monitor.lock());
     // Content damage must not replace the scene between press and release.
     // Config and workspace moves still invalidate input explicitly.
     if (!m_damageDirty || m_closing || m_inputState.owner != EInputOwner::None)
@@ -692,6 +693,7 @@ void CScrollingOverview::onPreRender() {
 }
 
 void CScrollingOverview::onConfigReload() {
+    m_background.invalidate();
     resetInputState(EResetReason::Refresh);
     ++m_contentDamageGeneration;
     m_damageDirty = true;
@@ -709,6 +711,7 @@ void CScrollingOverview::fullRender(Render::CRenderContext& ctx) {
     const auto transition = overviewTransition(m_transitionProgress ? m_transitionProgress->value() : 1.0,
                                                {MON->m_size.x, MON->m_size.y});
     clearWithColor(applyTransitionOpacity(CHyprColor{0.06, 0.06, 0.06, 1.0}, transition));
+    m_background.render(ctx, MON, static_cast<float>(transition.opacity));
     CRegion damageRegion{0, 0, INT16_MAX, INT16_MAX};
 
     for (const auto& workspace : m_scene.workspaces) {

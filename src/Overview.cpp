@@ -54,6 +54,8 @@ using namespace std::chrono_literals;
 namespace CompatHyprlandAPI {
 static bool isStringConfig(const std::string& name) {
     static const std::map<std::string, bool> STRING_CONFIGS = {
+        {"plugin:hyprexpo:bg_image", true},
+        {"plugin:hyprexpo:bg_image_fit", true},
         {"plugin:hyprexpo:workspace_method", true},
         {"plugin:hyprexpo:border_color", true},
         {"plugin:hyprexpo:border_color_current", true},
@@ -90,6 +92,8 @@ static bool isFloatConfig(const std::string& name) {
 
 static Config::STRING stringDefault(const std::string& name) {
     static const std::map<std::string, Config::STRING> DEFAULTS = {
+        {"plugin:hyprexpo:bg_image", HyprexpoConfig::BG_IMAGE_DEFAULT},
+        {"plugin:hyprexpo:bg_image_fit", HyprexpoConfig::BG_IMAGE_FIT_DEFAULT},
         {"plugin:hyprexpo:overview_mode", HyprexpoConfig::OVERVIEW_MODE_DEFAULT},
         {"plugin:hyprexpo:workspace_method", HyprexpoConfig::WORKSPACE_METHOD_DEFAULT},
         {"plugin:hyprexpo:border_color", HyprexpoConfig::BORDER_COLOR_DEFAULT},
@@ -134,6 +138,7 @@ static Config::FLOAT floatDefault(const std::string& name) {
 
 static Config::INTEGER intDefault(const std::string& name) {
     static const std::map<std::string, Config::INTEGER> DEFAULTS = {
+        {"plugin:hyprexpo:bg_image_blur", HyprexpoConfig::BG_IMAGE_BLUR_DEFAULT},
         {"plugin:hyprexpo:columns", HyprexpoConfig::COLUMNS_DEFAULT},
         {"plugin:hyprexpo:rows", HyprexpoConfig::ROWS_DEFAULT},
         {"plugin:hyprexpo:cross_monitor", HyprexpoConfig::CROSS_MONITOR_DEFAULT},

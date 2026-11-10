@@ -14,6 +14,7 @@ set(HYPREXPO_SRC
     src/IOverviewSession.cpp
     src/Overview.cpp
     src/OverviewInteraction.cpp
+    src/OverviewBackground.cpp
     src/OverviewRender.cpp
     src/OverviewCapture.cpp
     src/ScrollingOverview.cpp
@@ -30,6 +31,10 @@ set(HYPREXPO_SRC
 )
 
 add_library(hyprexpo SHARED ${HYPREXPO_SRC})
+
+# An unspecified configuration otherwise leaves synchronous image filtering at
+# -O0. Keep explicit configurations (including Debug) and test assertions intact.
+target_compile_options(hyprexpo PRIVATE "$<$<CONFIG:>:-O2>")
 
 # Bake the plugin version from the VERSION file (single source of truth).
 execute_process(
@@ -63,11 +68,11 @@ message(STATUS "Using Lua pkg-config module: ${HYPREXPO_LUA_PKG_CONFIG_RESOLVED}
 
 pkg_check_modules(deps REQUIRED IMPORTED_TARGET
     hyprland
+    hyprgraphics
     libdrm
     libinput
     libudev
     pangocairo
-    hyprgraphics
     pixman-1
     wayland-server
     xkbcommon
@@ -75,6 +80,8 @@ pkg_check_modules(deps REQUIRED IMPORTED_TARGET
 target_link_libraries(hyprexpo PRIVATE rt PkgConfig::deps PkgConfig::HYPREXPO_LUA)
 
 enable_testing()
+add_executable(BackgroundImageTests tests/BackgroundImageTests.cpp)
+add_test(NAME BackgroundImageTests COMMAND BackgroundImageTests)
 add_executable(HyprexpoLogicTests
     src/HyprexpoLogic.cpp
     src/IconIndex.cpp

@@ -5,6 +5,7 @@
 #include "globals.hpp"
 #include "IOverviewSession.hpp"
 #include "HyprexpoLogic.hpp"
+#include "OverviewBackground.hpp"
 #include "WorkspaceCompat.hpp"
 #include <hyprland/src/desktop/DesktopTypes.hpp>
 #include <hyprland/src/render/Framebuffer.hpp>
@@ -35,7 +36,9 @@ class COverview final : public IOverviewSession {
     void onSourceMonitorDamage(const PHLMONITOR& source) override;
     void onPreRender() override;
     void onConfigReload() override {
+        m_background.invalidate();
         onDamageReported();
+        damage();
     }
     void prepareForTeardown() override {}
     std::expected<std::string, std::string> injectScrollingInput(const std::string&) override {
@@ -190,6 +193,7 @@ class COverview final : public IOverviewSession {
     bool                         showWorkspaceNames = false;
     bool                         animateEntry = false;
     bool                         wallpaperBg = false;
+    COverviewBackground          m_background;
     std::chrono::steady_clock::time_point createdAt;
 
     friend class COverviewPassElement;

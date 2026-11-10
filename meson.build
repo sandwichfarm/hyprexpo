@@ -29,6 +29,7 @@ src = files(
   'src/IOverviewSession.cpp',
   'src/Overview.cpp',
   'src/OverviewInteraction.cpp',
+  'src/OverviewBackground.cpp',
   'src/OverviewRender.cpp',
   'src/OverviewCapture.cpp',
   'src/ScrollingOverview.cpp',
@@ -64,10 +65,10 @@ endif
 shared_module(meson.project_name(), src,
   dependencies: [
     dependency('hyprland'),
+    dependency('hyprgraphics'),
     dependency('pixman-1'),
     dependency('libdrm'),
     dependency('pangocairo'),
-    dependency('hyprgraphics'),
     dependency('libinput'),
     dependency('libudev'),
     dependency('wayland-server'),
@@ -109,3 +110,6 @@ executable('ScrollingInputOracle', files(
   'src/ScrollingInputState.cpp',
   'tests/ScrollingInputOracle.cpp',
 ))
+
+background_image_tests = executable('BackgroundImageTests', files('tests/BackgroundImageTests.cpp'))
+test('BackgroundImageTests', background_image_tests)

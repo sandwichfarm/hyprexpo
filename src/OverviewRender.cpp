@@ -280,6 +280,7 @@ void COverview::close(bool switchToSelection) {
 }
 
 void COverview::onPreRender() {
+    m_background.update(pMonitor.lock());
     if (!closing)
         flushQueuedRedraws();
     if (damageDirty) {
@@ -347,7 +348,7 @@ void COverview::fullRender(Render::CRenderContext& ctx) {
     const auto SHAPE   = currentGridShape();
 
     clearWithColor(BG_COLOR.stripA());
-    if (wallpaperBg && MON->m_background) {
+    if (!m_background.render(ctx, MON) && wallpaperBg && MON->m_background) {
         CRegion backgroundDamage{0, 0, INT16_MAX, INT16_MAX};
         CBox    backgroundBox{{0, 0}, MON->m_transformedSize};
         Render::GL::g_pHyprOpenGL->renderTextureInternal(ctx, MON->m_background, backgroundBox, {.damage = &backgroundDamage, .a = 1.0f});
