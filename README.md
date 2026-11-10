@@ -46,8 +46,8 @@ compositor; a binary built for one release is not interchangeable with another.
 hyprctl version
 ```
 
-This checkout pins Hyprland v0.57.2, commit
-`11cbc6c577b84ffb1edf4df3fc5b6128c3ae6947`. For Hyprland-git, use the separate [development installation guide](docs/guides/development-installation.md).
+This development checkout pins Hyprland
+`ecbcfe6e36ab8e510d464bb2e72c550710563093`, upstream `main` after v0.57.0. Releases on `master` target v0.57.0, v0.57.1 and v0.57.2. For Hyprland-git, use the separate [development installation guide](docs/guides/development-installation.md).
 For Nix-managed Hyprland, use the [Nix installation path](#nix).
 
 <a id="install"></a>
@@ -238,8 +238,8 @@ Use the repository's [`flake.nix`](flake.nix) or [`default.nix`](default.nix)
 through the Nix Hyprland plugin path. Keep the plugin and compositor on the same
 Hyprland input; do not mix a hyprpm artifact into a Nix-managed session.
 
-This checkout's flake pins Hyprland v0.57.2 at the upstream commit above, the
-same commit as its compatibility target. Input overrides must select a revision supported by
+This development checkout's flake pins the upstream commit above, the same
+commit as its development target; the `master` flake pins v0.57.2. Input overrides must select a revision supported by
 the plugin source; a release input cannot make development APIs compatible. See [Nix installation](docs/getting-started/installation.md#nix)
 and the [aligned-input examples](docs/guides/development-installation.md#nix-consumer).
 
