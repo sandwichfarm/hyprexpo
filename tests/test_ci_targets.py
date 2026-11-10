@@ -23,13 +23,14 @@ class TargetContractTests(unittest.TestCase):
         ci.targets()
 
     def test_only_configured_same_repository_draft_tracker_uses_development_contract(self):
-        result = ci.contract("sandwichfarm/hyprexpo", 123, "master", "sandwichfarm/hyprexpo", "hyprland-git", True)
+        number = ci.targets()["tracker"]["number"]
+        result = ci.contract("sandwichfarm/hyprexpo", number, "master", "sandwichfarm/hyprexpo", "hyprland-git", True)
         self.assertEqual(result, {"track": "hyprland-git", "gate": "Tracking gate", "kind": "tracking"})
         cases = (
-            (124, "master", "sandwichfarm/hyprexpo", "hyprland-git", True),
-            (123, "hyprland-git", "sandwichfarm/hyprexpo", "hyprland-git", True),
-            (123, "master", "fork/hyprexpo", "hyprland-git", True),
-            (123, "master", "sandwichfarm/hyprexpo", "hyprland-git", False),
+            (number + 1, "master", "sandwichfarm/hyprexpo", "hyprland-git", True),
+            (number, "hyprland-git", "sandwichfarm/hyprexpo", "hyprland-git", True),
+            (number, "master", "fork/hyprexpo", "hyprland-git", True),
+            (number, "master", "sandwichfarm/hyprexpo", "hyprland-git", False),
         )
         for number, base, repository, head, draft in cases:
             self.assertEqual(ci.contract("sandwichfarm/hyprexpo", number, base, repository, head, draft)["kind"], "promotion_or_development")
