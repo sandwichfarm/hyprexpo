@@ -43,8 +43,8 @@ tracks the recovery and the affected feature PRs.
 
 ## hyprpm and Nix
 
-Hyprland v0.57.0 and v0.57.1 select the landed Lua 5.5 build fix and release
-promotion on master. The
+Hyprland v0.57.0, v0.57.1 and v0.57.2 select the landed background-image
+release candidate on master. The
 v0.56.1 and v0.56.2 pins keep selecting the last validated v0.56.2+5 source,
 including the centered-row keyboard navigation fix from PR #165:
 
@@ -52,11 +52,14 @@ including the centered-row keyboard navigation fix from PR #165:
 | --- | --- |
 | v0.56.1 | `59bf4d378cecde9ed849e9c562306738b1583016` |
 | v0.56.2 | `59bf4d378cecde9ed849e9c562306738b1583016` |
-| v0.57.0 | `09fef6195555a30da1e81df53413baabdc9593f2` |
-| v0.57.1 | `09fef6195555a30da1e81df53413baabdc9593f2` |
+| v0.57.0 | `71859a6e7bfeab71dd4fe3b19cb4e47c2de63159` |
+| v0.57.1 | `71859a6e7bfeab71dd4fe3b19cb4e47c2de63159` |
+| v0.57.2 | `71859a6e7bfeab71dd4fe3b19cb4e47c2de63159` |
 
-The replacement pin source has the exact tree tested by both Release-gate
-builds and matching disposable runtime checks. The
+The replacement pin source has the exact tree tested by all three Release-gate
+builds and matching disposable rendering, background-image, and lifecycle checks.
+The [v0.57.2 receipt](./chase-receipts/2026-11-10-v0.57.2.md) records these inputs,
+external Nix consumers and publication boundaries. The earlier
 [v0.57.1 receipt](./chase-receipts/2026-11-05-v0.57.1.md) records external Nix
 and Nix-assisted HyprPM consumer checks, their source identities and limits. The original
 [v0.57.0 promotion receipt](./chase-receipts/2026-11-01-v0.57.0.md) remains
