@@ -15,18 +15,19 @@ VERSION      := $(shell sh scripts/version.sh)
 VERSION_REGEX := ^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+)?$$
 VERSION_DEFINE := -DHYPREXPO_VERSION='"$(VERSION)"'
 
-CXXFLAGS = -shared -fPIC -g -std=c++2b -Wno-c++11-narrowing -Wno-narrowing
+# Cold background filtering runs on the compositor thread; keep default builds optimized.
+CXXFLAGS = -shared -fPIC -O2 -g -std=c++2b -Wno-c++11-narrowing -Wno-narrowing
 PKG_CONFIG ?= pkg-config
 # Match Hyprland 0.57's Lua ABI, even when several Lua development packages exist.
 LUA_PKG_CONFIG ?= $(shell for pkg in lua lua5.5 lua55 lua-5.5 lua-55; do if $(PKG_CONFIG) --exists "$$pkg >= 5.5" "$$pkg < 5.6"; then printf '%s' "$$pkg"; break; fi; done)
-PKG_CONFIG_DEPS = pixman-1 libdrm hyprland pangocairo libinput libudev wayland-server xkbcommon $(LUA_PKG_CONFIG)
-LINK_DEPS = pangocairo xkbcommon $(LUA_PKG_CONFIG)
+PKG_CONFIG_DEPS = hyprgraphics pixman-1 libdrm hyprland pangocairo libinput libudev wayland-server xkbcommon $(LUA_PKG_CONFIG)
+LINK_DEPS = hyprgraphics pangocairo xkbcommon $(LUA_PKG_CONFIG)
 INCLUDES = $(shell $(PKG_CONFIG) --cflags $(PKG_CONFIG_DEPS))
 LIBS = $(shell $(PKG_CONFIG) --libs $(LINK_DEPS))
 
-SRC = src/main.cpp src/Dispatchers.cpp src/PluginConfig.cpp src/IOverviewSession.cpp src/Overview.cpp src/OverviewInteraction.cpp src/OverviewRender.cpp src/OverviewCapture.cpp src/ScrollingOverview.cpp src/ScrollingInputState.cpp src/ExpoGesture.cpp src/OverviewPassElement.cpp src/HyprexpoLogic.cpp src/ScrollingOverviewLogic.cpp src/ScrollingMutationTransaction.cpp src/ScrollingLayoutAdapter.cpp src/ScrollingDiagnostics.cpp
+SRC = src/main.cpp src/Dispatchers.cpp src/PluginConfig.cpp src/IOverviewSession.cpp src/Overview.cpp src/OverviewInteraction.cpp src/OverviewRender.cpp src/OverviewBackground.cpp src/OverviewCapture.cpp src/ScrollingOverview.cpp src/ScrollingInputState.cpp src/ExpoGesture.cpp src/OverviewPassElement.cpp src/HyprexpoLogic.cpp src/ScrollingOverviewLogic.cpp src/ScrollingMutationTransaction.cpp src/ScrollingLayoutAdapter.cpp src/ScrollingDiagnostics.cpp
 HEADERS = src/globals.hpp src/Dispatchers.hpp src/PluginConfig.hpp src/HyprlandConfigCompat.hpp src/IOverviewSession.hpp src/Overview.hpp src/OverviewInternal.hpp src/OverviewCapture.hpp src/ScrollingOverview.hpp src/ScrollingInputState.hpp src/ScrollingRequestId.hpp src/ExpoGesture.hpp src/OverviewPassElement.hpp src/HyprexpoConfig.hpp src/HyprexpoLogic.hpp src/ScrollingOverviewLogic.hpp src/ScrollingMutationTransaction.hpp src/ScrollingLayoutAdapter.hpp src/ScrollingDiagnostics.hpp
-HEADERS += src/PreviewFramebuffer.hpp src/PreviewMonitorGeometry.hpp
+HEADERS += src/BackgroundImageLogic.hpp src/OverviewBackground.hpp src/PreviewFramebuffer.hpp src/PreviewMonitorGeometry.hpp
 TARGET = hyprexpo.so
 TEST_TARGET = HyprexpoLogicTests
 SOURCE_TEST_TARGET = OverviewSourceTests
@@ -81,9 +82,10 @@ install: check-hyprpm-state $(TARGET)
 	install -Dm755 "$(TARGET)" "$(INSTALL_DIR)/$(INSTALL_NAME)"
 
 clean:
-	rm -f ./$(TARGET) ./$(TEST_TARGET) ./$(SOURCE_TEST_TARGET) ./$(FRAMEBUFFER_TEST_TARGET) ./$(REGISTRY_TEST_TARGET) ./$(INPUT_ORACLE_TARGET)
+	rm -f ./BackgroundImageTests ./$(TARGET) ./$(TEST_TARGET) ./$(SOURCE_TEST_TARGET) ./$(FRAMEBUFFER_TEST_TARGET) ./$(REGISTRY_TEST_TARGET) ./$(INPUT_ORACLE_TARGET)
 
-test: $(TEST_TARGET) $(SOURCE_TEST_TARGET) $(FRAMEBUFFER_TEST_TARGET) $(REGISTRY_TEST_TARGET)
+test: BackgroundImageTests $(TEST_TARGET) $(SOURCE_TEST_TARGET) $(FRAMEBUFFER_TEST_TARGET) $(REGISTRY_TEST_TARGET)
+	./BackgroundImageTests
 	./$(TEST_TARGET)
 	./$(SOURCE_TEST_TARGET)
 	./$(FRAMEBUFFER_TEST_TARGET)
@@ -91,6 +93,9 @@ test: $(TEST_TARGET) $(SOURCE_TEST_TARGET) $(FRAMEBUFFER_TEST_TARGET) $(REGISTRY
 
 test-tooling:
 	python3 -m unittest discover -s tests -p 'test_*.py' -v
+
+BackgroundImageTests: tests/BackgroundImageTests.cpp src/BackgroundImageLogic.hpp
+	$(CXX) -std=c++2b -Wall -Wextra -Werror tests/BackgroundImageTests.cpp -o $@
 
 $(TEST_TARGET): src/HyprexpoLogic.cpp src/HyprexpoLogic.hpp src/HyprexpoConfig.hpp src/ScrollingOverviewLogic.cpp src/ScrollingOverviewLogic.hpp src/ScrollingInputState.cpp src/ScrollingInputState.hpp src/ScrollingRequestId.hpp src/ScrollingMutationTransaction.cpp src/ScrollingMutationTransaction.hpp src/PreviewMonitorGeometry.hpp tests/HyprexpoLogicTests.cpp
 	$(CXX) -std=c++2b -Wall -Wextra -Werror src/HyprexpoLogic.cpp src/ScrollingOverviewLogic.cpp src/ScrollingInputState.cpp src/ScrollingMutationTransaction.cpp tests/HyprexpoLogicTests.cpp -o $@

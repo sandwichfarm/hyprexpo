@@ -1,6 +1,7 @@
 {
   lib,
   hyprland,
+  hyprgraphics,
   hyprlandPlugins,
 }:
 hyprlandPlugins.mkHyprlandPlugin {
@@ -9,6 +10,7 @@ hyprlandPlugins.mkHyprlandPlugin {
   src = ./.;
 
   inherit (hyprland) nativeBuildInputs;
+  buildInputs = [hyprgraphics];
 
   meta = with lib; {
     homepage = "https://github.com/sandwichfarm/hyprexpo";
