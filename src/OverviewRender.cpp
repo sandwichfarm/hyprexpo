@@ -800,7 +800,7 @@ void COverview::renderWindowIcons(Render::CRenderContext& ctx, int id, const CBo
     const double OFFX     = HyprlandAPI::intValue("plugin:hyprexpo:window_icon_offset_x") * SCALE;
     const double OFFY     = HyprlandAPI::intValue("plugin:hyprexpo:window_icon_offset_y") * SCALE;
     const bool   BG       = HyprlandAPI::intValue("plugin:hyprexpo:window_icon_bg_enable");
-    const double PAD      = BG ? HyprlandAPI::intValue("plugin:hyprexpo:window_icon_padding") * SCALE : 0.0;
+    const double PAD      = BG ? std::max(0.0, HyprlandAPI::intValue("plugin:hyprexpo:window_icon_padding") * SCALE) : 0.0;
     const int    ROUND    = (int)std::lround(HyprlandAPI::intValue("plugin:hyprexpo:window_icon_bg_rounding") * SCALE);
     CHyprColor   bgColor{(uint64_t)HyprlandAPI::intValue("plugin:hyprexpo:window_icon_bg_color")};
     bgColor.a *= alpha;
@@ -820,7 +820,7 @@ void COverview::renderWindowIcons(Render::CRenderContext& ctx, int id, const CBo
         if (!VISIBLE)
             continue;
 
-        const auto            BOX = Hyprexpo::windowIconBox(*VISIBLE, POSITION, MAXPX, **PRATIO, OFFX, OFFY);
+        const auto            BOX = Hyprexpo::windowIconBox(*VISIBLE, POSITION, MAXPX, **PRATIO, OFFX, OFFY, PAD);
         const Hyprexpo::SRect BGBOX{BOX.x - PAD, BOX.y - PAD, BOX.w + 2 * PAD, BOX.h + 2 * PAD};
         if (BOX.w < 1 || !Hyprexpo::rectContains(TILE, BGBOX))
             continue;

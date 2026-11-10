@@ -241,7 +241,8 @@ SWorkspaceMethodSpec     resolveWorkspaceMethodForMonitor(const std::string& con
 
 // Icon box inside a window preview: a square of min(maxSize, sizeRatio * shorter side), anchored at
 // `position` (center, top-left, top-right, bottom-left, bottom-right; '_' works as '-') and moved inward by the offsets.
-SRect                    windowIconBox(const SRect& window, const std::string& position, double maxSize, double sizeRatio, double offsetX, double offsetY);
+// Reserve padding inside the window for the background, shrinking the icon only when necessary to fit.
+SRect                    windowIconBox(const SRect& window, const std::string& position, double maxSize, double sizeRatio, double offsetX, double offsetY, double padding = 0.0);
 // Overlap of two rects, or nothing when they don't overlap.
 std::optional<SRect>     intersectRects(const SRect& a, const SRect& b);
 bool                     rectContains(const SRect& outer, const SRect& inner);

@@ -1378,6 +1378,14 @@ int main() {
         expect(!Hyprexpo::intersectRects({100, 0, 50, 50}, TILE), "touching edges do not overlap");
         expect(Hyprexpo::rectContains(TILE, {10, 10, 80, 80}), "an inner rect is contained");
         expect(!Hyprexpo::rectContains(TILE, {-1, 10, 20, 20}), "a rect crossing the edge is not contained");
+
+        for (const auto* anchor : {"center", "top-left", "top-right", "bottom-left", "bottom-right"}) {
+            const auto ICON = Hyprexpo::windowIconBox(TILE, anchor, 128, 0.3, 0, 0, 8);
+            expect(ICON.w == 30, "padding preserves the icon's requested ratio when it fits");
+            expect(Hyprexpo::rectContains(TILE, {ICON.x - 8, ICON.y - 8, ICON.w + 16, ICON.h + 16}), "all anchors keep the padded icon inside a tile-edge window");
+        }
+        const auto TINY = Hyprexpo::windowIconBox({0, 0, 10, 10}, "top-left", 128, 0.3, 0, 0, 8);
+        expect(TINY.w == 0, "a window smaller than its padding cannot show an icon");
     }
 
     // --- app icon index ---
@@ -1421,6 +1429,24 @@ int main() {
         expect(!INDEX.iconFor("other"), "only the [Desktop Entry] group is read");
         expect(!INDEX.iconFor(""), "an empty class has no icon");
         expect(!INDEX.iconFor("unknown-app"), "unknown names have no icon");
+        expect(!INDEX.iconFor((ROOT / "art/vm.png").string()), "raw absolute app IDs cannot bypass the icon index");
+        expect(!INDEX.iconFor((ROOT / "missing.png").string()), "raw missing absolute paths are not icons");
+
+        fs::create_symlink("loop.png", ROOT / "art/loop.png");
+        write("user/applications/loop.desktop", "[Desktop Entry]\nIcon=" + (ROOT / "art/loop.png").string() + "\n");
+        write("user/applications/directory.desktop", "[Desktop Entry]\nIcon=" + (ROOT / "art").string() + "\n");
+        try {
+            const Hyprexpo::CIconIndex MALFORMED({
+                .dataDirs = {ROOT / "user", ROOT / "sys"},
+                .iconDirs = {ROOT / "theme-home"},
+                .themes   = {"MyTheme", "hicolor"},
+            });
+            expect(!MALFORMED.iconFor("loop"), "symlink-loop icon entries are skipped");
+            expect(!MALFORMED.iconFor("directory"), "absolute directory icons are skipped");
+            expect(MALFORMED.iconFor("zen").has_value(), "malformed entries do not hide valid icons");
+        } catch (const fs::filesystem_error&) {
+            expect(false, "malformed icon paths must not throw into the renderer");
+        }
 
         fs::remove_all(ROOT);
     }

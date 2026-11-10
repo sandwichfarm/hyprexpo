@@ -809,21 +809,22 @@ SWorkspaceMethodSpec resolveWorkspaceMethodForMonitor(const std::string& config,
     return invalid;
 }
 
-SRect windowIconBox(const SRect& window, const std::string& position, double maxSize, double sizeRatio, double offsetX, double offsetY) {
-    const double SIDE = std::max(0.0, std::min(maxSize, sizeRatio * std::min(window.w, window.h)));
+SRect windowIconBox(const SRect& window, const std::string& position, double maxSize, double sizeRatio, double offsetX, double offsetY, double padding) {
+    const double PAD = std::max(0.0, padding);
+    const double SIDE = std::max(0.0, std::min({maxSize, sizeRatio * std::min(window.w, window.h), std::min(window.w, window.h) - 2.0 * PAD}));
 
     auto anchor = lowerString(trimString(position));
     std::replace(anchor.begin(), anchor.end(), '_', '-');
 
     SRect box{window.x + (window.w - SIDE) / 2.0 + offsetX, window.y + (window.h - SIDE) / 2.0 + offsetY, SIDE, SIDE};
     if (anchor.starts_with("top"))
-        box.y = window.y + offsetY;
+        box.y = window.y + PAD + offsetY;
     else if (anchor.starts_with("bottom"))
-        box.y = window.y + window.h - SIDE - offsetY;
+        box.y = window.y + window.h - SIDE - PAD - offsetY;
     if (anchor.ends_with("left"))
-        box.x = window.x + offsetX;
+        box.x = window.x + PAD + offsetX;
     else if (anchor.ends_with("right"))
-        box.x = window.x + window.w - SIDE - offsetX;
+        box.x = window.x + window.w - SIDE - PAD - offsetX;
     return box;
 }
 

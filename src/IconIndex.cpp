@@ -97,6 +97,9 @@ std::optional<fs::path> CIconIndex::iconFor(const std::string& name) const {
         return std::nullopt;
     if (const auto ICON = desktopIconFor(name))
         return iconFile(*ICON);
+    // App IDs are client-supplied names, never paths to open on the host.
+    if (fs::path{name}.has_parent_path())
+        return std::nullopt;
     return iconFile(name);
 }
 
@@ -115,7 +118,7 @@ std::optional<std::string> CIconIndex::desktopIconFor(const std::string& name) c
 
 std::optional<fs::path> CIconIndex::iconFile(const std::string& iconName) const {
     if (fs::path direct{iconName}; direct.is_absolute())
-        return direct; // existence checked when the entry was indexed
+        return direct; // regular-file status checked when the desktop entry was indexed
 
     for (const auto& files : m_filesByTier) {
         if (const auto IT = files.find(iconName); IT != files.end())
@@ -128,13 +131,16 @@ void CIconIndex::indexDesktopEntries(const std::vector<fs::path>& dataDirs) {
     // Earlier data dirs win, as in XDG lookup.
     for (const auto& dir : dataDirs) {
         std::error_code ec;
-        for (const auto& entry : fs::recursive_directory_iterator(dir / "applications", fs::directory_options::skip_permission_denied, ec)) {
-            if (entry.path().extension() != ".desktop")
+        for (auto it = fs::recursive_directory_iterator(dir / "applications", fs::directory_options::skip_permission_denied, ec);
+             !ec && it != fs::recursive_directory_iterator{}; it.increment(ec)) {
+            const auto&     entry = *it;
+            std::error_code entryError;
+            if (entry.path().extension() != ".desktop" || !entry.is_regular_file(entryError))
                 continue;
 
             auto        desktop = iniGroup(entry.path(), "Desktop Entry");
             const auto& icon    = desktop["Icon"];
-            if (icon.empty() || (fs::path{icon}.is_absolute() && !fs::exists(icon)))
+            if (icon.empty() || (fs::path{icon}.is_absolute() && !fs::is_regular_file(icon, entryError)))
                 continue;
 
             m_iconByName.try_emplace(lowerString(entry.path().stem().string()), icon);
@@ -156,8 +162,11 @@ void CIconIndex::indexIconFiles(const SIconSources& sources) {
         auto& files = m_filesByTier.emplace_back();
         for (const auto& base : bases) {
             std::error_code ec;
-            for (const auto& entry : fs::recursive_directory_iterator(base / theme, fs::directory_options::skip_permission_denied, ec)) {
-                if (isIconFile(entry.path()))
+            for (auto it = fs::recursive_directory_iterator(base / theme, fs::directory_options::skip_permission_denied, ec);
+                 !ec && it != fs::recursive_directory_iterator{}; it.increment(ec)) {
+                const auto&     entry = *it;
+                std::error_code entryError;
+                if (isIconFile(entry.path()) && entry.is_regular_file(entryError))
                     keepBest(files, entry.path());
             }
         }
@@ -166,8 +175,11 @@ void CIconIndex::indexIconFiles(const SIconSources& sources) {
     auto& pixmaps = m_filesByTier.emplace_back();
     for (const auto& dir : sources.dataDirs) {
         std::error_code ec;
-        for (const auto& entry : fs::directory_iterator(dir / "pixmaps", ec)) {
-            if (isIconFile(entry.path()))
+        for (auto it = fs::directory_iterator(dir / "pixmaps", fs::directory_options::skip_permission_denied, ec);
+             !ec && it != fs::directory_iterator{}; it.increment(ec)) {
+            const auto&     entry = *it;
+            std::error_code entryError;
+            if (isIconFile(entry.path()) && entry.is_regular_file(entryError))
                 keepBest(pixmaps, entry.path());
         }
     }
