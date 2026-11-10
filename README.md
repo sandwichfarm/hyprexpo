@@ -38,7 +38,7 @@ layer-shell/wallpaper composition, and arbitrary workspace insertion.
 
 ### 1. Check compatibility
 
-`master` supports tagged Hyprland **v0.57.0**. The plugin must be
+`master` supports tagged Hyprland **v0.57.0, v0.57.1 and v0.57.2**. The plugin must be
 built against the **exact revision and dependency ABI** of your running
 compositor; a binary built for one release is not interchangeable with another.
 
@@ -47,13 +47,17 @@ hyprctl version
 ```
 
 This development checkout pins Hyprland
-`ecbcfe6e36ab8e510d464bb2e72c550710563093`, upstream `main` after v0.57.0. Releases on `master` target v0.57.0. For Hyprland-git, use the separate [development installation guide](docs/guides/development-installation.md).
+`ecbcfe6e36ab8e510d464bb2e72c550710563093`, upstream `main` after v0.57.0. Releases on `master` target v0.57.0, v0.57.1 and v0.57.2. For Hyprland-git, use the separate [development installation guide](docs/guides/development-installation.md).
 For Nix-managed Hyprland, use the [Nix installation path](#nix).
 
 <a id="install"></a>
 <a id="hyprpm"></a>
 
 ### 2. Install with hyprpm
+
+On Arch Linux, install the separate manager package with `sudo pacman -S hyprpm`
+first. After a Hyprland upgrade, follow the [rebuild and reload steps](docs/getting-started/installation.md#after-upgrading-hyprland).
+If existing plugin settings become unknown, see [missing-plugin recovery](docs/troubleshooting.md#unknown-hyprexpo-config-keys-after-an-upgrade).
 
 ```bash
 hyprpm add https://github.com/sandwichfarm/hyprexpo
@@ -173,6 +177,28 @@ In Lua, put these options inside the `plugin.hyprexpo` table passed to
 [labels and borders](docs/configuration/labels-borders.md), and
 [Lua gestures](docs/guides/lua-gestures.md) for complete examples.
 
+### Custom overview background
+
+Set an image behind the overview in your normal plugin configuration. This
+works with both grid and scrolling overviews:
+
+```ini
+plugin {
+    hyprexpo {
+        bg_image = ~/Pictures/wallpaper.jpg
+        bg_image_fit = cover
+        bg_image_blur = 8
+    }
+}
+```
+
+`bg_image_fit` accepts `cover` (fill and crop), `contain` (show the whole image),
+or `stretch`. `bg_image_blur` is a radius from `0` to `64` output pixels; `0`
+disables blur. Reload the Hyprland configuration after changing the path or
+settings. Remove `bg_image` or leave it empty to restore the existing background.
+See the [background options](docs/configuration/options.md#background-image)
+for Lua configuration and fallback behavior.
+
 ## Other Installation Methods
 
 ### Build From Source
@@ -181,11 +207,13 @@ Install a C++23 compiler, `pkg-config`, Hyprland development headers matching yo
 compositor, and these pkg-config packages:
 
 ```text
-hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua5.4
+hyprland hyprgraphics pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua
 ```
 
-The build prefers `lua5.4` and falls back to `lua` on distributions that expose
-the generic module name.
+Hyprland 0.57 requires Lua 5.5. All build systems select a compatible generic
+or versioned pkg-config module and reject Lua 5.4 or 5.6; see the
+[installation guide](docs/getting-started/installation.md#build-from-source)
+for module names and explicit overrides.
 
 ```bash
 git clone https://github.com/sandwichfarm/hyprexpo
@@ -211,7 +239,7 @@ through the Nix Hyprland plugin path. Keep the plugin and compositor on the same
 Hyprland input; do not mix a hyprpm artifact into a Nix-managed session.
 
 This development checkout's flake pins the upstream commit above, the same
-commit as its development target; the `master` flake pins v0.57.0. Input overrides must select a revision supported by
+commit as its development target; the `master` flake pins v0.57.2. Input overrides must select a revision supported by
 the plugin source; a release input cannot make development APIs compatible. See [Nix installation](docs/getting-started/installation.md#nix)
 and the [aligned-input examples](docs/guides/development-installation.md#nix-consumer).
 
@@ -219,7 +247,7 @@ and the [aligned-input examples](docs/guides/development-installation.md#nix-con
 
 | Track | Compatibility contract |
 | --- | --- |
-| `master` | Supported tagged Hyprland release: v0.57.0. Hyprland v0.56.1 and v0.56.2 keep their existing hyprpm pins and receive no further fixes unless a maintenance branch is created. |
+| `master` | Supported tagged Hyprland releases: v0.57.0, v0.57.1 and v0.57.2. Hyprland v0.56.1 and v0.56.2 keep their existing hyprpm pins and receive no further fixes unless a maintenance branch is created. |
 | `hyprland-git` | Explicitly tested upstream development commits; check its current pin before installing. |
 
 Shared fixes flow from `master` into `hyprland-git`. Support for a new Hyprland
@@ -285,6 +313,8 @@ and was previously known as **HyprExpo+** (`hyprexpo-plus`). It continues
 maintenance after [the upstream plugin was retired](https://github.com/hyprwm/hyprland-plugins/pull/663).
 See the [original announcement](https://www.reddit.com/r/hyprland/comments/1o30dsg/hyprexpoplus_outer_gaps_keyboard_navigation_and/)
 for the early feature set.
+
+<img width="2089" height="1113" alt="screenshot_2026-11-02_18-01-40" src="https://github.com/user-attachments/assets/b670ed8e-26d7-4e78-9130-404dc20b5a4f" />
 
 ### Related
 

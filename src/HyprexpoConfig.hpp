@@ -18,6 +18,9 @@ inline constexpr int         LEGACY_ENABLE_KEYBOARD_NAV_DEFAULT  = 1;
 inline constexpr int         LEGACY_ENABLE_DRAG_MOVE_DEFAULT     = 0;
 inline constexpr int         LEGACY_ANIMATE_ENTRY_DEFAULT        = 0;
 inline constexpr int         WALLPAPER_BG_DEFAULT                = 0;
+inline constexpr const char* BG_IMAGE_DEFAULT                    = "";
+inline constexpr const char* BG_IMAGE_FIT_DEFAULT                = "cover";
+inline constexpr int         BG_IMAGE_BLUR_DEFAULT               = 0;
 inline constexpr std::size_t DYNAMIC_GRID_MAX_TILES              = 64;
 
 inline constexpr int         COLUMNS_DEFAULT                 = 3;

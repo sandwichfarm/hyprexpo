@@ -3,6 +3,14 @@
     {
       "name": "v0.57.0",
       "rev": "0aa6745f705f2c4b0a5004eb019ef76e5bbdb426"
+    },
+    {
+      "name": "v0.57.1",
+      "rev": "acc1aa0bfd4bd575dcb0f76c35ccf12b660a1ab9"
+    },
+    {
+      "name": "v0.57.2",
+      "rev": "11cbc6c577b84ffb1edf4df3fc5b6128c3ae6947"
     }
   ],
   "development": [

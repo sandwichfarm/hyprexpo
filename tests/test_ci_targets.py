@@ -63,14 +63,41 @@ class TargetContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ci.verify_lock(metadata, rev)
 
-    def test_flake_input_lock_and_development_target_name_one_commit(self):
+    def test_flake_input_and_lock_name_a_declared_exact_target(self):
         flake = re.search(r'rev = "([0-9a-f]{40})"', (ROOT / "flake.nix").read_text()).group(1)
         lock = json.loads((ROOT / "flake.lock").read_text())
-        hyprland = lock["nodes"][lock["nodes"][lock["root"]]["inputs"]["hyprland"]]["locked"]
-        development = ci.targets()["development"][0]["rev"]
+        hyprland_node = lock["nodes"][lock["nodes"][lock["root"]]["inputs"]["hyprland"]]
+        hyprland = hyprland_node["locked"]
+        declared = ci.targets()
+        revisions = {row["rev"] for track in ("release", "development") for row in declared[track]}
         self.assertEqual(flake, hyprland["rev"])
-        self.assertEqual(development, hyprland["rev"])
+        # An override can resolve the new source while retaining the old input
+        # identity, forcing Nix to rewrite the lock on a frozen evaluation.
+        self.assertEqual(flake, hyprland_node["original"]["rev"])
+        self.assertIn(hyprland["rev"], revisions)
         self.assertTrue(hyprland.get("narHash"))
+
+    def test_branch_lock_cli_accepts_only_its_declared_targets(self):
+        declared = ci.targets()
+        revisions = {row["rev"] for track in ("release", "development") for row in declared[track]}
+        for branch in ("master", "hyprland-git"):
+            allowed = {row["rev"] for row in declared[ci.track_for_branch(branch)]}
+            for revision in revisions | {"0" * 40}:
+                with self.subTest(branch=branch, revision=revision):
+                    lock = json.loads((ROOT / "flake.lock").read_text())
+                    node = lock["nodes"][lock["root"]]["inputs"]["hyprland"]
+                    lock["nodes"][node]["locked"]["rev"] = revision
+                    with tempfile.TemporaryDirectory() as directory:
+                        metadata = Path(directory) / "metadata.json"
+                        metadata.write_text(json.dumps({"locks": lock}))
+                        result = subprocess.run(
+                            ["python3", str(ROOT / "scripts/ci-targets.py"),
+                             "verify-branch-lock", str(metadata), branch],
+                            text=True, capture_output=True, timeout=10,
+                        )
+                    self.assertEqual(result.returncode == 0, revision in allowed, result.stderr)
+                    if revision not in allowed:
+                        self.assertIn("branch flake lock differs", result.stderr)
 
     def test_user_docs_declare_every_release_target(self):
         readme = (ROOT / "README.md").read_text()
@@ -90,6 +117,7 @@ class TargetContractTests(unittest.TestCase):
         for changed in (
             {"src/Overview.cpp"},
             {"flake.lock"},
+            {"meson_options.txt"},
             {".github/workflows/compatibility.yml"},
             {"scripts/ci-build.sh"},
             {"scripts/hyprland-targets.json"},

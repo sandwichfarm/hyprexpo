@@ -4,6 +4,13 @@
 
 hyprpm is the primary non-Nix installation path.
 
+On Arch Linux, `hyprpm` is a separate package. Upgrading `hyprland` alone may
+leave the manager command unavailable. Install it before registering the plugin:
+
+```bash
+sudo pacman -S hyprpm
+```
+
 ```bash
 hyprpm add https://github.com/sandwichfarm/hyprexpo
 hyprpm enable hyprexpo
@@ -24,16 +31,50 @@ maintained branch or release-tag history. A temporary PR branch or a PR-only
 commit is rejected. A locally available commit is not sufficient: squash merges
 can leave it unavailable to a future normal clone.
 
+### After Upgrading Hyprland
+
+Start the updated Hyprland session, then rebuild and reload the managed plugins
+against that running version:
+
+```bash
+hyprpm update &&
+hyprpm reload &&
+hyprctl reload
+```
+
+Run hyprpm as your normal user in a terminal and authenticate its sudo prompt
+when it installs headers. Run only one `hyprpm update` process at a time; updates
+share a staging directory. If a command fails, resolve the error before reloading.
+For a checkout failure, see [the full-history retry](/troubleshooting#hyprpm-cannot-check-out-the-running-hyprland-commit).
+
+Confirm that `hyprexpo` appears in the loaded-plugin list and check for errors:
+
+```bash
+hyprctl plugin list
+hyprctl configerrors
+```
+
+If the plugin is absent and existing options become unknown, follow
+[missing-plugin recovery](/troubleshooting#unknown-hyprexpo-config-keys-after-an-upgrade).
+
 ## Build From Source
 
 Build dependencies are a C++23 compiler, `pkg-config`, Hyprland development headers, and these pkg-config packages:
 
 ```text
-hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua5.4
+hyprland hyprgraphics pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua
 ```
 
-The build prefers the `lua5.4` pkg-config module and falls back to `lua` for
-distributions such as Fedora where `lua-devel` exposes the generic module name.
+The current Hyprland 0.57 target requires **Lua 5.5** (`>=5.5`, `<5.6`).
+Make, CMake, and Meson try the pkg-config modules `lua`, `lua5.5`, `lua55`,
+`lua-5.5`, and `lua-55`, accepting only that version range. This prevents an
+installed Lua 5.4 development package from silently selecting the wrong ABI.
+The dependency must match the Lua runtime in the target Hyprland build.
+
+For a distribution-specific module name, select it explicitly with
+`make LUA_PKG_CONFIG=<module>`, `cmake -DHYPREXPO_LUA_PKG_CONFIG=<module>`,
+or `meson setup -Dlua_pkg_config=<module>`. Overrides must also identify Lua 5.5;
+an incompatible or missing module stops the plugin build with an error.
 
 Build with the Makefile:
 

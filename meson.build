@@ -29,6 +29,7 @@ src = files(
   'src/IOverviewSession.cpp',
   'src/Overview.cpp',
   'src/OverviewInteraction.cpp',
+  'src/OverviewBackground.cpp',
   'src/OverviewRender.cpp',
   'src/OverviewCapture.cpp',
   'src/ScrollingOverview.cpp',
@@ -43,14 +44,26 @@ src = files(
 )
 
 hyprland = dependency('hyprland')
-lua_dep = dependency('lua5.4', required: false)
+lua_pkg_config = get_option('lua_pkg_config')
+lua_candidates = ['lua', 'lua5.5', 'lua55', 'lua-5.5', 'lua-55']
+if lua_pkg_config != ''
+  lua_candidates = [lua_pkg_config]
+endif
+foreach lua_pkg : lua_candidates
+  lua_dep = dependency(lua_pkg, version: ['>=5.5', '<5.6'], method: 'pkg-config', required: false)
+  if lua_dep.found()
+    message('Using Lua pkg-config module: ' + lua_pkg)
+    break
+  endif
+endforeach
 if not lua_dep.found()
-  lua_dep = dependency('lua')
+  error('Lua 5.5 development files are required for Hyprland 0.57; tried pkg-config modules: ' + ', '.join(lua_candidates))
 endif
 
 shared_module(meson.project_name(), src,
   dependencies: [
     dependency('hyprland'),
+    dependency('hyprgraphics'),
     dependency('pixman-1'),
     dependency('libdrm'),
     dependency('pangocairo'),
@@ -94,3 +107,6 @@ executable('ScrollingInputOracle', files(
   'src/ScrollingInputState.cpp',
   'tests/ScrollingInputOracle.cpp',
 ))
+
+background_image_tests = executable('BackgroundImageTests', files('tests/BackgroundImageTests.cpp'))
+test('BackgroundImageTests', background_image_tests)

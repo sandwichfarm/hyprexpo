@@ -305,12 +305,22 @@ class HyprpmStateTests(unittest.TestCase):
         self.backup = self.install_dir / "hyprexpo.so.bak"
         self.backup.write_bytes(b"existing backup fixture\n")
         self.env["HYPREXPO_DEV_SO"] = str(self.new_binary)
+        # These tests install prebuilt bytes; no host Lua development package
+        # should be needed to exercise the managed-installation boundary.
+        self.pkg_config = self.directory / "pkg-config"
+        self.pkg_config.write_text(
+            "#!/bin/sh\n"
+            "[ \"$#\" -eq 3 ] && [ \"$1\" = --exists ] && "
+            "[ \"$2\" = 'fixture-lua >= 5.5' ] && [ \"$3\" = 'fixture-lua < 5.6' ]\n"
+        )
+        self.pkg_config.chmod(0o755)
 
     def make(self, goal):
         return self.command(
             "make", "--no-print-directory", "-j4", goal,
             f"TARGET={self.new_binary}", f"INSTALL_DIR={self.install_dir}",
             "INSTALL_USER=fixture", "SRC=", "HEADERS=", "CXX=false", "INCLUDES=", "LIBS=",
+            f"PKG_CONFIG={self.pkg_config}", "LUA_PKG_CONFIG=fixture-lua",
             check=False,
         )
 

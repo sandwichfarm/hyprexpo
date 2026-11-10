@@ -6,10 +6,11 @@ Hyprland checks plugin API compatibility when loading a plugin. If HyprExpo was 
 
 Release builds attach `release-provenance.txt` next to `hyprexpo.so`. That file records:
 
-- `hyprctl version`
+- `Hyprland --version`
 - `pkg-config --modversion hyprland`
-- `pkg-config --modversion lua5.4 || pkg-config --modversion lua`
+- the selected Lua 5.5 pkg-config module and its version
 - compiler version
+- actual ELF shared-library dependencies and artifact SHA256
 - `ldd -r hyprexpo.so`
 
 ## Supported Releases
@@ -19,6 +20,8 @@ Release builds attach `release-provenance.txt` next to `hyprexpo.so`. That file 
 | Release | Hyprland source commit |
 | --- | --- |
 | v0.57.0 | `0aa6745f705f2c4b0a5004eb019ef76e5bbdb426` |
+| v0.57.1 | `acc1aa0bfd4bd575dcb0f76c35ccf12b660a1ab9` |
+| v0.57.2 | `11cbc6c577b84ffb1edf4df3fc5b6128c3ae6947` |
 
 Hyprland v0.56.1 (`5c9377c15f85c50648f35ca5a213754f95b93ca0`) and v0.56.2
 (`efb50993780079460b0cbed1363e2166a2de1d9f`) left the build matrix with the
@@ -40,7 +43,8 @@ tracks the recovery and the affected feature PRs.
 
 ## hyprpm and Nix
 
-Hyprland v0.57.0 is pinned to the landed v0.57.0 promotion on master. The
+Hyprland v0.57.0, v0.57.1 and v0.57.2 select the landed background-image
+release candidate on master. The
 v0.56.1 and v0.56.2 pins keep selecting the last validated v0.56.2+5 source,
 including the centered-row keyboard navigation fix from PR #165:
 
@@ -48,11 +52,18 @@ including the centered-row keyboard navigation fix from PR #165:
 | --- | --- |
 | v0.56.1 | `59bf4d378cecde9ed849e9c562306738b1583016` |
 | v0.56.2 | `59bf4d378cecde9ed849e9c562306738b1583016` |
-| v0.57.0 | `34e5fa30198b00a53169739ce1c585dba4c939b8` |
+| v0.57.0 | `71859a6e7bfeab71dd4fe3b19cb4e47c2de63159` |
+| v0.57.1 | `71859a6e7bfeab71dd4fe3b19cb4e47c2de63159` |
+| v0.57.2 | `71859a6e7bfeab71dd4fe3b19cb4e47c2de63159` |
 
-The v0.57.0 pin source passed the exact Nix build under both the Development
-and Release gates and loaded in a disposable v0.57.0 compositor; see the
-[v0.57.0 chase receipt](./chase-receipts/2026-11-01-v0.57.0.md).
+The replacement pin source has the exact tree tested by all three Release-gate
+builds and matching disposable rendering, background-image, and lifecycle checks.
+The [v0.57.2 receipt](./chase-receipts/2026-11-10-v0.57.2.md) records these inputs,
+external Nix consumers and publication boundaries. The earlier
+[v0.57.1 receipt](./chase-receipts/2026-11-05-v0.57.1.md) records external Nix
+and Nix-assisted HyprPM consumer checks, their source identities and limits. The original
+[v0.57.0 promotion receipt](./chase-receipts/2026-11-01-v0.57.0.md) remains
+available as historical evidence.
 
 Changing current source does not update what those pins select. Before moving
 a pin, build and test the proposed plugin commit against that exact tagged
@@ -72,7 +83,7 @@ untested.
 See [feature integration](./feature-integration.md) for the historical integration
 checkpoints, release revalidation and remaining test boundaries.
 
-The `master` flake pins Hyprland v0.57.0 (`0aa6745f705f2c4b0a5004eb019ef76e5bbdb426`).
+The `master` flake pins Hyprland v0.57.2 (`11cbc6c577b84ffb1edf4df3fc5b6128c3ae6947`).
 This development checkout pins `ecbcfe6e36ab8e510d464bb2e72c550710563093`, its development target. Nix users should keep the plugin's
 Hyprland input aligned with their system input through `default.nix` and the
 Hyprland plugin packaging path. Overrides must select a supported release;
@@ -113,6 +124,6 @@ Port each API boundary with its existing behavior and tests preserved. Check
 window mapping, pinned-window save/restore, alpha animations, keybind modifiers,
 and exact-submap restoration when adopting the newer window/keybind APIs.
 Before merging any shared compatibility code, require the declared release
-build matrix (currently v0.57.0) to stay green and run a separate build/load test for the pinned
+build matrix (currently v0.57.0, v0.57.1 and v0.57.2) to stay green and run a separate build/load test for the pinned
 git revision. A future tagged release can become a supported default after
 those checks and matching nested interaction tests pass.
