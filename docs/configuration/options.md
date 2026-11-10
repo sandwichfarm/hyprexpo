@@ -134,6 +134,13 @@ hl.config({
 Each monitor fits the image independently. Up to four fitted, blurred textures
 are cached across overview sessions; loading and filtering do not run on every
 frame or when reopening a cached background.
+On a cache miss, image decoding, fitting, and blur run synchronously and can
+briefly pause compositor rendering. As a reference, blur alone at radius `8`
+took about `0.06` seconds at 1080p and `0.27` seconds at 4K in an optimized
+build on the review machine; decoding and upload add to that cost. Larger
+images and slower machines can take longer. Default plugin builds are
+optimized; use an explicit CMake `Debug` configuration or override Make's
+`CXXFLAGS` when an unoptimized build is needed.
 Reload the Hyprland configuration to apply changes, including replacement of
 the image at the same path. A monitor resolution change also rebuilds the texture.
 

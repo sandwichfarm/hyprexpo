@@ -30,6 +30,10 @@ set(HYPREXPO_SRC
 
 add_library(hyprexpo SHARED ${HYPREXPO_SRC})
 
+# An unspecified configuration otherwise leaves synchronous image filtering at
+# -O0. Keep explicit configurations (including Debug) and test assertions intact.
+target_compile_options(hyprexpo PRIVATE "$<$<CONFIG:>:-O2>")
+
 # Bake the plugin version from the VERSION file (single source of truth).
 execute_process(
     COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/scripts/version.sh

@@ -15,7 +15,8 @@ VERSION      := $(shell sh scripts/version.sh)
 VERSION_REGEX := ^v[0-9]+\.[0-9]+\.[0-9]+(\+[0-9]+)?$$
 VERSION_DEFINE := -DHYPREXPO_VERSION='"$(VERSION)"'
 
-CXXFLAGS = -shared -fPIC -g -std=c++2b -Wno-c++11-narrowing -Wno-narrowing
+# Cold background filtering runs on the compositor thread; keep default builds optimized.
+CXXFLAGS = -shared -fPIC -O2 -g -std=c++2b -Wno-c++11-narrowing -Wno-narrowing
 PKG_CONFIG ?= pkg-config
 # Match Hyprland 0.57's Lua ABI, even when several Lua development packages exist.
 LUA_PKG_CONFIG ?= $(shell for pkg in lua lua5.5 lua55 lua-5.5 lua-55; do if $(PKG_CONFIG) --exists "$$pkg >= 5.5" "$$pkg < 5.6"; then printf '%s' "$$pkg"; break; fi; done)
