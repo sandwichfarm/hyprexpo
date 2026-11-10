@@ -47,6 +47,15 @@ void registerHyprexpoConfigValues() {
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:rows", "fixed grid rows (0 follows columns)", HyprexpoConfig::ROWS_DEFAULT));
     addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:gaps_in", "inner gaps", HyprexpoConfig::GAPS_IN_DEFAULT));
     addConfigValue(makeShared<Config::Values::CColorValue>("plugin:hyprexpo:bg_col", "background color", HyprexpoConfig::BG_COL_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:bg_image", "overview background image path (empty disables)", HyprexpoConfig::BG_IMAGE_DEFAULT));
+    addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:bg_image_fit", "background image fit: cover, contain, or stretch", HyprexpoConfig::BG_IMAGE_FIT_DEFAULT,
+        Config::Values::SStringValueOptions{.validator = [](const Config::STRING& value) -> std::expected<void, std::string> {
+            if (value == "cover" || value == "contain" || value == "stretch")
+                return {};
+            return std::unexpected("expected cover, contain, or stretch");
+        }}));
+    addConfigValue(makeShared<Config::Values::CIntValue>("plugin:hyprexpo:bg_image_blur", "background image blur radius in output pixels (0 disables)", HyprexpoConfig::BG_IMAGE_BLUR_DEFAULT,
+        Config::Values::SIntValueOptions{.min = 0, .max = 64}));
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:workspace_method", "workspace method", HyprexpoConfig::WORKSPACE_METHOD_DEFAULT));
     // overview_mode: auto (default, use native scrolling detection) | grid (always force the classic grid overview)
     addConfigValue(makeShared<Config::Values::CStringValue>("plugin:hyprexpo:overview_mode", "overview mode", HyprexpoConfig::OVERVIEW_MODE_DEFAULT));

@@ -73,3 +73,5 @@ compile_commands.json
 
 # Local, disposable experiments
 /spikes/
+
+/BackgroundImageTests

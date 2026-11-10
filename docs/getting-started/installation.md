@@ -62,7 +62,7 @@ If the plugin is absent and existing options become unknown, follow
 Build dependencies are a C++23 compiler, `pkg-config`, Hyprland development headers, and these pkg-config packages:
 
 ```text
-hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua
+hyprland hyprgraphics pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon lua
 ```
 
 The current Hyprland 0.57 target requires **Lua 5.5** (`>=5.5`, `<5.6`).

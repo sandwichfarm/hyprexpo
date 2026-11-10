@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IOverviewSession.hpp"
+#include "OverviewBackground.hpp"
 #include "ScrollingLayoutAdapter.hpp"
 #include "ScrollingInputState.hpp"
 #include "ScrollingOverviewLogic.hpp"
@@ -63,6 +64,7 @@ class CScrollingOverview final : public IOverviewSession {
     bool ownsTouchInput(int32_t touchId) const override;
 
   private:
+    COverviewBackground m_background;
     struct SCacheKey {
         uint64_t sessionGeneration       = 0;
         int64_t  workspaceID             = 0;
