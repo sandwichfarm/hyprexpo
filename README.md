@@ -213,6 +213,40 @@ The flake defaults to Hyprland v0.56.2. Input overrides must select a revision
 supported by the plugin source. See [Nix installation](docs/getting-started/installation.md#nix)
 and the [aligned-input examples](docs/guides/development-installation.md#nix-consumer).
 
+### Omarchy
+
+[Omarchy](https://omarchy.org) runs Hyprland, so hyprexpo installs there the
+same way as on any Arch-based Hyprland setup: with [hyprpm](#hyprpm).
+
+hyprexpo is a Hyprland (compositor) plugin, not an Omarchy shell plugin. It is
+not installed with `omarchy plugin add` and is not listed on
+[plugins.omarchy.org](https://plugins.omarchy.org), which only carries QML
+plugins for `omarchy-shell`.
+
+1. Check that Omarchy's Hyprland is a [supported release](#1-check-compatibility)
+   with `hyprctl version`.
+2. Install the tools hyprpm needs to build plugins:
+
+   ```bash
+   sudo pacman -S --needed cmake meson cpio pkgconf git gcc
+   ```
+
+3. Install and enable hyprexpo as shown in [Install with hyprpm](#hyprpm).
+4. Load the plugin at login by adding this line to your Hyprland config in
+   `~/.config/hypr/`:
+
+   ```ini
+   exec-once = hyprpm reload -n
+   ```
+
+5. Add the [overview binding](#3-bind-and-open-the-overview) alongside your
+   other binds (Omarchy keeps them in `~/.config/hypr/bindings.conf`). If
+   **Super + G** is already taken in your setup, pick another key.
+
+When an Omarchy update upgrades Hyprland, run `hyprpm update` so hyprexpo is
+rebuilt against the new compositor. A build for the previous release will not
+load.
+
 ## Branches and Releases
 
 | Track | Compatibility contract |
