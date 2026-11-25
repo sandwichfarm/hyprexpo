@@ -56,7 +56,7 @@ integration and should not replace the newer keys below.
 
 | key | type | legacy meaning | newer sandwichfarm counterpart |
 | --- | --- | --- | --- |
-| `plugin:hyprexpo:dynamic_grid` | int | opt-in dynamic workspace enumeration (default: off) | no direct equivalent yet |
+| `plugin:hyprexpo:dynamic_grid` | int | size the grid from existing monitor-local workspaces, including empty ones unless `skip_empty = 1` (default: off) | no direct equivalent yet |
 | `plugin:hyprexpo:fill_gaps` | int | expand min..max workspace IDs when dynamic | no direct equivalent yet |
 | `plugin:hyprexpo:mru_sort` | int | put the current workspace first | no direct equivalent yet |
 | `plugin:hyprexpo:active_highlight_col` | color | active tile highlight color | `border_color_current` |
@@ -79,6 +79,7 @@ to the existing fixed-grid behavior:
 plugin {
     hyprexpo {
         dynamic_grid = 1
+        skip_empty = 0
         fill_gaps = 0
         mru_sort = 0
         show_workspace_names = 1
@@ -88,6 +89,21 @@ plugin {
     }
 }
 ```
+
+Dynamic grids count existing ordinary workspaces on the current monitor, including
+empty workspaces by default (`skip_empty = 0`). Special workspaces and workspaces
+on other monitors are excluded. Set `skip_empty = 1` to include only workspaces
+with windows; if none qualify, the current workspace remains as a fallback.
+Previously, dynamic grids always filtered out empty workspaces regardless of
+`skip_empty`; set it to `1` to retain that behavior.
+
+Workspace rules alone do not add uncreated workspaces to this count. To keep an
+inactive empty workspace available, use a persistent workspace. With
+`fill_gaps = 0`, only the enumerated workspaces are shown; `fill_gaps = 1` can
+add missing IDs between the smallest and largest included IDs, including empty
+workspaces even when `skip_empty = 1`. Close and reopen the overview after
+changing these options. For native scrolling layouts, set `overview_mode = grid`
+to use this workspace grid.
 
 ## Layout and Behavior
 
