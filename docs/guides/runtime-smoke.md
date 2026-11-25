@@ -60,7 +60,7 @@ Nested test binds:
 19. Set `plugin:hyprexpo:show_pinned_windows = 0` again, close overview, and confirm the pinned window is still visible and pinned in the normal Hyprland session.
 20. Unload or reload the plugin after closing overview and confirm no stale render pass callback crashes the session.
 
-21. Enable `dynamic_grid = 1`, then test with 1, 2, 3, and 5 non-empty, non-special workspaces. Confirm the overview contains exactly those workspaces without padded empty tiles.
+21. Enable `overview_mode = grid`, `dynamic_grid = 1`, `skip_empty = 0`, and `fill_gaps = 0`, then test with 1, 2, 3, and 5 existing non-special workspaces on the current monitor, including empty ones (use persistent workspaces to keep inactive empty workspaces alive). Confirm the overview contains exactly those workspaces without padded empty tiles and excludes foreign-monitor and special workspaces. Set `skip_empty = 1` and reopen the overview; confirm empty workspaces are excluded, with the current workspace as a fallback if none contain windows.
 22. Confirm every preview preserves the monitor aspect ratio. For 3 and 5 workspaces, confirm the partial final row is independently centered.
 23. Set `label_pos = top_right`, choose a visible `label_size`, and toggle `show_workspace_names`. Confirm every label remains inside its corresponding tile.
 24. Toggle `wallpaper_bg` and reopen the overview. Confirm the wallpaper changes only the background and does not move or resize tiles.

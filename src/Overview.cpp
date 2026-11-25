@@ -1282,7 +1282,7 @@ COverview::COverview(PHLWORKSPACE startedOn_, PHLMONITOR monitor_, bool swipe_, 
         const int64_t currentWorkspaceID = startedOn ? workspaceID(startedOn) : activeWorkspaceID(MON);
 
         for (const auto& workspace : State::workspaceState()->workspacesCopy()) {
-            if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL || workspace->m_monitor != MON || workspace->getWindowCount() <= 0)
+            if (!workspace || workspace->type() == Workspace::eWorkspaceType::SPECIAL || workspace->m_monitor != MON || (skipEmpty && workspace->getWindowCount() <= 0))
                 continue;
 
             visibleWorkspaceIDs.push_back(workspaceID(workspace));
